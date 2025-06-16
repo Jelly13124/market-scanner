@@ -1,7 +1,7 @@
 import os
 from langchain_anthropic import ChatAnthropic
 from langchain_groq import ChatGroq
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, AzureChatOpenAI
 from enum import Enum
 from pydantic import BaseModel
 from typing import Tuple
@@ -11,7 +11,8 @@ class ModelProvider(str, Enum):
     """Enum for supported LLM providers"""
     OPENAI = "OpenAI"
     GROQ = "Groq"
-    ANTHROPIC = "Anthropic"
+    ANTHROPIC = "Anthropic",
+    AZURE_OPENAI = "Azure OpenAI"
 
 
 class LLMModel(BaseModel):
@@ -76,6 +77,11 @@ AVAILABLE_MODELS = [
         model_name="o3-mini",
         provider=ModelProvider.OPENAI
     ),
+    LLMModel(
+        display_name="[azure openai] deployment",
+        model_name="aoai",
+        provider=ModelProvider.AZURE_OPENAI
+    ),
 ]
 
 # Create LLM_ORDER in the format expected by the UI
@@ -85,7 +91,7 @@ def get_model_info(model_name: str) -> LLMModel | None:
     """Get model information by model_name"""
     return next((model for model in AVAILABLE_MODELS if model.model_name == model_name), None)
 
-def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | ChatGroq | None:
+def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | AzureChatOpenAI | ChatGroq | None:
     if model_provider == ModelProvider.GROQ:
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
@@ -101,6 +107,26 @@ def get_model(model_name: str, model_provider: ModelProvider) -> ChatOpenAI | Ch
             print(f"API Key Error: Please make sure OPENAI_API_KEY is set in your .env file.")
             raise ValueError("OpenAI API key not found.  Please make sure OPENAI_API_KEY is set in your .env file.")
         return ChatOpenAI(model=model_name, api_key=api_key)
+    elif model_provider == ModelProvider.AZURE_OPENAI:
+        # Get and validate API key
+        api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        if not api_key:
+            # Print error to console
+            print(f"API Key Error: Please make sure AZURE_OPENAI_API_KEY is set in your .env file.")
+            raise ValueError("Azure OpenAI API key not found.  Please make sure AZURE_OPENAI_API_KEY is set in your .env file.")
+        # Get and validate Azure Endpoint
+        azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+        if not azure_endpoint:
+            # Print error to console
+            print(f"Azure Endpoint Error: Please make sure AZURE_OPENAI_ENDPOINT is set in your .env file.")
+            raise ValueError("Azure OpenAI endpoint not found.  Please make sure AZURE_OPENAI_ENDPOINT is set in your .env file.")
+        # get and validate deployment name
+        azure_deployment_name = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME")
+        if not azure_deployment_name:
+            # Print error to console
+            print(f"Azure Deployment Name Error: Please make sure AZURE_OPENAI_DEPLOYMENT_NAME is set in your .env file.")
+            raise ValueError("Azure OpenAI deployment name not found.  Please make sure AZURE_OPENAI_DEPLOYMENT_NAME is set in your .env file.")
+        return AzureChatOpenAI(azure_endpoint=azure_endpoint, azure_deployment=azure_deployment_name, api_key=api_key, api_version="2024-10-21")
     elif model_provider == ModelProvider.ANTHROPIC:
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:

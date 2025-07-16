@@ -1,17 +1,17 @@
+import ComponentItem from '@/components/panels/right/component-item';
 import { AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { useFlowContext } from '@/contexts/flow-context';
-import { ComponentGroup, ComponentItem } from '@/data/sidebar-components';
-import { SidebarItem } from './sidebar-item';
+import { ComponentGroup } from '@/data/sidebar-components';
 
-interface SidebarItemGroupProps {
+interface ComponentItemGroupProps {
   group: ComponentGroup;
   activeItem: string | null;
 }
 
-export function SidebarItemGroup({ 
+export function ComponentItemGroup({ 
   group, 
   activeItem
-}: SidebarItemGroupProps) {
+}: ComponentItemGroupProps) {
   const { name, icon: Icon, iconColor, items } = group;
   const { addComponentToFlow } = useFlowContext();
 
@@ -25,7 +25,7 @@ export function SidebarItemGroup({
   
   return (
     <AccordionItem key={name} value={name} className="border-none">
-      <AccordionTrigger className="px-4 py-2 text-sm hover:bg-ramp-grey-700 hover:no-underline">
+      <AccordionTrigger className="px-4 py-2 text-sm hover-bg hover:no-underline">
         <div className="flex items-center gap-2">
           <Icon size={16} className={iconColor} />
           <span className="capitalize">{name}</span>
@@ -33,8 +33,8 @@ export function SidebarItemGroup({
       </AccordionTrigger>
       <AccordionContent className="px-4">
         <div className="space-y-1">
-          {items.map((item: ComponentItem) => (
-            <SidebarItem 
+          {items.map((item) => (
+            <ComponentItem 
               key={item.name}
               icon={item.icon} 
               label={item.name} 

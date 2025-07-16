@@ -5,8 +5,10 @@ import { useEffect, useState } from 'react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { CardContent } from '@/components/ui/card';
 import { ModelSelector } from '@/components/ui/llm-selector';
+import { useFlowContext } from '@/contexts/flow-context';
 import { useNodeContext } from '@/contexts/node-context';
 import { getModels, LanguageModel } from '@/data/models';
+import { useNodeState } from '@/hooks/use-node-state';
 import { cn } from '@/lib/utils';
 import { type AgentNode } from '../types';
 import { getStatusColor } from '../utils';
@@ -19,7 +21,11 @@ export function AgentNode({
   id,
   isConnectable,
 }: NodeProps<AgentNode>) {
-  const { agentNodeData, setAgentModel, getAgentModel } = useNodeContext();
+  const { currentFlowId } = useFlowContext();
+  const { getAgentNodeDataForFlow, setAgentModel, getAgentModel } = useNodeContext();
+  
+  // Get agent node data for the current flow
+  const agentNodeData = getAgentNodeDataForFlow(currentFlowId?.toString() || null);
   const nodeData = agentNodeData[id] || { 
     status: 'IDLE', 
     ticker: null, 
@@ -30,11 +36,10 @@ export function AgentNode({
   const status = nodeData.status;
   const isInProgress = status === 'IN_PROGRESS';
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [availableModels, setAvailableModels] = useState<LanguageModel[]>([]);
   
-  // Get the current model for this agent (null if using global model)
-  const currentModel = getAgentModel(id);
-  const [selectedModel, setSelectedModel] = useState<LanguageModel | null>(currentModel);
+  // Use persistent state hooks
+  const [availableModels, setAvailableModels] = useNodeState<LanguageModel[]>(id, 'availableModels', []);
+  const [selectedModel, setSelectedModel] = useNodeState<LanguageModel | null>(id, 'selectedModel', null);
 
   // Load models on mount
   useEffect(() => {
@@ -49,14 +54,16 @@ export function AgentNode({
     };
     
     loadModels();
-  }, []);
+  }, [setAvailableModels]);
 
   // Update the node context when the model changes
   useEffect(() => {
-    if (selectedModel !== currentModel) {
-      setAgentModel(id, selectedModel);
+    const flowId = currentFlowId?.toString() || null;
+    const currentContextModel = getAgentModel(flowId, id);
+    if (selectedModel !== currentContextModel) {
+      setAgentModel(flowId, id, selectedModel);
     }
-  }, [selectedModel, id, setAgentModel, currentModel]);
+  }, [selectedModel, id, currentFlowId, setAgentModel, getAgentModel]);
 
   const handleModelChange = (model: LanguageModel | null) => {
     setSelectedModel(model);
@@ -80,12 +87,12 @@ export function AgentNode({
       <CardContent className="p-0">
         <div className="border-t border-border p-3">
           <div className="flex flex-col gap-2">
-            <div className="text-subtitle text-muted-foreground flex items-center gap-1">
+            <div className="text-subtitle text-primary flex items-center gap-1">
               Status
             </div>
 
             <div className={cn(
-              "text-foreground text-xs rounded p-2",
+              "text-foreground text-xs rounded p-2 border border-status",
               isInProgress ? "gradient-animation" : getStatusColor(status)
             )}>
               <span className="capitalize">{status.toLowerCase().replace(/_/g, ' ')}</span>
@@ -93,18 +100,18 @@ export function AgentNode({
             
             {nodeData.message && (
               <div className="text-foreground text-subtitle">
-                {nodeData.message}
+                {nodeData.message !== "Done" && nodeData.message}
                 {nodeData.ticker && <span className="ml-1">({nodeData.ticker})</span>}
               </div>
             )}
             <Accordion type="single" collapsible>
               <AccordionItem value="advanced" className="border-none">
-                <AccordionTrigger className="!text-subtitle text-muted-foreground">
+                <AccordionTrigger className="!text-subtitle text-primary">
                   Advanced
                 </AccordionTrigger>
                 <AccordionContent className="pt-2">
                   <div className="flex flex-col gap-2">
-                    <div className="text-subtitle text-muted-foreground flex items-center gap-1">
+                    <div className="text-subtitle text-primary flex items-center gap-1">
                       Model
                     </div>
                     <ModelSelector
@@ -116,7 +123,7 @@ export function AgentNode({
                     {selectedModel && (
                       <button
                         onClick={handleUseGlobalModel}
-                        className="text-subtitle text-muted-foreground hover:text-foreground transition-colors text-left"
+                        className="text-subtitle text-primary hover:text-foreground transition-colors text-left"
                       >
                         Reset to Auto
                       </button>
@@ -132,6 +139,7 @@ export function AgentNode({
           onOpenChange={setIsDialogOpen}
           name={data.name || "Agent"}
           nodeId={id}
+          flowId={currentFlowId?.toString() || null}
         />
       </CardContent>
     </NodeShell>

@@ -5,6 +5,7 @@ from langchain_deepseek import ChatDeepSeek
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
+from langchain_gigachat import GigaChat
 from langchain_ollama import ChatOllama
 from enum import Enum
 from pydantic import BaseModel
@@ -25,6 +26,7 @@ class ModelProvider(str, Enum):
     OPENAI = "OpenAI"
     OLLAMA = "Ollama"
     OPENROUTER = "OpenRouter"
+    GIGACHAT = "GigaChat"
 
 
 class LLMModel(BaseModel):
@@ -123,7 +125,7 @@ def get_models_list():
     ]
 
 
-def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = None) -> ChatOpenAI | ChatGroq | ChatOllama | None:
+def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = None) -> ChatOpenAI | ChatGroq | ChatOllama | GigaChat | None:
     if model_provider == ModelProvider.GROQ:
         api_key = (api_keys or {}).get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
         if not api_key:
@@ -188,3 +190,5 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
                 }
             }
         )
+    elif model_provider == ModelProvider.GIGACHAT:
+        return GigaChat(model=model_name)

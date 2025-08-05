@@ -191,4 +191,12 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
             }
         )
     elif model_provider == ModelProvider.GIGACHAT:
-        return GigaChat(model=model_name)
+        if os.getenv("GIGACHAT_USER") or os.getenv("GIGACHAT_PASSWORD"):
+            return GigaChat(model=model_name)
+        else: 
+            api_key = (api_keys or {}).get("GIGACHAT_API_KEY") or os.getenv("GIGACHAT_API_KEY") or os.getenv("GIGACHAT_CREDENTIALS")
+            if not api_key:
+                print("API Key Error: Please make sure api_keys is set in your .env file or provided via API keys.")
+                raise ValueError("GigaChat API key not found. Please make sure GIGACHAT_API_KEY is set in your .env file or provided via API keys.")
+
+            return GigaChat(credentials=api_key, model=model_name)

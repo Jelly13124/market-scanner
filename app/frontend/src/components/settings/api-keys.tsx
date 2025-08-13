@@ -27,7 +27,7 @@ const LLM_API_KEYS: ApiKey[] = [
   {
     key: 'ANTHROPIC_API_KEY',
     label: 'Anthropic API',
-    description: 'For Claude models (claude-3-5-sonnet, claude-3-opus, claude-3-5-haiku)',
+    description: 'For Claude models (claude-4-sonnet, claude-4.1-opus, etc.)',
     url: 'https://anthropic.com/',
     placeholder: 'your-anthropic-api-key'
   },
@@ -65,6 +65,13 @@ const LLM_API_KEYS: ApiKey[] = [
     description: 'For OpenRouter models (gpt-4o, gpt-4o-mini, etc.)',
     url: 'https://openrouter.ai/',
     placeholder: 'your-openrouter-api-key'
+  },
+  {
+    key: 'GIGACHAT_API_KEY',
+    label: 'GigaChat API',
+    description: 'For GigaChat models (GigaChat-2-Max, etc.)',
+    url: 'https://github.com/ai-forever/gigachat',
+    placeholder: 'your-gigachat-api-key'
   }
 ];
 

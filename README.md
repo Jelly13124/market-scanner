@@ -90,7 +90,7 @@ You can run the AI Hedge Fund directly via terminal. This approach offers more g
 
 <img width="992" alt="Screenshot 2025-01-06 at 5 50 17 PM" src="https://github.com/user-attachments/assets/e8ca04bf-9989-4a7d-a8b4-34e04666663b" />
 
-#### Quick Install
+#### Quick Start
 
 1. Install Poetry (if not already installed):
 ```bash

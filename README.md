@@ -45,7 +45,7 @@ By using this software, you agree to use it solely for learning purposes.
 - [How to Install](#how-to-install)
 - [How to Run](#how-to-run)
   - [⌨️ Command Line Interface](#️-command-line-interface)
-  - [🖥️ Web Application (NEW!)](#️-web-application)
+  - [🖥️ Web Application](#️-web-application)
 - [Contributing](#contributing)
 - [Feature Requests](#feature-requests)
 - [License](#license)
@@ -92,7 +92,7 @@ For users who prefer working with command line tools, you can run the AI Hedge F
 
 Choose one of the following installation methods:
 
-#### Using Poetry
+#### Install Poetry
 
 1. Install Poetry (if not already installed):
 ```bash
@@ -104,7 +104,7 @@ curl -sSL https://install.python-poetry.org | python3 -
 poetry install
 ```
 
-#### Running the AI Hedge Fund
+#### Run the AI Hedge Fund
 ```bash
 poetry run python src/main.py --ticker AAPL,MSFT,NVDA
 ```
@@ -121,7 +121,7 @@ You can optionally specify the start and end dates to make decisions for a speci
 poetry run python src/main.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --end-date 2024-03-01
 ```
 
-#### Running the Backtester
+#### Run the Backtester
 ```bash
 poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA
 ```
@@ -134,9 +134,9 @@ Note: The `--ollama`, `--start-date`, and `--end-date` flags work for the backte
 
 ### 🖥️ Web Application
 
-The new way to run the AI Hedge Fund is through our web application that provides a user-friendly interface. **This is recommended for most users, especially those who prefer visual interfaces over command line tools.
+The new way to run the AI Hedge Fund is through our web application that provides a user-friendly interface. This is recommended for users who prefer visual interfaces over command line tools.
 
-Please see detailed instructions on how to run the web application [here](https://github.com/virattt/ai-hedge-fund/tree/main/app).
+Please see detailed instructions on how to install and run the web application [here](https://github.com/virattt/ai-hedge-fund/tree/main/app).
 
 <img width="1721" alt="Screenshot 2025-06-28 at 6 41 03 PM" src="https://github.com/user-attachments/assets/b95ab696-c9f4-416c-9ad1-51feb1f5374b" />
 

@@ -376,7 +376,7 @@ if not "!USE_OLLAMA!"=="" (
     docker images -q ai-hedge-fund 2>nul | findstr /r /c:"^..*$" >nul
     if !ERRORLEVEL! NEQ 0 (
         echo Building AI Hedge Fund image...
-        docker build -t ai-hedge-fund .
+        docker build -t ai-hedge-fund -f Dockerfile ..
     )
 
     echo Running AI Hedge Fund with Ollama using Docker Compose...

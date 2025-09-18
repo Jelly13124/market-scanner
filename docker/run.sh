@@ -343,7 +343,7 @@ if [ -n "$USE_OLLAMA" ]; then
 
   if [[ "$(docker images -q ai-hedge-fund 2> /dev/null)" == "" ]]; then
     echo "Building AI Hedge Fund image..."
-    docker build -t ai-hedge-fund .
+    docker build -t ai-hedge-fund -f Dockerfile ..
   fi
 
   echo "Running AI Hedge Fund with Ollama using Docker Compose..."

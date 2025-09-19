@@ -64,6 +64,7 @@ class BacktestEngine:
         self._results = OutputBuilder(initial_capital=self._initial_capital)
 
         self._portfolio_values: list[PortfolioValuePoint] = []
+        self._table_rows: list[list] = []
         self._performance_metrics: PerformanceMetrics = {
             "sharpe_ratio": None,
             "sortino_ratio": None,
@@ -154,7 +155,7 @@ class BacktestEngine:
             }
             self._portfolio_values.append(point)
 
-            # Build and print daily rows (stateless usage)
+            # Build daily rows (stateless usage)
             rows = self._results.build_day_rows(
                 date_str=current_date_str,
                 tickers=self._tickers,
@@ -165,7 +166,10 @@ class BacktestEngine:
                 performance_metrics=self._performance_metrics,
                 total_value=total_value,
             )
-            self._results.print_rows(rows)
+            # Prepend today's rows to historical rows so latest day is on top
+            self._table_rows = rows + self._table_rows
+            # Print full history with latest day first (matches backtester.py behavior)
+            self._results.print_rows(self._table_rows)
 
             # Update performance metrics after printing (match original timing)
             if len(self._portfolio_values) > 3:

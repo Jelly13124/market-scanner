@@ -35,14 +35,7 @@ class OutputBuilder:
         decisions = agent_output.get("decisions", {})
 
         for ticker in tickers:
-            ticker_signals = {}
-            for agent_name, signals in analyst_signals.items():
-                if ticker in signals:
-                    ticker_signals[agent_name] = signals[ticker]
-
-            bullish_count = len([s for s in ticker_signals.values() if s.get("signal", "").lower() == "bullish"])
-            bearish_count = len([s for s in ticker_signals.values() if s.get("signal", "").lower() == "bearish"])
-            neutral_count = len([s for s in ticker_signals.values() if s.get("signal", "").lower() == "neutral"])
+            # Analyst signal counts removed from day table
 
             pos = portfolio.get_positions()[ticker]
             long_val = pos["long"] * current_prices[ticker]
@@ -62,9 +55,6 @@ class OutputBuilder:
                     long_shares=pos["long"],
                     short_shares=pos["short"],
                     position_value=net_position_value,
-                    bullish_count=bullish_count,
-                    bearish_count=bearish_count,
-                    neutral_count=neutral_count,
                 )
             )
 
@@ -87,9 +77,6 @@ class OutputBuilder:
                 long_shares=0,
                 short_shares=0,
                 position_value=0,
-                bullish_count=0,
-                bearish_count=0,
-                neutral_count=0,
                 is_summary=True,
                 total_value=summary["total_value"],
                 return_pct=summary["return_pct"],

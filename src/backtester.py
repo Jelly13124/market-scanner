@@ -1,9 +1,4 @@
 import sys
-import signal
-
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
-import questionary
 
 from colorama import Fore, Style
 
@@ -13,24 +8,6 @@ from src.backtesting.types import PerformanceMetrics
 from src.cli.input import (
     parse_cli_inputs,
 )
-
-
-# Global variable to track graceful shutdown
-_shutdown_requested = False
-
-
-def signal_handler(signum, frame):
-    """Handle SIGINT (Ctrl+C) gracefully."""
-    global _shutdown_requested
-    if not _shutdown_requested:
-        _shutdown_requested = True
-        print(f"\n\n{Fore.YELLOW}Interrupt signal received. Initiating graceful shutdown...{Style.RESET_ALL}")
-        print(f"{Fore.CYAN}Press Ctrl+C again to force exit.{Style.RESET_ALL}")
-        # Raise KeyboardInterrupt to trigger the try-except block
-        raise KeyboardInterrupt()
-    else:
-        print(f"\n{Fore.RED}Force exit requested. Shutting down immediately.{Style.RESET_ALL}")
-        sys.exit(1)
 
 
 def run_backtest(backtester: BacktestEngine) -> PerformanceMetrics | None:
@@ -71,9 +48,6 @@ if __name__ == "__main__":
         include_graph_flag=False,
         include_reasoning_flag=False,
     )
-
-    # Set up signal handler for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
 
     # Create and run the backtester
     backtester = BacktestEngine(

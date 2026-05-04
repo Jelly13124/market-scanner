@@ -48,7 +48,7 @@ def test_financial_metrics(fd: FDClient, ticker: str) -> None:
 def test_earnings(fd: FDClient, ticker: str) -> None:
     earnings = fd.get_earnings(ticker)
     assert earnings is not None, f"No earnings for {ticker}"
-    print(f"  {ticker} earnings: period={earnings.fiscal_period}  report={earnings.report_period}")
+    print(f"  {ticker} earnings: report={earnings.report_period}  fiscal={earnings.fiscal_period}")
     if earnings.quarterly:
         q = earnings.quarterly
         print(f"    Q: rev={q.revenue}  EPS={q.earnings_per_share}  surprise={q.eps_surprise}")

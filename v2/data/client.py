@@ -151,12 +151,14 @@ class FDClient:
     # ------------------------------------------------------------------
 
     def get_earnings(self, ticker: str) -> Earnings | None:
-        """Fetch earnings data (quarterly + annual)."""
-        resp = self._request("GET", "/earnings", params={"ticker": ticker})
-        if resp is None:
-            return None
-        earnings_data = resp.json().get("earnings")
-        return Earnings(**earnings_data) if earnings_data else None
+        """Fetch latest earnings (single record with quarterly + annual blocks).
+
+        The endpoint returns the most recent reporting period only. For a full
+        history (event-study use case), use ``get_filings`` with filing_type
+        ``10-Q``/``10-K`` once that method exists.
+        """
+        data = self._get("/earnings/", {"ticker": ticker}, response_key="earnings")
+        return Earnings(**data) if data else None
 
     # ------------------------------------------------------------------
     # Convenience

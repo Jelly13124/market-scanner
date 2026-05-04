@@ -12,6 +12,7 @@ from v2.data.models import (
     CompanyFacts,
     CompanyNews,
     Earnings,
+    EarningsRecord,
     FinancialMetrics,
     InsiderTrade,
     Price,
@@ -151,14 +152,29 @@ class FDClient:
     # ------------------------------------------------------------------
 
     def get_earnings(self, ticker: str) -> Earnings | None:
-        """Fetch latest earnings (single record with quarterly + annual blocks).
-
-        The endpoint returns the most recent reporting period only. For a full
-        history (event-study use case), use ``get_filings`` with filing_type
-        ``10-Q``/``10-K`` once that method exists.
-        """
+        """Fetch latest earnings for a single ticker."""
         data = self._get("/earnings/", {"ticker": ticker}, response_key="earnings")
-        return Earnings(**data) if data else None
+        if not data:
+            return None
+        row = data[0] if isinstance(data, list) else data
+        return Earnings(**row)
+
+    def get_earnings_history(
+        self,
+        ticker: str,
+        limit: int = 12,
+    ) -> list[EarningsRecord]:
+        """Fetch historical earnings filings as a flat list.
+
+        Returns one record per SEC filing (8-K, 10-Q, 10-K, 20-F).
+        The same ``report_period`` may appear multiple times with
+        different ``source_type`` values.
+        """
+        data = self._get("/earnings/", {
+            "ticker": ticker,
+            "limit": limit,
+        }, response_key="earnings")
+        return [EarningsRecord(**row) for row in data] if data else []
 
     # ------------------------------------------------------------------
     # Convenience

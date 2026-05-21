@@ -261,3 +261,37 @@ def scan_no_client_memoization(path: Path) -> list[Violation]:
                         message=f"self.{target.attr} = fd memoizes a per-call client across threads",
                     ))
     return violations
+
+
+_ALLOWED_DIRECTIONS = frozenset({"bullish", "bearish", "neutral"})
+
+
+def scan_direction_literals(path: Path) -> list[Violation]:
+    """RULE-7: every ``EventTrigger(direction=<literal>)`` uses a value
+    in {"bullish","bearish","neutral"}.
+
+    Non-literal direction values (Name references, conditional
+    expressions) are skipped — best-effort static check. Catches the
+    typo case: ``direction="bull"`` accepted silently by Pydantic
+    only because Direction is a Literal that COULD have been laxer.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    violations: list[Violation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        # EventTrigger(...) bare or via attribute chain — match the bare name
+        called = node.func
+        if not (isinstance(called, ast.Name) and called.id == "EventTrigger"):
+            continue
+        for kw in node.keywords:
+            if kw.arg != "direction":
+                continue
+            if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                if kw.value.value not in _ALLOWED_DIRECTIONS:
+                    violations.append(Violation(
+                        rule="RULE-7",
+                        line=kw.value.lineno,
+                        message=f"direction={kw.value.value!r} not in {sorted(_ALLOWED_DIRECTIONS)}",
+                    ))
+    return violations

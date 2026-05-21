@@ -18,6 +18,7 @@ from tests._detector_lint import (
     format_violations,
     scan_detector_name_attribute,
     scan_detect_return_annotation,
+    scan_direction_literals,
     scan_forbidden_std_pattern,
     scan_no_client_memoization,
 )
@@ -79,4 +80,11 @@ def test_detect_return_annotation(path):
 def test_no_client_memoization(path):
     """RULE-4: detect() does not stash fd on self."""
     violations = scan_no_client_memoization(path)
+    assert not violations, format_violations(path, violations)
+
+
+@pytest.mark.parametrize("path", DETECTOR_FILES, ids=_ids)
+def test_direction_literals(path):
+    """RULE-7: EventTrigger(direction=<literal>) is bullish/bearish/neutral."""
+    violations = scan_direction_literals(path)
     assert not violations, format_violations(path, violations)

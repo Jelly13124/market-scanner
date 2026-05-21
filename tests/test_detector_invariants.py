@@ -16,6 +16,7 @@ from tests._detector_lint import (
     DETECTOR_FILES,
     collect_all_detector_names,
     format_violations,
+    scan_components_dict_float,
     scan_detector_name_attribute,
     scan_detect_return_annotation,
     scan_direction_literals,
@@ -87,4 +88,11 @@ def test_no_client_memoization(path):
 def test_direction_literals(path):
     """RULE-7: EventTrigger(direction=<literal>) is bullish/bearish/neutral."""
     violations = scan_direction_literals(path)
+    assert not violations, format_violations(path, violations)
+
+
+@pytest.mark.parametrize("path", DETECTOR_FILES, ids=_ids)
+def test_components_dict_float(path):
+    """RULE-3: every components dict value is float-compatible."""
+    violations = scan_components_dict_float(path)
     assert not violations, format_violations(path, violations)

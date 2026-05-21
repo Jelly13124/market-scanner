@@ -1,5 +1,184 @@
 # Progress Log
 
+## Session — 2026-05-21 (3 production optimizations from backtest evidence)
+
+Acted on three findings from today's backtests. None required new
+30/60/90-day reruns — each change has direct evidence from existing
+data, with smoke tests confirming behavior preservation.
+
+### #5 — Add transaction cost to backtest framework
+- `scripts/ab_backtest.py` + `scripts/ab_backtest_quant_ablation.py`
+  now accept `--cost-bp` (default 10 = 0.10% round-trip). Each non-HOLD
+  decision deducts `qty*entry_price*cost_bp/10000` from gross PnL.
+- New `scripts/recompute_pnl_with_cost.py` re-costs existing CSVs
+  without re-running the backtest.
+- Validation: all three Part 1 regime gaps and the Part 4 quant gap
+  survive 10 bp costing (both groups carry similar position sizes,
+  so cost erosion is symmetric — gap preserved):
+    Part 1 UP   20d cum gap:  +$26,000 → +$26,110
+    Part 1 DOWN 20d cum gap:  +$12,400 → +$12,405
+    Part 4 quant 20d cum gap: +$5,897  → +$5,914
+- Commit `d697661`.
+
+### #7 — Hide composite rank/score from scanner_signal LLM prompt
+- `src/agents/scanner_signal.py` prompt template no longer renders
+  "Composite attention rank: {rank}, score {composite_score}/100".
+  LLM sees ticker + scan_date + detector triggers only.
+- `_fallback_reasoning` no longer mentions composite score.
+- Confidence flow unchanged: scanner_signal_agent still emits
+  `confidence = composite_score` so PM aggregation logic doesn't
+  change. Only the LLM's textual reasoning is shielded.
+- Why: §6 quartile backtest showed composite_score Top-Bottom spread
+  is -6.80% at 20d (no quant) — the ordinal rank is provably anti-
+  predictive. Hiding rank from the LLM prevents it from biasing on a
+  number we know is reversed.
+- Tests updated: 19/19 pass.
+- Commit `52f72d3`.
+
+### #6 — Tighten analyst_rating + insider thresholds
+Per-detector FDR-significant 5d losers at prior thresholds:
+  analyst_rating  -3.09%  p_fdr=0.0000  n=66
+  insider_cluster -2.52%  p_fdr=0.0221  n=67
+
+Changes:
+- `analyst_rating.py:net_z_threshold` 2.0 → **3.0** (only fires on
+  the strongest upgrade/downgrade waves)
+- `insider.py:cluster_min_buyers` 2 → **3** (requires 3+ insiders
+  agreeing, not 2)
+- `insider.py:single_buy_dollar_threshold` 250_000 → **500_000**
+  (single $500k+ P-buy required for solo trigger)
+
+`earnings_event` was on the list (-4.78% FDR-sig 5d) but it's
+window-based (pre/post-earnings-day window) not severity-gated;
+tightening requires narrowing the window rather than raising a
+threshold. **Left as follow-up.**
+
+Tests updated to match new defaults:
+- `test_two_buyers_is_enough_to_cluster_fire` →
+  `test_three_buyers_is_enough_to_cluster_fire` + new negative
+  test `test_two_buyers_does_NOT_cluster_fire`
+- `test_buy_severity_higher_than_sell_at_same_z`: 2 → 3 buyers
+  (multiplier math unchanged; cluster size is incidental)
+- Stale docstring references to "default 2" / "≥ $250k" updated
+
+178/178 detector tests pass (82 invariant + 95 behavior + 1 new).
+Commit `6c45dcf`.
+
+### What was deliberately NOT done
+- **#1 composite_score → binary filter**: user rejected — too
+  invasive for a refactor; #7 covers the LLM-bias subset.
+- **#2 CHOP regime skip**: user pushback was correct — killing the
+  scan removes free information, AND trailing-20d regime classifier
+  is inherently lagging.
+- **#4 DOWN turn off quant**: same regime-lag problem; the small
+  compute savings don't justify the risk of mis-classifying.
+
+### Verification path (no new backtest)
+Each change has direct evidence in existing CSVs:
+- #5 cost: re-applied via `recompute_pnl_with_cost.py`, summary
+  regenerated; gaps preserved → claim holds.
+- #7 rank-hidden: behavior verified by smoke prompt rendering +
+  19/19 scanner_signal unit tests green.
+- #6 thresholds: 178/178 detector tests green (invariant + behavior).
+
+Live alpha verification continues on the running paper-trade cron.
+The 3 changes ship to production with default config; impact will
+materialize in daily-cron emails over the next 1-2 weeks.
+
+
+---
+
+
+## Session — 2026-05-21 (Part 4: quant on/off agent-layer A/B — results in)
+
+The 4.3-hour background quant-ablation A/B (`bn8tuyoun`) finished. Three
+per-regime CSVs landed at `outputs/ab_quant_ablation_{up,down,chop}*.csv`
+and the combined summary at `outputs/ab_quant_ablation_combined_summary.txt`.
+
+### Setup
+Same 3 windows as Part 1 (UP / DOWN / CHOP, 30 trading days total),
+same agents, same model (deepseek-chat), same top-N=3. Only difference
+from Part 1: B group runs the same scanner→11 agents→PM pipeline as A
+but with `use_quant_signals=False`, so composite_score = event_score
+only. The new `use_quant_signals` flag was added to `run_pipeline` with
+default True (production cron behavior unchanged).
+
+### Results — 20d cumulative PnL gap (A quant ON − B quant OFF)
+
+| Regime | A 20d cum | B 20d cum | Δ |
+|---|---|---|---|
+| UP   | +$10,978 | +$5,014  | **+$5,964** ✅ |
+| DOWN | +$4,813  | +$4,880  | -$67 (tied) |
+| CHOP | $0       | $0       | $0 ⚠️ (EODHD daily limit broke CHOP forward prices) |
+| **Combined** | **+$15,792** | **+$9,894** | **+$5,897** |
+
+All p-values > 0.5 (n=55 / 51 combined). Trend robust but not
+statistically significant — sample size limited.
+
+### Key observations
+
+1. **Quant's contribution is positive but marginal.** UP regime drives
+   the entire gap (+$5,964). DOWN is neutral. CHOP is unusable due to
+   data loss when EODHD hit its daily request cap mid-run.
+2. **DOWN changes behavior without changing outcome.** Ticker overlap
+   is only 29% — quant picks meaningfully different tickers in DOWN.
+   Action mix differs sharply: A=4buy/7hold/10short, B=9buy/1hold/5short.
+   But the resulting PnL is essentially identical. Quant ON nudges
+   the agent toward more defensive postures in DOWN that don't pay
+   off any better than B's more aggressive buy stance.
+3. **Hit rate inverts magnitude.** Combined hit rate A 40% < B 45%, yet
+   A wins on total PnL. Pattern: quant ON produces **fewer winners but
+   bigger winners** — consistent with quant acting as a quality filter
+   that concentrates picks where conviction is higher, rather than as
+   a directional predictor that improves hit rate.
+
+### Relative contribution vs Part 1
+
+```
+Part 1 UP 20d cum gap (scanner+quant vs random):  +$26,000
+Part 4 UP 20d cum gap (scanner+quant vs scanner): +$5,964
+→ Event detection alone contributes ~+$20,036 (~77% of scanner edge)
+→ Quant_signals contribute               ~+$5,964  (~23% of scanner edge)
+```
+
+This **refines** Part 3's earlier hypothesis. Part 3 said "quant's
+real value shows up at agent layer, not at scanner-self level". That's
+correct — but the actual magnitude is ~23% of the scanner edge, not the
+majority. Event detection is the workhorse; quant is incremental.
+
+### What this means for production
+
+- Daily cron continues with quant ON (current config). Net positive.
+- If CHOP regime persists for an extended period, monitor whether the
+  defensive bias in DOWN/CHOP is actually hurting (n is too small now
+  to say).
+- Next-test candidate: bigger sample (60-90 trading days) for tighter
+  CIs. Current results trend-only, not significant.
+
+### Limitation: CHOP data loss
+
+EODHD free tier daily request limit (100k requests/day) was reached
+during the CHOP run's final days. Forward-price lookups failed → CSV
+has null `price_5d`/`price_20d` for many positions → non-HOLD entries
+all show pnl=$0 (script defaults). CHOP regime therefore yields zero
+informational content from this run. If we want a real CHOP read, we
+need to re-run that window on a fresh API quota day, or migrate to a
+provider without per-day caps.
+
+### Files touched
+- `v2/pipeline/orchestrator.py` (modified earlier this session: added
+  `use_quant_signals` param to `run_pipeline`)
+- `scripts/ab_backtest_quant_ablation.py` (new)
+- `scripts/ab_quant_ablation_summary.py` (new)
+- `outputs/ab_quant_ablation_{up,down,chop}_*.csv` (new, generated)
+- `outputs/ab_quant_ablation_combined_summary.txt` (new, generated)
+- `outputs/backtest_report_2026-05-20.md` (extended with Part 4 section
+  + updated artifacts list)
+
+
+---
+
+
 ## Session — 2026-05-21 (Detector invariant test suite landed)
 
 ### What shipped

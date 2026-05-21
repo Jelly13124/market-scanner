@@ -295,3 +295,86 @@ def scan_direction_literals(path: Path) -> list[Violation]:
                         message=f"direction={kw.value.value!r} not in {sorted(_ALLOWED_DIRECTIONS)}",
                     ))
     return violations
+
+
+def _rhs_is_float_compatible(value: ast.AST) -> bool:
+    """Return True when ``value`` is one of:
+      * ``float(...)`` call
+      * float literal (``Constant(value=float)``)
+      * the literal ``0`` integer-typed constant (``Constant(value=0)``)
+        — covered because Python normalizes; explicit float typing
+        preferred but we allow it to reduce noise
+      * conditional expression where both branches are float-compatible
+      * tuple/list (handled by callers if used in updates with tuple)
+    """
+    if isinstance(value, ast.Call):
+        if isinstance(value.func, ast.Name) and value.func.id == "float":
+            return True
+    if isinstance(value, ast.Constant):
+        if isinstance(value.value, float):
+            return True
+        if value.value is True or value.value is False:  # bool subclass of int — explicit float-cast preferred
+            return False
+        if isinstance(value.value, int):
+            # Allow integer literals (Python normalizes int → float on assign)
+            # — bare ints are common for things like ``"history_n": 0``.
+            return True
+    if isinstance(value, ast.IfExp):
+        return _rhs_is_float_compatible(value.body) and _rhs_is_float_compatible(value.orelse)
+    return False
+
+
+def scan_components_dict_float(path: Path) -> list[Violation]:
+    """RULE-3: every assignment to ``components`` dict has a
+    float-compatible RHS.
+
+    Patterns we catch:
+      * ``components["key"] = expr``          → expr must be float-compat
+      * ``components = {"key": expr, ...}``   → each value must be float-compat
+      * ``components.update({"key": expr})``  → each value must be float-compat
+
+    Patterns we do NOT catch (false-negative — accept the gap):
+      * ``components = some_dict_var``  (would need data-flow analysis)
+      * ``components.update(some_dict_var)``
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    attach_parents(tree)
+    violations: list[Violation] = []
+
+    def _check_value(key_desc: str, value: ast.AST, lineno: int) -> None:
+        if not _rhs_is_float_compatible(value):
+            violations.append(Violation(
+                rule="RULE-3",
+                line=lineno,
+                message=f"components{key_desc} = <non-float>",
+            ))
+
+    for node in ast.walk(tree):
+        # Pattern: components["foo"] = expr
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if (isinstance(target, ast.Subscript)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id == "components"):
+                    key_repr = ast.unparse(target.slice) if hasattr(ast, "unparse") else "[...]"
+                    _check_value(f"[{key_repr}]", node.value, node.lineno)
+            # Pattern: components = {"foo": expr, ...}
+            if (len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and node.targets[0].id == "components"
+                    and isinstance(node.value, ast.Dict)):
+                for k, v in zip(node.value.keys, node.value.values):
+                    key_repr = (k.value if isinstance(k, ast.Constant) else "?")
+                    _check_value(f"[{key_repr!r}]", v, v.lineno)
+        # Pattern: components.update({"foo": expr})
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "update"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "components"
+                and len(node.args) == 1
+                and isinstance(node.args[0], ast.Dict)):
+            for k, v in zip(node.args[0].keys, node.args[0].values):
+                key_repr = (k.value if isinstance(k, ast.Constant) else "?")
+                _check_value(f"[{key_repr!r}]", v, v.lineno)
+    return violations

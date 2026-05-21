@@ -15,6 +15,7 @@ Holds:
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -60,3 +61,37 @@ def format_violations(path: Path, violations: list[Violation]) -> str:
         for v in violations
     )
     return f"{head}\n{body}"
+
+
+_FORBIDDEN_STD_PATTERNS = (
+    # `(... .std(...)) or NUMBER` short-circuit
+    re.compile(r"\.std\([^)]*\)\s*\)?\s*or\s+\d"),
+    # `float(...) or 1e-N` style
+    re.compile(r"float\([^)]*\)\s*or\s+\d+e-?\d+"),
+)
+
+
+def scan_forbidden_std_pattern(path: Path) -> list[Violation]:
+    """RULE-2: forbidden `... .std(...) or NUMBER` fallback pattern.
+
+    The bug: ``sigma = float(arr.std()) or 1e-6`` only triggers when
+    ``arr.std()`` is **exactly** 0.0. Any tiny-but-nonzero std slips
+    through and divides into a z-score, producing the catastrophic
+    blow-ups documented in v2/scanner/README.md (GEHC z = +55 trillion).
+    """
+    violations: list[Violation] = []
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        # Skip comment lines so the rule's own docstring example doesn't
+        # match itself.
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            continue
+        for pat in _FORBIDDEN_STD_PATTERNS:
+            if pat.search(line):
+                violations.append(Violation(
+                    rule="RULE-2",
+                    line=lineno,
+                    message="forbidden std `or NUMBER` short-circuit fallback",
+                ))
+                break
+    return violations

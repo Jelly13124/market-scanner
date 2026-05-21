@@ -46,7 +46,7 @@ def _bandwidth(closes: np.ndarray, window: int, std_mult: float) -> float | None
     mid = float(tail.mean())
     if mid <= 0:
         return None
-    sigma = float(tail.std(ddof=1))
+    sigma = float(tail.std(ddof=1))  # noqa: std-floor (sigma is numerator coefficient, not z-divisor)
     return (2.0 * std_mult * sigma) / mid
 
 
@@ -117,7 +117,7 @@ class BollingerSqueezeDetector(EventDetector):
             mid = float(window_slice.mean())
             if mid <= 0:
                 return None
-            sigma = float(window_slice.std(ddof=1))
+            sigma = float(window_slice.std(ddof=1))  # noqa: std-floor (sigma is numerator coefficient, not z-divisor)
             bandwidths.append((2.0 * self._bb_std_mult * sigma) / mid)
         bandwidths.reverse()  # oldest → newest, last entry = today
 

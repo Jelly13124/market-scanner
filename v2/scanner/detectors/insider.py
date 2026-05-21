@@ -256,7 +256,7 @@ class InsiderClusterDetector(EventDetector):
         if len(monthly_grosses) >= 2:
             arr = np.array(monthly_grosses)
             mu = float(arr.mean())
-            sigma_raw = float(arr.std(ddof=1))
+            sigma_raw = float(arr.std(ddof=1))  # noqa: std-floor (clamped via `if sigma_raw < sigma_floor` branch below)
             # Std floor: max($1k, 10% of mean). Without this, M-code option
             # exercises (which we map to 0 shares since M6.b) collapse the
             # historical baseline to all-zeros → std ≈ 0 → z explodes by ~14

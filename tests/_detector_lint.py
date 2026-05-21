@@ -424,3 +424,78 @@ def scan_bare_except(path: Path) -> list[Violation]:
             message="bare `except Exception:` without logger.* call or raise",
         ))
     return violations
+
+
+def _enclosing_function(node: ast.AST) -> ast.FunctionDef | None:
+    """Walk ``.parent`` until we hit a FunctionDef, return it."""
+    parent = getattr(node, "parent", None)
+    while parent is not None and not isinstance(parent, ast.FunctionDef):
+        parent = getattr(parent, "parent", None)
+    return parent if isinstance(parent, ast.FunctionDef) else None
+
+
+def scan_std_floor_wrapping(path: Path) -> list[Violation]:
+    """RULE-1: each ``.std()`` call has a max() floor applied.
+
+    Accepts ANY of these patterns:
+      (a) direct wrap: ``max(arr.std(...), floor)``
+      (b) assigned-then-max: ``sigma = arr.std(...); max(sigma, floor)``
+          appears later in the same function
+      (c) suppression: trailing ``# noqa: std-floor`` on the line
+          of the .std() call — documents intentional bare std use
+          (numerator coefficient, branched clamp, etc.)
+    """
+    source = path.read_text(encoding="utf-8")
+    source_lines = source.splitlines()
+    tree = ast.parse(source)
+    attach_parents(tree)
+    violations: list[Violation] = []
+
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "std"):
+            continue
+        # (c) noqa suppression
+        line_text = source_lines[node.lineno - 1] if node.lineno <= len(source_lines) else ""
+        if "# noqa: std-floor" in line_text:
+            continue
+        # (a) direct max() ancestor before the enclosing function
+        ancestor = getattr(node, "parent", None)
+        wrapped = False
+        while ancestor is not None and not isinstance(ancestor, ast.FunctionDef):
+            if (isinstance(ancestor, ast.Call)
+                    and isinstance(ancestor.func, ast.Name)
+                    and ancestor.func.id == "max"):
+                wrapped = True
+                break
+            ancestor = getattr(ancestor, "parent", None)
+        if wrapped:
+            continue
+        # (b) assigned-then-max in the same function
+        # Walk up to find the enclosing Assign whose value-tree contains this .std() node
+        assign = getattr(node, "parent", None)
+        while assign is not None and not isinstance(assign, (ast.Assign, ast.FunctionDef)):
+            assign = getattr(assign, "parent", None)
+        if isinstance(assign, ast.Assign) and len(assign.targets) == 1 \
+                and isinstance(assign.targets[0], ast.Name):
+            var_name = assign.targets[0].id
+            func = _enclosing_function(assign)
+            if func is not None:
+                for inner in ast.walk(func):
+                    if (isinstance(inner, ast.Call)
+                            and isinstance(inner.func, ast.Name)
+                            and inner.func.id == "max"
+                            and any(isinstance(a, ast.Name) and a.id == var_name
+                                    for a in inner.args)):
+                        wrapped = True
+                        break
+        if wrapped:
+            continue
+
+        violations.append(Violation(
+            rule="RULE-1",
+            line=node.lineno,
+            message=".std() result has no max() floor and no `# noqa: std-floor` annotation",
+        ))
+    return violations

@@ -23,6 +23,7 @@ from tests._detector_lint import (
     scan_direction_literals,
     scan_forbidden_std_pattern,
     scan_no_client_memoization,
+    scan_std_floor_wrapping,
 )
 
 
@@ -103,4 +104,11 @@ def test_components_dict_float(path):
 def test_bare_except_handler(path):
     """RULE-5: except Exception: blocks log or re-raise."""
     violations = scan_bare_except(path)
+    assert not violations, format_violations(path, violations)
+
+
+@pytest.mark.parametrize("path", DETECTOR_FILES, ids=_ids)
+def test_std_floor_wrapping(path):
+    """RULE-1: .std() result is wrapped in max() or noqa-suppressed."""
+    violations = scan_std_floor_wrapping(path)
     assert not violations, format_violations(path, violations)

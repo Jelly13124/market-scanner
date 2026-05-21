@@ -229,3 +229,35 @@ def scan_detect_return_annotation(path: Path) -> list[Violation]:
                 message=f"{cls.__name__}.detect: return type is {ret!r}, want EventTrigger | None",
             ))
     return violations
+
+
+def scan_no_client_memoization(path: Path) -> list[Violation]:
+    """RULE-4: ``detect()`` does not stash the ``fd`` client on ``self``.
+
+    Background: ``requests.Session`` (the underlying transport for the
+    Finnhub / EODHD clients) is not thread-safe across worker threads.
+    The runner gives each worker a dedicated client via queue.Queue.
+    Memoizing ``self._client = fd`` would shred that isolation — the
+    first thread's client survives into other threads' calls.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    attach_parents(tree)
+    violations: list[Violation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef) or node.name != "detect":
+            continue
+        for stmt in ast.walk(node):
+            if not isinstance(stmt, ast.Assign):
+                continue
+            for target in stmt.targets:
+                if not (isinstance(target, ast.Attribute)
+                        and isinstance(target.value, ast.Name)
+                        and target.value.id == "self"):
+                    continue
+                if isinstance(stmt.value, ast.Name) and stmt.value.id == "fd":
+                    violations.append(Violation(
+                        rule="RULE-4",
+                        line=stmt.lineno,
+                        message=f"self.{target.attr} = fd memoizes a per-call client across threads",
+                    ))
+    return violations

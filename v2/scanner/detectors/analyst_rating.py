@@ -63,7 +63,12 @@ class AnalystRatingDetector(EventDetector):
         *,
         recent_window_days: int = 7,
         baseline_window_days: int = 90,
-        net_z_threshold: float = 2.0,
+        # 2026-05-21: bumped from 2.0 to 3.0 after analyze_with_quant
+        # showed analyst_rating 5d alpha = −3.09% FDR-significant
+        # (p_fdr=0.0000, n=66). At z>=2.0 it fires too often and the
+        # marginal triggers are FDR-significant losers. z>=3.0 keeps
+        # only the strongest upgrade/downgrade waves.
+        net_z_threshold: float = 3.0,
         gap_z_scale: float = 0.05,
         score_std_floor: float = 0.5,
         action_fetch_limit: int = 200,

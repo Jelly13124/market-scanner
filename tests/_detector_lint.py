@@ -189,12 +189,10 @@ def _annotation_is_event_trigger_or_none(annotation) -> bool:
     if not args:
         return False
     # Both UnionType (PEP 604) and Optional resolve to a tuple of args.
+    # Require EXACTLY {EventTrigger, NoneType} — reject wider unions like
+    # Union[EventTrigger, str, None] which would defeat the rule's purpose.
     arg_names = {getattr(a, "__name__", str(a)) for a in args}
-    if "NoneType" not in arg_names and type(None) not in args:
-        return False
-    if "EventTrigger" not in arg_names:
-        return False
-    return True
+    return arg_names == {"EventTrigger", "NoneType"}
 
 
 def scan_detect_return_annotation(path: Path) -> list[Violation]:

@@ -175,7 +175,7 @@ class EarningsSurpriseDetector(EventDetector):
         if current_surprise is not None and len(history_pcts) >= 2:
             hist = np.array(history_pcts)
             mu = float(hist.mean())
-            sigma_raw = float(hist.std(ddof=1))
+            sigma_raw = float(hist.std(ddof=1))  # noqa: std-floor (clamped via `if sigma_raw < sigma_floor` branch below)
             # Std floor: 5% of estimate. Without this, an ultra-stable history
             # (e.g. four consecutive identical surprises) collapses std to ~0
             # and z explodes by orders of magnitude — same pattern that gave
@@ -420,7 +420,7 @@ class EarningsEventDetector(EventDetector):
         if current_surprise is not None and len(history_pcts) >= 2:
             hist = np.array(history_pcts)
             mu = float(hist.mean())
-            sigma_raw = float(hist.std(ddof=1))
+            sigma_raw = float(hist.std(ddof=1))  # noqa: std-floor (clamped via `if sigma_raw < sigma_floor` branch below)
             sigma_floor = 0.05
             if sigma_raw < sigma_floor:
                 severity = self._floor_z * sign

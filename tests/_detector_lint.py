@@ -18,6 +18,7 @@ import ast
 import importlib
 import inspect
 import re
+import typing
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -165,3 +166,68 @@ def collect_all_detector_names() -> dict[str, list[str]]:
                 continue
             seen.setdefault(name, []).append(f"{path.stem}.{cls.__name__}")
     return {k: v for k, v in seen.items() if len(v) >= 2}
+
+
+def _annotation_is_event_trigger_or_none(annotation) -> bool:
+    """Return True when ``annotation`` describes ``EventTrigger | None``
+    in any of the accepted spellings:
+
+      * ``EventTrigger | None`` (PEP 604, our standard)
+      * ``Optional[EventTrigger]`` (legacy typing)
+      * ``Union[EventTrigger, None]`` (also legacy)
+
+    The annotation we receive is whatever ``inspect.signature(...)``
+    returns. With ``from __future__ import annotations`` (used in every
+    detector), that's a string we have to parse via ``typing.get_type_hints``
+    on the owning class — but the scanner takes the parsed result and
+    inspects ``__origin__`` and ``__args__`` to be language-spelling
+    agnostic.
+    """
+    if annotation is type(None):
+        return False
+    args = typing.get_args(annotation)
+    if not args:
+        return False
+    # Both UnionType (PEP 604) and Optional resolve to a tuple of args.
+    arg_names = {getattr(a, "__name__", str(a)) for a in args}
+    if "NoneType" not in arg_names and type(None) not in args:
+        return False
+    if "EventTrigger" not in arg_names:
+        return False
+    return True
+
+
+def scan_detect_return_annotation(path: Path) -> list[Violation]:
+    """RULE-8: ``detect()`` method's return annotation resolves to
+    ``EventTrigger | None``.
+    """
+    module = _import_detector_module(path)
+    classes = _detector_subclasses(module)
+    violations: list[Violation] = []
+    for cls in classes:
+        if "detect" not in cls.__dict__:
+            continue  # inherited from ABC; not the class under inspection
+        try:
+            hints = typing.get_type_hints(cls.detect)
+        except Exception as e:
+            violations.append(Violation(
+                rule="RULE-8",
+                line=inspect.getsourcelines(cls.detect)[1],
+                message=f"{cls.__name__}.detect: cannot resolve type hints ({e})",
+            ))
+            continue
+        ret = hints.get("return")
+        if ret is None:
+            violations.append(Violation(
+                rule="RULE-8",
+                line=inspect.getsourcelines(cls.detect)[1],
+                message=f"{cls.__name__}.detect: missing return annotation",
+            ))
+            continue
+        if not _annotation_is_event_trigger_or_none(ret):
+            violations.append(Violation(
+                rule="RULE-8",
+                line=inspect.getsourcelines(cls.detect)[1],
+                message=f"{cls.__name__}.detect: return type is {ret!r}, want EventTrigger | None",
+            ))
+    return violations

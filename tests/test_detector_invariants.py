@@ -17,6 +17,7 @@ from tests._detector_lint import (
     collect_all_detector_names,
     format_violations,
     scan_detector_name_attribute,
+    scan_detect_return_annotation,
     scan_forbidden_std_pattern,
 )
 
@@ -64,3 +65,10 @@ def test_detector_names_are_unique_across_files():
         "Detector name collision detected:\n  "
         + "\n  ".join(f"{name}: {classes}" for name, classes in duplicates.items())
     )
+
+
+@pytest.mark.parametrize("path", DETECTOR_FILES, ids=_ids)
+def test_detect_return_annotation(path):
+    """RULE-8: detect() return type is EventTrigger | None."""
+    violations = scan_detect_return_annotation(path)
+    assert not violations, format_violations(path, violations)

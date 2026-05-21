@@ -16,6 +16,7 @@ from tests._detector_lint import (
     DETECTOR_FILES,
     collect_all_detector_names,
     format_violations,
+    scan_bare_except,
     scan_components_dict_float,
     scan_detector_name_attribute,
     scan_detect_return_annotation,
@@ -95,4 +96,11 @@ def test_direction_literals(path):
 def test_components_dict_float(path):
     """RULE-3: every components dict value is float-compatible."""
     violations = scan_components_dict_float(path)
+    assert not violations, format_violations(path, violations)
+
+
+@pytest.mark.parametrize("path", DETECTOR_FILES, ids=_ids)
+def test_bare_except_handler(path):
+    """RULE-5: except Exception: blocks log or re-raise."""
+    violations = scan_bare_except(path)
     assert not violations, format_violations(path, violations)

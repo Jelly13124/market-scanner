@@ -18,6 +18,7 @@ pipeline.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timedelta
 
 import numpy as np
@@ -25,6 +26,8 @@ import numpy as np
 from v2.data.protocol import DataClient
 from v2.scanner.detectors.base import EventDetector, EventTrigger, parse_date as _parse_date
 from v2.scanner.models import ScanContext
+
+logger = logging.getLogger(__name__)
 
 
 # Per-action weights for the net-upgrade score.
@@ -100,14 +103,16 @@ class AnalystRatingDetector(EventDetector):
             )
         except (NotImplementedError, AttributeError):
             return None
-        except Exception:
+        except Exception as e:
+            logger.warning("analyst_rating: get_analyst_actions(%s) failed: %s", ticker, e)
             actions = []
 
         try:
             target = fd.get_analyst_targets(ticker, asof_date=end_date)
         except (NotImplementedError, AttributeError):
             target = None
-        except Exception:
+        except Exception as e:
+            logger.warning("analyst_rating: get_analyst_targets(%s) failed: %s", ticker, e)
             target = None
 
         # ------------------------------------------------------------------

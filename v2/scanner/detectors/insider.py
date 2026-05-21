@@ -7,8 +7,8 @@ diversification, taxes, and 10b5-1 plans as often as by conviction.
 This detector reflects that asymmetry:
 
   Buy (bullish)
-    cluster: ≥ ``cluster_min_buyers`` (default 2) distinct insiders same direction
-    single:  ≥ $250k AND transaction_type='P' (open-market purchase only — not M,A,F,G)
+    cluster: ≥ ``cluster_min_buyers`` (default 3) distinct insiders same direction
+    single:  ≥ $500k AND transaction_type='P' (open-market purchase only — not M,A,F,G)
     severity multiplier × ``buy_severity_mult`` (default 1.3)
 
   Sell (bearish)
@@ -59,9 +59,15 @@ class InsiderClusterDetector(EventDetector):
         self,
         *,
         cluster_window_days: int = 14,
-        cluster_min_buyers: int = 2,
+        # 2026-05-21: bumped cluster_min_buyers 2 → 3 and
+        # single_buy_dollar_threshold 250k → 500k after analyze_with_quant
+        # showed insider_cluster 5d alpha = −2.52% FDR-significant
+        # (p_fdr=0.0221, n=67). At the prior 2-buyer / $250k thresholds
+        # the detector fired too often on weak signals. Stricter gates
+        # require either 3+ insiders or a single $500k+ P-buy.
+        cluster_min_buyers: int = 3,
         cluster_min_sellers: int = 4,
-        single_buy_dollar_threshold: float = 250_000.0,
+        single_buy_dollar_threshold: float = 500_000.0,
         single_sell_market_cap_pct: float = 0.01,
         buy_severity_mult: float = 1.3,
         sell_severity_mult: float = 0.7,

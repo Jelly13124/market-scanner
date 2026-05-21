@@ -15,6 +15,8 @@ Holds:
 from __future__ import annotations
 
 import ast
+import importlib
+import inspect
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -95,3 +97,71 @@ def scan_forbidden_std_pattern(path: Path) -> list[Violation]:
                 ))
                 break
     return violations
+
+
+def _import_detector_module(path: Path):
+    """Import the detector module at ``path`` and return the module object.
+
+    Uses the canonical dotted name (``v2.scanner.detectors.<stem>``) so
+    the import shares state with the rest of the test suite — avoids
+    reimporting under a synthetic name that would create duplicate
+    class objects.
+    """
+    module_name = f"v2.scanner.detectors.{path.stem}"
+    return importlib.import_module(module_name)
+
+
+def _detector_subclasses(module) -> list[type]:
+    """Return every concrete EventDetector subclass defined in ``module``.
+
+    Filters by ``__module__`` equality to skip re-exported imports.
+    """
+    from v2.scanner.detectors.base import EventDetector  # local: avoid import cycle at module load
+    out: list[type] = []
+    for _, obj in inspect.getmembers(module, inspect.isclass):
+        if not issubclass(obj, EventDetector) or obj is EventDetector:
+            continue
+        if obj.__module__ != module.__name__:
+            continue
+        out.append(obj)
+    return out
+
+
+def scan_detector_name_attribute(path: Path) -> list[Violation]:
+    """RULE-6: every detector defines a non-empty, non-'base' ``name``
+    class attribute.
+    """
+    module = _import_detector_module(path)
+    classes = _detector_subclasses(module)
+    violations: list[Violation] = []
+    for cls in classes:
+        name = getattr(cls, "name", None)
+        line = inspect.getsourcelines(cls)[1]
+        if not isinstance(name, str) or not name:
+            violations.append(Violation(
+                rule="RULE-6",
+                line=line,
+                message=f"{cls.__name__}.name is missing or empty",
+            ))
+        elif name == "base":
+            violations.append(Violation(
+                rule="RULE-6",
+                line=line,
+                message=f"{cls.__name__}.name is 'base' — must override the ABC default",
+            ))
+    return violations
+
+
+def collect_all_detector_names() -> dict[str, list[str]]:
+    """Cross-file check: returns a {name -> [class_repr...]} dict for any
+    name shared across two or more detector classes. Empty when unique.
+    """
+    seen: dict[str, list[str]] = {}
+    for path in DETECTOR_FILES:
+        module = _import_detector_module(path)
+        for cls in _detector_subclasses(module):
+            name = getattr(cls, "name", None)
+            if not isinstance(name, str) or not name or name == "base":
+                continue
+            seen.setdefault(name, []).append(f"{path.stem}.{cls.__name__}")
+    return {k: v for k, v in seen.items() if len(v) >= 2}

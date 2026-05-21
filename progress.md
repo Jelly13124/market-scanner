@@ -1,0 +1,1673 @@
+# Progress Log
+
+## Session — 2026-05-21 (Detector invariant test suite landed)
+
+### What shipped
+
+**tests/test_detector_invariants.py** (~106 LoC public test file): 8 invariant rules covering CLAUDE.md's 4 load-bearing detector contracts plus 4 observable best-practice rules, parameterized over all 10 detectors in `v2/scanner/detectors/`. **tests/_detector_lint.py** (~400 LoC private helper): AST visitors and introspection scanners (underscore prefix keeps it out of default discovery). Total: **82 invariant tests, all green**.
+
+### The 8 rules
+
+- **RULE-1** (std floor): `std()` results stored as a divider must go through a floor; raw `std()` used directly as a denominator is a bug (see GEHC z=+55 trillion incident).
+- **RULE-2** (forbidden std fallback): The pattern `float(arr.std()) or 1e-6` is banned — fires only when std is exactly 0.0, misses collapsed-but-nonzero case.
+- **RULE-3** (components dict float-only): Every value stored in a `components` dict must be explicitly wrapped in `float()` — prevents int/numpy-scalar leakage into downstream JSON serialization.
+- **RULE-4** (no client memoization): `detect()` must not memoize a `DataClient` onto `self` — `requests.Session` is not thread-safe; the runner pools clients via `queue.Queue`.
+- **RULE-5** (bare except must log/raise): Any bare `except` (or `except Exception`) block must contain a `logger.warning/error` call or a `raise` — silent swallowing hides bugs.
+- **RULE-6** (detector name unique+non-default): Each detector's `name` class attribute must be set (not the class name default) and must be unique across all detector files.
+- **RULE-7** (direction literal in `{bullish,bearish,neutral}`): Any string literal assigned to a `direction` variable must be one of the three canonical values.
+- **RULE-8** (detect() return type `EventTrigger | None`): The `detect()` method's return annotation must be exactly `EventTrigger | None` — `None` means "no data, exclude ticker"; `EventTrigger(triggered=False)` means "ran cleanly, didn't fire."
+
+### Violations fixed while landing (35+ total)
+
+- **RULE-3**: 30 violations across 6 detectors (`bollinger_squeeze`, `earnings`, `intraday_move`, `news_sentiment`, `obv_divergence`, `volume_anomaly`) — wrapped non-float RHS in `float()`
+- **RULE-5**: 2 violations in `analyst_rating.py` — added `logger.warning()` to two bare except handlers
+- **RULE-1**: 5 violations (4 expected + 1 bonus discovery in `insider.py`) — added `# noqa: std-floor` annotations with reason text explaining why each site is intentional or safe
+
+### Rules with zero violations on first run (trunk already clean)
+
+RULE-2, RULE-4, RULE-6, RULE-7, RULE-8.
+
+### Housekeeping
+
+One housekeeping commit (`9fde81a`) brought 6 untracked detector files into git tracking so subsequent fix commits would have clean diffs.
+
+### Workflow
+
+superpowers `writing-plans` → `subagent-driven-development`. 10 plan tasks, each with implementer + spec reviewer + code quality reviewer (haiku for most, sonnet for the larger ones). Two reviewer-flagged issues addressed: RULE-8 was tightened to require exactly `{EventTrigger, NoneType}` (was permissive); RULE-4 broad scope was kept (rejected reviewer's narrow-scope suggestion since nested-helper assignment still mutates `self`).
+
+### Docs
+
+- Spec: `docs/superpowers/specs/2026-05-21-detector-invariant-tests-design.md`
+- Plan: `docs/superpowers/plans/2026-05-21-detector-invariant-tests.md`
+
+### Why this matters
+
+Prior to today, CLAUDE.md documented 4 detector invariants but enforcement was human review only. Now any new detector that violates any of the 8 rules fails the test suite at commit time. The existing 95-test behavioral suite (`v2/scanner/test_detectors.py`) remains green — no regressions from the noqa annotations, logger additions, or float() wraps.
+
+### Commits
+
+97cd37d → 631d519 (11 commits including housekeeping `9fde81a`)
+
+---
+
+
+## Session — 2026-05-21 (§6 quartile @ 20d + Step 2 quant-ablation A/B kickoff)
+
+Follow-up to 2026-05-20 backtest report. Two open questions:
+1. Is composite_score rank inversion (-2.62% @ 5d) a 5d-noise artifact
+   or a real-window failure? Test: re-run §6 quartile spread at 20d.
+2. Does `quant_signals` actually add value in the agent path? Part 1's
+   scanner-vs-random A/B had quant on BOTH sides; never isolated. Test:
+   re-run full pipeline A/B with quant on vs off, same 3 windows.
+
+### Step 1 — §6 quartile spread at 1d/5d/20d/63d
+
+New script: `scripts/analyze_quartile_by_window.py` — reads
+`backtest_ndx100_30d_no_quant.csv` and `_with_quant.csv`, computes
+bucket means with paired bootstrap CI on the (Rank 1-5 − Rank 16-20)
+spread for every available forward window. Output:
+`outputs/quartile_by_window_2026-05-21.txt`.
+
+Result (Top − Bottom spread, n_top=105, n_bot=86–91):
+
+| Window | no quant | CI                 | with quant | CI               |
+|--------|----------|--------------------|------------|------------------|
+| 1d     | −0.45%   | [−1.27, +0.39]     | −0.66%     | [−1.49, +0.18]   |
+| 5d     | **−2.62%** | [−4.74, **−0.48**] | −1.98%   | [−4.07, +0.21]   |
+| 20d    | **−6.80%** | [−13.72, +0.36]  | −0.65%     | [−7.08, +5.73]   |
+| 63d    | —        | n insufficient     | —          | n insufficient   |
+
+Findings:
+- **20d Top-Bottom does NOT turn positive in either case.** The user's
+  decision rule said: "if 20d transitions positive, ranking is fine, just
+  doesn't work at 5d." We're in the other branch.
+- **no-quant 20d shows monotonic rank inversion** — Rank 16-20 returns
+  +6.13% at n=91 vs Rank 1-5 at −0.67%. Bottom-quintile alpha is the
+  outlier driving the −6.80% spread. CI [−13.72, +0.36] is wide but
+  point estimate is strongly negative.
+- **with-quant 20d (−0.65%) is dilution, not repair.** Pattern goes
+  non-monotonic (Rank 6-10 is the worst at −3.15%), CI [−7.08, +5.73]
+  spans both sides. Quant adds noise that cancels the inversion at the
+  aggregate level rather than fixing the underlying sort.
+- 5d no-quant inversion (−2.62%, CI [−4.74, −0.48]) **excludes 0** — the
+  only statistically significant cell. Composite_score is provably
+  miss-ranking at 5d.
+
+### Step 2 — full pipeline A/B with quant on/off (running in background)
+
+Goal: isolate quant_signals' agent-layer contribution. A=quant on,
+B=quant off, both groups go scanner→11 agents→PM, same days. Mirrors
+Part 1's structure but replaces "random tickers" baseline with
+"event-only scanner" baseline.
+
+Wiring:
+- `v2/pipeline/orchestrator.py`: added `use_quant_signals: bool = True`
+  to `run_pipeline` (default unchanged — prod cron stays at quant on).
+- `scripts/ab_backtest_quant_ablation.py` (new): both groups go through
+  `run_pipeline`, toggling `use_quant_signals` per group.
+- `scripts/ab_quant_ablation_summary.py` (new): reads 3 per-regime CSVs,
+  emits per-regime + combined report with 20d PnL CI, t-test, hit rate,
+  action mix, ticker overlap.
+
+Smoke test (1 day, 2026-04-06, top_n=3, balanced template, deepseek-chat):
+- Group A (quant on): MRVL buy, BKNG short, NFLX short
+- Group B (quant off): MRVL buy, BKNG short, TSLA short
+- Overlap 2/3, confidence varies on overlap (MRVL conf 70 vs 80,
+  BKNG 80 vs 83 — quant context flows through to PM).
+- Wall clock: 520s for 1 day (Group A 305s, Group B 215s). The
+  WITH-quant scan is ~90s slower because of the 5 extra signals.
+- 1-day delta: A's NFLX +$1,218, B's TSLA −$1,667 → A wins +$2,885 in
+  this tiny sample.
+
+Full run (background bash `bn8tuyoun`):
+- UP   2026-04-06 → 04-17 (10 days)
+- DOWN 2026-03-09 → 03-20 (10 days)
+- CHOP 2026-01-12 → 01-23 (10 days)
+- ETA: 4.3 hours wall clock. CSVs land at
+  `outputs/ab_quant_ablation_{up,down,chop}_*.csv` then summary script
+  produces `outputs/ab_quant_ablation_combined_summary.txt`.
+
+### Decision: §6 fix postponed
+
+Per user direction, do not touch composite_score weighting until Step 2
+results in. If Step 2 shows A>B (quant helps in agent path), the rank
+inversion at the scanner-self level is irrelevant — agents read the
+score as one feature among 11, not as a sort key. If Step 2 shows A≈B
+or A<B, then revisit composite weighting (current 60/40 event/quant).
+
+### Files touched
+
+- `v2/pipeline/orchestrator.py` (modified: added `use_quant_signals` param)
+- `scripts/analyze_quartile_by_window.py` (new, ~110 LoC)
+- `scripts/ab_backtest_quant_ablation.py` (new, ~210 LoC)
+- `scripts/ab_quant_ablation_summary.py` (new, ~190 LoC)
+- `outputs/quartile_by_window_2026-05-21.txt` (new)
+- `outputs/ab_quant_ablation_smoke.csv` (new, smoke test data)
+
+
+---
+
+
+## Session — 2026-05-19 (Macro + Sector as proper analyst agents)
+
+User feedback on the earlier macro_context layer: prompt-injection was
+a leaky abstraction — only 3 personas saw the context, PM didn't,
+emails didn't surface it. Refactored macro into a real analyst agent;
+also built sector as a new analyst.
+
+### Macro → `macro_agent`
+
+`src/agents/macro_agent.py` (new) replaces the deleted
+`src/agents/macro_context.py`. Same SPY 20d trend + ^VIX fetch
+(module-level cache keyed on scan_date for cross-ticker dedupe), but
+emits a standard analyst signal — same value per ticker because macro
+is portfolio-level, reasoning explicitly tells the PM so.
+
+Signal mapping (rule-based, no LLM call needed):
+
+  regime=up, vol=normal/low   → bullish (conf scales with trend strength, capped 80)
+  regime=up, vol=high         → neutral (rally on high vol = unstable)
+  regime=down, vol=normal/low → bearish (conf scales with trend, capped 80)
+  regime=down, vol=high       → bearish but lower conf (panic noise)
+  regime=chop                 → neutral conf 20
+  regime=unknown              → neutral conf 0
+
+Smoke for 2026-04-17: SPY +7.6%, VIX 17.5 → bullish conf 76 across all
+test tickers.
+
+### Sector → `sector_agent`
+
+New `src/agents/sector_agent.py`. Per-ticker workflow:
+1. Look up GICS sector via v2 hybrid client's `get_company_facts`.
+2. Map sector to SPDR sector ETF (XLK / XLV / XLF / etc.) — mapping
+   covers both GICS-level labels AND Finnhub's industry-level labels
+   ("Semiconductors" → XLK, "Banking" → XLF, "Pharmaceuticals" → XLV
+   etc.) because Finnhub returns a mix.
+3. Compute 20-trading-day return for both ticker and sector ETF.
+4. Relative strength = ticker_return − etf_return.
+5. Signal: bullish if RS ≥ +3pp, bearish if ≤ −3pp, else neutral.
+
+Caching: per-ticker sector lookups + per-(etf, scan_date) ETF returns
+shared across tickers in the same sector — same ETF fetched once per
+run regardless of how many tickers map to it.
+
+Smoke for 2026-04-17 across 5 tickers: correctly classified NVDA →
+Semiconductors → XLK, JPM → Banking → XLF, XOM → Energy → XLE, JNJ →
+Pharmaceuticals → XLV, AAPL → Technology → XLK. All within ±3pp RS
+(broad-market rally, no significant divergence).
+
+### Registration
+
+Both registered in `src/utils/analysts.py:ANALYST_CONFIG` (order 20 and
+21). Both added to the balanced template — now 11 analysts:
+
+  scanner_signal, macro_signal, sector_signal,
+  warren_buffett, cathie_wood, michael_burry,
+  fundamentals_analyst, technical_analyst,
+  valuation_analyst, sentiment_analyst, growth_analyst
+
+### Cleanup
+
+- Removed the obsolete macro_context prompt-injection from
+  `warren_buffett.py` / `cathie_wood.py` / `michael_burry.py` (3 places
+  each: system message placeholder + prompt.invoke kwarg + import).
+- Removed `macro_context` kwarg from `src/main.py:run_hedge_fund` and
+  both orchestrator paths.
+- Deleted `src/agents/macro_context.py` (no remaining importers).
+
+### Tests
+
+153/153 pass. The orchestrator test stub already accepts (and ignores)
+the unused macro_context kwarg from the previous refactor — still works
+after my removal because the orchestrator stopped passing it.
+
+### Cost impact
+
+Balanced template grew from 9 → 11 analysts. Both new agents are
+rule-based (no LLM call), so the only extra cost per pipeline is 2-3
+HTTP calls (SPY, VIX, one CompanyFacts per ticker) — negligible vs
+$0.10/day LLM spend. Daily cron continues at ~$3/month.
+
+
+---
+
+
+## Session — 2026-05-19 (Persona refusal + macro context layer)
+
+Adapted two ideas from the user's external stock-analysis skill repo
+(github.com/Jelly13124/stock-analyze-skills) into the agent workflow:
+
+### Persona refusal rules — `abstain` as a first-class signal
+
+Buffett / Wood / Burry now have explicit REFUSE conditions in their
+system prompts. When a ticker is outside their framework (e.g. Buffett
+on a pre-revenue biotech, Wood on a regulated utility, Burry on a
+momentum tech), they output `signal="abstain"` instead of forcing a
+fake `neutral` vote.
+
+- `WarrenBuffettSignal.signal`, `CathieWoodSignal.signal`,
+  `MichaelBurrySignal.signal` extended to `Literal["bullish", "bearish",
+  "neutral", "abstain"]`.
+- System prompts gained a top-level "REFUSE TO OPINE" block listing
+  abstention conditions specific to each persona's investing
+  philosophy.
+- `portfolio_manager.py` skips abstain entries when compressing
+  analyst signals (lines 56-69) so the PM's prompt sees a smaller but
+  more conviction-laden roster rather than diluting weight with fake
+  neutrals.
+
+Goal: address the persona-overlap noise observed in A/B W2 where the
+3 personas all "voted" on every ticker even when the framework didn't
+apply. Refusal turns each persona into a discriminating discrete signal
+("I have conviction here" vs silence) rather than a noisy continuous
+score.
+
+### Macro context layer — regime overlay for every persona
+
+New module `src/agents/macro_context.py`:
+- `compute_macro_context(scan_date, provider_factory)` — fetches SPY's
+  trailing 20 trading days via the v2 hybrid client, computes 20d
+  return + annualized vol; fetches ^VIX via yfinance for a vol regime
+  label. Classifies regime: `up` (>+1%), `down` (<-1%), `chop`
+  otherwise. Never raises; returns a degraded shape on any error.
+- `format_macro_context_block(state)` — renders the snapshot as a
+  short prompt-injectable block; returns empty string when state
+  lacks the context so interactive callers see no behaviour change.
+
+Wired into `v2/pipeline/orchestrator.py:run_pipeline()` and
+`run_agents_only()` — computed once per pipeline, passed through
+`run_hedge_fund(macro_context=...)` into
+`state['data']['macro_context']`. Persona prompts (Buffett / Wood /
+Burry) read it and prepend a "TODAY'S MARKET CONTEXT" line.
+
+Live smoke for 2026-04-17:
+- SPY 20d = +7.6% → regime "up"
+- VIX 17.5 → vol regime "normal"
+- Single-line summary: `SPY 20d trend = up (+7.6%) | VIX = 17.5 (normal)`
+
+Goal: address the W2 failure mode where every persona ignored the
+market regime and the agents collectively pushed into SHORT-heavy
+allocation during a recovery week. Each persona now sees the regime
+explicitly and can weigh it (the prompt says "do NOT override your
+framework if the ticker setup is clear" — macro is context not
+override).
+
+### Files
+
+**New**:
+- `src/agents/macro_context.py` (~150 lines)
+
+**Modified**:
+- `src/agents/warren_buffett.py` — signal schema + system prompt
+  REFUSE block + macro_context placeholder in prompt invocation
+- `src/agents/cathie_wood.py` — same
+- `src/agents/michael_burry.py` — same
+- `src/agents/portfolio_manager.py` — skip abstain in signal compression
+- `src/main.py:run_hedge_fund` — accept `macro_context` kwarg, inject
+  into state
+- `v2/pipeline/orchestrator.py` — compute + pass macro_context; new
+  `run_agents_only` kwarg
+- `v2/pipeline/test_orchestrator.py` — `_fake_hedge_fund` stub accepts
+  macro_context kwarg
+
+### Verification
+
+`pytest src/agents/test_scanner_signal.py v2/pipeline/
+tests/test_pipeline_repository.py tests/test_pipeline_routes.py
+tests/test_scheduler_service.py tests/notifications/ -q` → **153/153
+passed**.
+
+Macro layer smoke confirmed (SPY + VIX fetch returns sane values for
+2026-04-17). Persona refusal end-to-end validation will happen at the
+next daily cron fire (16:30 ET) — the changes are live in production
+since the schedule is already enabled from this morning's ship.
+
+### Caveats not addressed
+
+- 5 other persona agents (Druckenmiller, Fisher, Graham, Lynch, Munger)
+  not yet in the balanced template still have the old 3-way schema. If
+  added to the template later, mirror the same pattern.
+- `risk_management_agent` still emits its position-limit-style payload
+  with no real "signal" — PM filters it by name prefix
+  (`startswith("risk_management_agent")`) unchanged.
+- Macro context fetch adds ~1s SPY call + ~2s VIX call to every
+  pipeline run. Acceptable for the daily cron; would be optimizable
+  later via per-day cache.
+
+
+---
+
+
+## Session — 2026-05-19 (A/B validation + ship to paper-trade)
+
+### What we did
+
+Validated the scanner→agent pipeline via **scanner-vs-random A/B
+backtests**, then made 2 lossless improvements and re-ran. Mixed
+stability results; chose to ship to **paper-trade mode** (cron enabled,
+emails out, no real trades) for 30 days of live observation rather than
+shipping fully or shelving.
+
+### The A/B framework
+
+The "right" evaluation of the scanner per `project-scanner-design-intent`
+isn't "do scanner picks generate alpha" but "**do agent decisions on
+scanner-flagged tickers beat agent decisions on randomly-sampled tickers,
+same agents, same day**?"
+
+Implementation:
+- `scripts/ab_backtest.py` — driver: for each trading day, runs
+  `run_pipeline` (group A: scanner top-N) AND `run_agents_only` (group B:
+  random N, empty scanner_context); each PM decision gets forward 5d/20d
+  realized PnL.
+- `scripts/ab_backtest_summary.py` — aggregator: mean PnL per group with
+  bootstrap CI, Welch t-test A vs B, hit rate (PnL>0) with Wilson CI,
+  per-action and per-day breakdowns.
+- Added `v2/pipeline/orchestrator.py:run_agents_only()` so group B can
+  reuse the same agent stack without going through the scanner.
+
+### Baseline (2026-04-06 → 2026-04-17, 10 trading days, top-3)
+
+- 5d: A $194 vs B -$204; A-B = +$398 (p=0.11); hit gap 19.7pp
+- 20d: A $7 vs B -$606; A-B = +$613 (p=0.35); hit gap 20pp
+- Cumulative gap: 5d +$11k, 20d +$17k
+- A's BUYs strongly outperformed (+$1,884/decision at 20d vs B BUY
+  -$1,695) — the headline: scanner pre-filter reliably surfaces
+  tickers the agents can BUY profitably.
+
+### Pre-ship improvements
+
+**Task 1 — strip direction from scanner_signal_agent**: bridge agent's
+`signal=direction, confidence=composite_score` was contaminating
+downstream personas with a 42%-accurate direction guess. Changed to
+`signal="neutral"`, prompt made direction-free, reasoning rewritten
+to describe events without buy/sell suggestion. 19/19 tests pass.
+
+**Task 2 — insider asymmetric thresholds**: **no code change** — the
+detector already implements buy threshold 2 / sell threshold 4, buy
+weight 1.3× / sell weight 0.7× per Cohen-Malloy-Pomorski. User's
+proposed spec matched current state.
+
+**Task 3 — wire 5 quant signals into orchestrator**: orchestrator was
+calling `run_scan` without `quant_signals`, so composite_score =
+event_score only (quant_weight=0.40 effectively wasted). Wired
+`quant_signals=[cls() for cls in ALL_SIGNALS]` so the 60/40 event/quant
+split is now active.
+
+### Re-run A/B window 1 (post-changes)
+
+| Metric | Baseline | V2 | Δ |
+|---|---|---|---|
+| 5d PnL gap | +$398 | **+$453** | +$55 |
+| 5d p-value | 0.11 | **0.08** | better |
+| 5d hit gap | 19.7pp | 9.7pp | -10pp |
+| 20d PnL gap | +$613 | **+$917** | +$304 |
+| 20d p-value | 0.35 | **0.19** | better |
+| 20d hit gap | 20pp | 12.6pp | -7.4pp |
+| Cum 20d gap | +$17k | **+$26k** | +$9k |
+
+Money-weighted metrics improved substantially. Hit rate gap fell
+slightly but mean PnL per win grew (fewer wins, bigger wins). Action
+distribution healthier: A's SHORTs 16→12, BUYs 11→13, HOLDs 3→5 —
+less bearish bias after direction strip.
+
+### Window 2 stability check (2026-03-19 → 2026-03-25, 5 trading days)
+
+Scope reduced from 10d → 5d because EODHD got rate-limited during the
+day (cumulative throttling from earlier backtests; day 1 took 34 min
+vs typical 4 min).
+
+| Metric | V2 W1 (10d) | **V2 W2 (5d)** |
+|---|---|---|
+| 5d PnL gap | +$453 | **-$245 ❌** |
+| 5d p-value | 0.08 | 0.44 |
+| 5d hit gap | +10pp | **-20pp ❌** |
+| 20d PnL gap | +$917 | **+$620 ✅** |
+| 20d hit gap | +13pp | **+27pp ✅** |
+| Cum 20d gap | +$26k | **+$9k ✅** |
+
+**5d horizon went the wrong way in W2; 20d stayed consistently
+positive**. With n=15 per group and p=0.44, the 5d "reversal" is well
+inside CI overlap — can't reject H0=no-effect. Hypothesis: W2 was a
+recovery week where shorting profited generically (B's 8 shorts averaged
++$419) but scanner's event-supported tickers were short-resistant
+(A's 8 shorts averaged -$465). Both groups got pushed into SHORT-heavy
+allocation by the market environment.
+
+### Ship decision (paper-trade mode)
+
+Strict ship criteria (hit gap ≥ 10pp AND PnL gap ≥ $300 AND p < 0.10,
+both windows) **not met** — W2 5d fails all three. But 20d signal is
+consistent across BOTH windows.
+
+Chose **option C — paper-trade ship**:
+- `PATCH /pipeline/schedule {enabled: true, model_name: "deepseek-chat",
+  model_provider: "DeepSeek"}` — cron fires 16:30 ET weekdays.
+- Email subscription (id=1, ruizheyuan3487@gmail.com) was already on.
+- Decisions persist to `pipeline_runs`; emails go to inbox with
+  per-ticker PM action + valuation-conflict warnings + LLM gist.
+- **No real trades** — system never had execution. User tracks emails
+  as paper-trade signals for 30 days.
+
+Decision point at +30 days: if A>B persists across more windows, build
+execution layer; if not, investigate 5d-horizon weakness with
+regime-aware logic or kill the project.
+
+### Files
+
+**New**:
+- `scripts/ab_backtest.py` (driver)
+- `scripts/ab_backtest_summary.py` (aggregator)
+- `outputs/ab_backtest_2026-04-06_2026-04-17.csv` (baseline)
+- `outputs/ab_backtest_2026-04-06_2026-04-17_v2.csv` (v2 W1)
+- `outputs/ab_backtest_2026-03-19_2026-03-25_v2.csv` (v2 W2)
+- Three matching `*_summary.txt` files
+- `outputs/ab_smoke_1day.csv` (smoke)
+
+**Modified**:
+- `src/agents/scanner_signal.py` — direction-strip + prompt rewrite
+- `src/agents/test_scanner_signal.py` — updated 5 tests
+- `v2/pipeline/orchestrator.py` — `run_agents_only()` helper +
+  `quant_signals=[cls() for cls in ALL_SIGNALS]` wired into `run_scan`
+- Memory `project_scanner_design_intent.md` — A/B-vs-random framing
+
+
+---
+
+
+## Session — 2026-05-19 (Email conflict highlight + analyze.py rigor + LLM gist + PV audit)
+
+Bundle of 4 tasks on top of the notification subsystem from earlier:
+email-side polish (conflict banner + LLM gist), statistical rigor for
+backtest analyze (BH FDR), and a sample-bounded directional-sign audit
+for the PV detector.
+
+**Final regression**: 367 passed + 3 skipped (live-network gated) across
+v2/scanner, v2/pipeline, v2/backtesting, v2/data, and all notification
++ pipeline backend test suites.
+
+### Task 5 — LLM "Why this pick" gist per ticker (✅)
+
+Each email now has a ~60-char Chinese take under the PM action header,
+generated by the same LLM that ran the pipeline.
+
+**New module** `app/backend/services/notifications/gist.py`:
+- `generate_gists(run, *, model_name, model_provider) → dict[ticker, gist]`
+  iterates `agent_decisions`, builds a per-ticker prompt (PM action +
+  reasoning + scanner triggers + top-2 analyst signals by confidence),
+  calls `get_model(...).with_structured_output(_GistResponse,
+  method='json_mode').invoke(prompt)`. Returns only successful gists —
+  per-ticker exceptions logged + swallowed so one bad call doesn't
+  zero out the whole email.
+- Bypasses `src.utils.llm.call_llm` (which expects a full AgentState).
+  Calls `get_model` directly with `api_keys=None` so the LLM reads its
+  own keys from `.env`.
+- Output trimmed at 80 chars (LLM tends to over-deliver) with `…` suffix
+  when truncated.
+
+**Dispatcher integration** (`dispatcher.py`):
+- New `_try_gist(run_snapshot, model_name, model_provider) → {}`
+  swallows top-level errors (no model configured / unexpected raise)
+  and returns `{}` so render proceeds without gists.
+- `dispatch(run_id)` and `dispatch_to(sub_id, run_id)` both:
+  1. Read `pipeline_schedule.model_name` + `.model_provider` (cron uses
+     same model the user picked for the daily pipeline).
+  2. Generate gists **once per dispatch** (not per sub) and attach to
+     `run_snapshot.gist_map`.
+  3. Every handler in the loop sees the same precomputed gists.
+
+**Render integration** (`render.py`):
+- `render_pipeline_html(run, *, gist_map=None)` — new kwarg. When
+  `gist_map[ticker]` present, renders a yellow-tinted row (amber-100 bg
+  `#fef3c7`, amber-900 fg) labeled `💡 Take:` between the conflict
+  banner and PM reasoning. Absent tickers render normally — partial
+  failure shows up as missing-row, not a broken email.
+
+**EmailHandler / WebhookHandler**:
+- EmailHandler reads `getattr(run, "gist_map", None)` and passes to
+  `render_pipeline_html`.
+- Webhook payload `_build_payload` includes `gist_map: dict` so
+  Slack/Discord/Zapier templates downstream can use the one-line take
+  instead of the full PM reasoning.
+
+**Tests**:
+- `tests/notifications/test_gist.py` (10) — mocks `get_model` to inject
+  per-ticker behaviors. Covers: empty run / happy multi-ticker /
+  per-ticker exception isolation / empty gist drop / overlong truncate /
+  `get_model` returns None / `_top_analyst_signals` ordering by
+  confidence (numeric beats non-numeric).
+- `tests/notifications/test_render.py:TestGistInjection` (4) —
+  rendering with map / without map / partial map / HTML escape.
+
+**Total notification tests**: 67 passed. **Scheduler + routes**: 36
+passed (dispatcher's new schedule-read + gist-attach doesn't break the
+existing /test path because PipelineScheduleRepository falls back to
+None → `_try_gist` returns `{}` → render proceeds unmodified).
+
+
+### Task 2 — Benjamini-Hochberg FDR in `analyze.py §2` (✅)
+
+`report_per_detector` now reports `p_raw` + `p_fdr` + `sig` columns
+alongside the existing bootstrap CI. Three new helpers:
+- `_raw_pvalue(values)` — two-sided one-sample t-test (H0: mean=0)
+  via `scipy.stats.ttest_1samp`. Returns None for n<2, all-non-finite,
+  or zero-variance samples (uses 1e-12 tolerance because float
+  subtraction on identical inputs gives ~1e-17 std, not exact zero).
+- `_bh_adjust(p_values)` — wraps `scipy.stats.false_discovery_control`
+  (scipy ≥ 1.11). Preserves input order + Nones so cells where the
+  raw p couldn't be computed still slot back into the right position.
+- `FDR_ALPHA = 0.05` module-level constant matches the bootstrap CI's
+  95% level so both rigor knobs report at the same significance.
+
+Smoke against `backtest_ndx100_90d.csv`: two cells survive FDR @ 0.05:
+- earnings_event 20d → p_raw=0.0013 / p_fdr=0.0177 (*)
+- earnings_event 63d → p_raw=0.0002 / p_fdr=0.0058 (*)
+
+Both are NEGATIVE dir-adjusted alpha (-1.66% / -3.37%), confirming the
+"detectors are attention screeners, not standalone alpha" framing in
+project memory: even when statistically significant after multiple-
+comparison correction, the directional sign is opposite to the
+detector's `direction` field. The agent layer is meant to invert /
+contextualize these.
+
+10 new tests in `test_analyze.py:TestRawPvalue` + `TestBHAdjust`
+(empty / single value / zero-variance / strong signal / noise /
+order preservation / monotonicity / Nones-in-place / single-test
+identity). 30/30 analyze tests pass.
+
+
+### Task 1 — `price_volume_anomaly` direction sign audit (✅, no flip)
+
+`scripts/audit_pv_direction.py` reads `backtest_ndx100_90d.csv`, filters
+to PV-triggered rows in the last 60 trading days, computes PV's own
+direction (from `today_return` sign in
+`triggered_components_json.price_volume_anomaly`), then counts how
+often the forward 5-day alpha sign is OPPOSITE.
+
+Conservative flip gate (per user request — original spec was just
+"≥60% reversed → auto flip"; I added an n≥100 hard floor + a one-sided
+binomial test against H0=50% before recommending any code change):
+- n ≥ 100 directional samples in window
+- reversal_rate ≥ 60%
+- binomial test p < 0.05
+
+Result on this CSV / window: **n=47, reversal=48.9%, p=0.6146**. All
+three gates fail. **No flip recommended**, no code touched.
+
+Diagnostic at `outputs/pv_direction_audit.txt`. Re-run any time with
+`python scripts/audit_pv_direction.py [--csv PATH] [--days N]` to
+re-evaluate.
+
+
+### Task 4 — Email valuation-conflict warning bar (✅)
+
+`render.py` now flags when the PM took a directional position
+(BUY/SHORT) that contradicts the valuation_analyst's signal.
+
+Mechanism:
+- New `_PM_DIRECTION` dict maps `{"buy": "bullish", "short": "bearish"}`.
+  HOLD/SELL/COVER have no directional intent worth conflicting against
+  valuation.
+- New `_valuation_conflict(decision, analyst_signals, ticker) -> str | None`
+  looks up `analyst_signals["valuation_analyst_agent"][ticker].signal`.
+  Returns a Chinese warning string when PM direction ≠ valuation
+  direction (and valuation isn't neutral / missing).
+- Per-ticker block: warning bar inserted as a separate `<tr>` between
+  the action header and the PM reasoning, red-100 bg (`#fee2e2`) /
+  red-800 fg matching the SELL/SHORT pill palette so the eye locates
+  it instantly. Gmail-safe — inline styles only.
+
+7 new tests in `tests/notifications/test_render.py:TestValuationConflict`
+(buy vs bearish / short vs bullish / matching directions / neutral /
+HOLD / missing valuation signal). 20/20 render tests pass.
+
+
+---
+
+
+## Session — 2026-05-19 (Delete MultiHorizonBreakoutDetector)
+
+### Why deleted
+
+The event-style multi-horizon breakout detector (`breakout_52w`) overlapped
+with `v2/signals/technical.py`, which already produces 52-week-high /
+momentum signals from the same underlying price data. Keeping both
+produced duplicate alpha attribution when the scanner→agent bridge
+serialized triggered_components — the technical signal said "+momentum
++breakout", and the event detector duplicated the breakout dimension.
+
+### What changed
+
+**Deleted**:
+- `v2/scanner/detectors/breakout_multi_horizon.py` (entire file).
+- `v2/scanner/test_detectors.py` — `TestMultiHorizonBreakoutDetector`
+  class + `_flat_history` / `_multi_regime_history` helpers (only used by
+  that class).
+- 4 registration sites in `v2/scanner/detectors/__init__.py` (import,
+  `ALL_DETECTORS` tuple, `DETECTOR_METADATA` entry, `__all__` export).
+- BREAK label entries in `v2/scanner/__main__.py:61` and
+  `app/frontend/src/components/panels/scanner/watchlist-table.tsx:51`.
+
+**Adjusted test fixtures** to reference still-extant detectors:
+- `v2/backtesting/test_engine.py:270` — live smoke test now uses
+  `["intraday_move", "bollinger_squeeze"]` instead of breakout_52w.
+- `v2/pipeline/test_orchestrator.py:49,62` — orchestrator's "drop
+  untriggered triggers" test now uses bollinger_squeeze as the fired=False
+  fixture.
+- `v2/backtesting/cli.py:91` — `--weights` example help text updated.
+
+**Kept (intentional)**:
+- `v2/backtesting/analyze.py:_break_horizons_for()` +
+  `report_break_horizon_split()` — the repo root has 3
+  `backtest_ndx100_*.csv` files containing historical `breakout_52w`
+  trigger entries; these analysis functions still parse those CSVs
+  cleanly and produce empty buckets on new backtests. Removing them
+  would force regenerating the historical CSVs.
+- `v2/backtesting/test_analyze.py:TestBreakHorizons` — tests the parser
+  not the detector existence; still passes.
+- `v2/scanner/detectors/bollinger_squeeze.py:20` historical comment
+  ("same pattern as multi-horizon breakout's first-day rule") — design
+  context, still valid.
+
+### DB / config back-compat
+
+Checked existing ScannerConfig DB rows: only 1 row exists and it does
+NOT reference `breakout_52w` in its weights JSON, so no LEGACY alias
+needed in `LEGACY_DETECTOR_ALIASES`. Old `pipeline_runs.watchlist_json`
+rows contain historical breakout_52w triggers in the `triggers` list;
+those are read-only display data and won't fail validation.
+
+### Verification
+
+`pytest v2/scanner/test_detectors.py v2/pipeline/ v2/backtesting/{test_analyze,test_engine}.py tests/ -q`
+→ **287 passed + 1 skipped** (live-network gated). No detector
+registration error, no orphan import.
+
+
+---
+
+
+## Session — 2026-05-18/19 (Pipeline notifications — Resend email + generic webhooks)
+
+### Why
+
+The daily scanner→agent pipeline ran at 16:30 ET and persisted results
+to `pipeline_runs` but stopped there. User had to log into the UI to
+see what the agents decided. Wanted an HTML email auto-delivered after
+each run, plus a generic webhook subscription system so other consumers
+(Slack/Discord/personal automations) can subscribe to the same event
+without adding code paths.
+
+### Architecture
+
+One `NotificationSubscription` table with a `channel` discriminator
+(`'email' | 'webhook'`). Pipeline completion → `NotificationDispatcher`
+loads enabled subs matching the event_type, picks handler per channel,
+fans out sequentially, records each attempt to a `NotificationDelivery`
+audit log. Pipeline cron is decoupled — a failed Resend call is logged
+but never raised back to the scheduler.
+
+### Phase 1 — Models + repository (✅)
+
+- `NotificationSubscription`: id, enabled, event_type
+  (`'pipeline.completed'` default), channel, target (email or HTTPS URL),
+  label, auth_header (webhook-only), timestamps.
+- `NotificationDelivery`: id, FK subscription_id, run_id, status
+  (`ok|error`), http_code, error_text (capped at 4000 chars), latency_ms,
+  attempted_at.
+- `app/backend/repositories/notification_repository.py` —
+  `SubscriptionRepository` (CRUD + `list_enabled_for_event`) +
+  `DeliveryRepository` (append-only `record` + `list_recent`).
+- Pydantic schemas in `notification_schemas.py` — secrets like
+  `auth_header` excluded from responses (use `has_auth_header: bool`
+  flag instead).
+- 20 tests in `tests/test_notification_repository.py`.
+
+### Phase 2 — HTML renderer + Resend handler (✅)
+
+- `app/backend/services/notifications/render.py`:
+  - `render_pipeline_html(run)` — inline-styled (Gmail strips
+    `<style>` blocks), per-ticker section with PM ActionPill colors
+    matching the frontend, collapsible per-analyst signal grid.
+    Truncates long reasoning at 220-320 chars to stay under Gmail's
+    102KB clip threshold.
+  - `render_pipeline_text(run)` — plain-text alt-part for clients
+    that prefer text or for lock-screen previews.
+- `EmailHandler` calls Resend's `POST /emails` via raw `httpx` (no
+  `resend` SDK dep). Reads `RESEND_API_KEY` + `RESEND_FROM_EMAIL` from
+  env (default `onboarding@resend.dev` — sandbox sender that only
+  delivers to the Resend account email until a domain is verified).
+  Never raises — returns a `dict` result the dispatcher records.
+- 23 tests (HTML snapshot, text fallback, mocked httpx for Resend
+  success / 4xx / 5xx / timeout).
+
+### Phase 3 — Webhook handler with SSRF guard (✅)
+
+- `WebhookHandler.send`: `httpx.post(target, json=payload,
+  headers={Authorization: subscription.auth_header})` with 10s timeout,
+  1 retry on 5xx (2s sleep), no retry on 4xx.
+- Payload mirrors `PipelineRunDetail` so consumers see the same JSON
+  shape the frontend gets from `GET /pipeline/runs/{id}`.
+- **SSRF guard**: rejects RFC1918 / loopback / link-local addresses
+  unless `NOTIFICATIONS_ALLOW_LOCAL=1` env opt-in. Always rejects
+  non-http(s) schemes (file://, gopher://, …) regardless. Hostname
+  literals get resolved via `socket.getaddrinfo` to catch
+  `localhost.attacker.com → 127.0.0.1`.
+- 13 tests (success/auth header forwarding/retry logic/timeout/SSRF
+  rejection/allow_local override).
+
+### Phase 4 — Dispatcher + scheduler integration (✅)
+
+- `NotificationDispatcher(session_factory)`:
+  - `dispatch(run_id, event_type='pipeline.completed')` — loads enabled
+    subs for event, snapshots them as detached objects (don't hold the
+    session open during slow HTTP), dispatches sequentially, records
+    each attempt in its own short-lived session.
+  - `dispatch_to(subscription_id, run_id=None)` — one-off send to a
+    single sub regardless of enabled flag (powers the `/test` route);
+    falls back to latest PipelineRun, or synthetic DEMO run when no
+    real runs exist yet.
+  - Handler exceptions caught + recorded as `status='error'` deliveries
+    (handlers shouldn't raise but defend the cron anyway).
+- `scheduler_service.py:_run_pipeline_job` — after `mark_complete()`,
+  calls `NotificationDispatcher.dispatch(run_id=run_id)` wrapped in
+  try/except so a dispatcher-init crash never kills the daily cron.
+- 10 tests (fan-out / disabled filtering / handler exception / unknown
+  channel / dispatch_to with None run_id / synthetic-run fallback).
+
+### Phase 5 — REST routes + minimal UI (✅)
+
+Routes (`app/backend/routes/notifications.py`):
+- `GET/POST /notifications/subscriptions` — list/create.
+- `GET/PATCH/DELETE /notifications/subscriptions/{id}` — single CRUD.
+- `POST /notifications/subscriptions/{id}/test` — fires a sample send
+  (uses latest real run or synthetic DEMO); returns the delivery row
+  inline. Works even on disabled subs so users can validate config
+  before flipping the switch.
+- `GET /notifications/subscriptions/{id}/deliveries?limit=20` — recent
+  attempts for debugging.
+
+Channel-specific validation in route layer: email must contain `@`;
+webhook must be http/https with a hostname; auth_header only allowed on
+webhook channel. 16 route tests in `tests/test_notification_routes.py`.
+
+Frontend (`app/frontend/src/...`):
+- `types/notification.ts` — TS types mirroring Pydantic.
+- `services/notification-service.ts` — typed fetch wrappers (list,
+  create, update, remove, sendTest, listDeliveries).
+- `components/panels/scanner/notification-settings.tsx` — collapsible
+  panel under `AgentRunsList` in `scanner-panel.tsx`. Lists subs with
+  per-row enable toggle / test button / delete; "Add" dialog has
+  channel radios (Email/Webhook) and conditional auth-header field.
+
+### Phase 6 — Live Resend smoke (✅)
+
+User registered Resend with `ruizheyuan3487@gmail.com` and supplied an
+API key. Added to `.env`, restarted backend. `POST
+/notifications/subscriptions/1/test` returned `status=ok http_code=200
+latency=1122ms`. User confirmed the HTML email arrived in the inbox,
+rendered correctly with action pills + per-analyst signals from the
+latest pipeline run (the dispatcher's "use latest real run" path
+fabricated a real-looking sample without needing a fresh pipeline).
+
+### Sandbox limitation (documented)
+
+Without a verified sending domain, Resend's `onboarding@resend.dev`
+sandbox sender only delivers to the email registered on the Resend
+account. To send to other recipients you must verify a domain in the
+Resend dashboard and update `RESEND_FROM_EMAIL`. Documented in
+`.env.example` and in the AddSubscription dialog's helper text.
+
+### Files
+
+**New (backend)**:
+`app/backend/services/notifications/{__init__,render,email_handler,webhook_handler,dispatcher}.py`,
+`app/backend/repositories/notification_repository.py`,
+`app/backend/models/notification_schemas.py`,
+`app/backend/routes/notifications.py`,
+`tests/test_notification_repository.py`, `tests/test_notification_routes.py`,
+`tests/notifications/{test_render,test_email_handler,test_webhook_handler,test_dispatcher}.py`.
+
+**New (frontend)**:
+`app/frontend/src/types/notification.ts`,
+`app/frontend/src/services/notification-service.ts`,
+`app/frontend/src/components/panels/scanner/notification-settings.tsx`.
+
+**Modified**:
+`app/backend/database/models.py` (+2 tables),
+`app/backend/services/scheduler_service.py` (dispatcher call after
+mark_complete), `app/backend/routes/__init__.py` (router include),
+`app/frontend/src/components/panels/scanner/scanner-panel.tsx`
+(component mount), `.env.example` (Resend vars).
+
+### Verification
+
+`pytest tests/{test_notification_repository,test_notification_routes,test_pipeline_repository,test_pipeline_routes,test_scheduler_service}.py tests/notifications/ -q`
+→ **127 passed**. Frontend `tsc --noEmit` — zero errors in the new
+notification-*.{ts,tsx} files (pre-existing TS errors in
+sidebar.tsx/Flow.tsx/layout.tsx unchanged).
+
+
+---
+
+
+## Session — 2026-05-18 (Data-quality fixes — 4 silent bugs in agent layer)
+
+After the smoke test from the prior session produced suspiciously
+uniform "HOLD" decisions, inspection of the 20-ticker output revealed
+4 bugs causing agents to either run on wrong data or produce
+mathematically nonsensical signals.
+
+### Fix #1 — Finnhub percentage scale (most damaging)
+
+`v2/data/finnhub_client.py:get_financial_metrics` returned Finnhub's
+percentage-form numbers (45 = 45%) directly into `FinancialMetrics`
+fields, but v1 agents universally expect decimal form (0.45):
+- `fundamentals_analyst` formats with `f"{value:.2%}"` → 14.32 ROE
+  displayed as **1432%**.
+- Every threshold check (`return_on_equity > 0.15` in warren_buffett,
+  cathie_wood, etc.) was trivially satisfied (`14.32 > 0.15` always
+  True) → every company appeared "highly profitable".
+
+**Fix**: added `scale=0.01` to `_safe_float()` calls for the 7
+percentage-form fields (`roeTTM`, `roaTTM`, `grossMarginTTM`,
+`operatingMarginTTM`, `netProfitMarginTTM`, `revenueGrowthTTMYoy`,
+`epsGrowthTTMYoy`). Updated `v2/data/test_finnhub_client.py` mock to
+use real Finnhub wire format (45 not 0.45).
+
+### Fix #2 — Orchestrator price-history window too short
+
+`v2/pipeline/orchestrator.py` defaulted `start_date = scan_date - 90
+days`. `technical_analyst.py:248` uses `returns.rolling(126).sum()` for
+`momentum_6m` — 90 calendar days ≈ 63 trading days, so the rolling
+window was always NaN → `safe_float(NaN) = 0`. Hurst exponent
+(`rolling(126)` similar) was also stuck at ~0 for every ticker.
+
+**Fix**: changed default to `scan_date - 250 days` (~180 trading days).
+Updated the orchestrator test that hard-coded the date.
+
+### Fix #3 — Frontend `conf undefined` render
+
+`risk_management_agent` returns position-size dict, no `confidence`
+field. `agent-run-detail.tsx` rendered `conf {sig.confidence}` →
+literal "conf undefined" string when confidence absent.
+
+**Fix**: gate the conf label on `typeof sig.confidence === 'number'`;
+render empty string otherwise.
+
+### Fix #4 — Valuation gap cap for capex-heavy companies
+
+`valuation_analyst` aggregates DCF + owner_earnings + RIM via weighted
+gaps. On capex-intensive cos (CHTR observed: D&A >> capex assumption
+fails) the owner_earnings formula
+`(NI + D&A - capex - ΔWC) × multiplier` inflated to $169B vs $19B
+market cap — gap of +769%. With 35% weight that single broken method
+dominated the aggregate.
+
+**Fix**: cap each method's `gap` at ±2.0 (200% over/under) before
+weighting. Documented inline with the owner_earnings failure mode.
+
+### Verification
+
+Restarted backend, re-ran the same 3-ticker × balanced template
+pipeline that previously produced confused outputs:
+- **REGN**: BUY qty 25 conf 75 (unchanged outcome, but reasoning now
+  based on real percentages — ROE 14.32% not 1432%).
+- **CTSH**: BUY qty 301 conf 82 (was conf 90 — fundamentals_analyst no
+  longer thinks 1479% ROE means "super-profitable").
+- **DXCM**: HOLD qty 0 (was **SHORT qty 241 conf 85** — momentum_6m
+  flipped from 0 to +0.115, PM saw mixed signals and stayed flat
+  instead of unanimous-bearish on broken-momentum data).
+
+124/124 pre-existing tests still pass. The Finnhub test was updated to
+assert decimal output from percentage input.
+
+
+---
+
+
+## Session — 2026-05-18 (Scanner→Agent bridge + Plan B api.py adapter)
+
+### Why the bridge
+
+Two systems (`v2/scanner` + `src/agents` LangGraph) were complete and
+working independently but had never been wired together. The scanner's
+detector context (`triggered_detectors`, `severity_z`, `direction`,
+`components`) — the most valuable thing it produces — was thrown away
+at the boundary. Wanted both an interactive UI button ("Analyze
+selected with agents") and a daily 16:30 ET cron that auto-runs scanner
+→ agents → persists decisions.
+
+Full design spec: `docs/superpowers/specs/2026-05-18-scanner-agent-bridge-design.md`.
+
+### Phase 1 — `ScannerSignalAgent` (✅)
+
+New `src/agents/scanner_signal.py` — hybrid rule+LLM analyst that reads
+`state["data"]["scanner_context"][ticker]`. Rule-based: signal =
+`direction`, confidence = `composite_score`. LLM generates reasoning
+prompt with top-4 abs-value numeric components. Falls back to
+deterministic string on LLM failure. Registered in
+`src/utils/analysts.py:ANALYST_CONFIG`. 19 tests.
+
+### Phase 2 — Pipeline orchestrator + templates (✅)
+
+`v2/pipeline/{templates,orchestrator}.py`:
+- 4 named rosters (balanced/value/growth/quick) all auto-prepend
+  `scanner_signal` first. `resolve_analysts(template, custom)`
+  validates names against `ANALYST_CONFIG`.
+- `run_pipeline(**kw)` glues `run_scan` → scanner_context dict →
+  `run_hedge_fund(scanner_context=...)`. Returns `PipelineResult`
+  dataclass with watchlist + agent_decisions + analyst_signals +
+  duration. Test injection seams for `run_scan_fn` /
+  `run_hedge_fund_fn` / `provider_factory`. 22 tests.
+
+### Phase 3 — Persistence + REST (✅)
+
+- `PipelineRun` table (UUID hex PK so the route can return run_id
+  before the BackgroundTask inserts) + `PipelineSchedule` singleton
+  config row (id=1, opt-in `enabled` flag default OFF).
+- Alembic migration `b3d8f1a2c9e4` (idempotent seed at startup too
+  since alembic isn't installed in user's anaconda env).
+- `PipelineRunRepository` (create_pending / mark_running /
+  mark_complete / mark_error / list_runs filtered) +
+  `PipelineScheduleRepository` (get singleton / partial update).
+- `app/backend/routes/pipeline.py` — 6 endpoints. `POST /pipeline/run`
+  uses FastAPI BackgroundTasks (no new queue dep) — inserts PENDING,
+  flips to RUNNING/COMPLETE/ERROR in the worker. 25 tests.
+
+### Phase 4 — Daily scheduler job (✅)
+
+`scheduler_service.py` registers `daily-pipeline` cron
+(`30 16 * * 1-5` America/New_York). Job reads `pipeline_schedule`
+singleton at fire-time → skips if disabled / template unknown →
+creates pending row → calls orchestrator → marks complete/error.
+Misfire grace 10 min. Hot-toggle via UI takes effect next firing
+without restart. 5 new tests.
+
+### Phase 5 — Frontend wiring (✅)
+
+`AnalyzeButton` toolbar action (next to scanner header) opens template
+picker dialog with rough LLM cost estimate. Submits via
+`pipeline-service.triggerRun`, navigates to `AgentRunDetail` dialog
+which polls `getRun(id)` every 2s until COMPLETE/ERROR. Per-ticker
+result card renders PM ActionPill + grid of per-analyst DirectionPills
++ reasoning. `AgentRunsList` (history panel under watchlist) → click row
+→ same detail dialog.
+
+### Plan B — `src/tools/api.py` adapter rewrite
+
+Smoke test on 20-ticker balanced pipeline produced HOLD on ALL tickers.
+Root cause: all v1 agents (`sentiment`, `fundamentals`, `valuation`,
+`warren_buffett`, `cathie_wood`, `michael_burry`, `technicals`,
+`risk_management`) called `src/tools/api.py` which hit Financial
+Datasets API → 402 Payment Required → empty data → "insufficient data"
+responses. Only `scanner_signal` worked (used state, not network).
+
+**Plan B**: rewrite `src/tools/api.py` internals to delegate to the v2
+hybrid client (EODHD + Finnhub + yfinance — same source-of-truth the
+scanner uses), keeping every public function's signature + return type
+identical so the 19 agent files don't need touching.
+
+**What landed**:
+- `src/tools/api.py` fully rewritten. Module-level thread-safe
+  singleton `_v2_client_cache` via `_get_v2_client()`. 9 functions:
+  get_prices, get_financial_metrics, search_line_items (delegates to
+  new module), get_insider_trades, get_company_news, get_market_cap,
+  prices_to_df, get_price_data. v2→v1 adapters (`_v1_price`,
+  `_v1_financial_metrics`, `_v1_insider_trade`, `_v1_company_news`)
+  handle small field/nullability differences. `api_key` parameter
+  accepted but ignored (v2 reads from .env). Existing `_cache` layer
+  preserved.
+- `src/tools/line_items.py` — new module backing `search_line_items`
+  with yfinance `income_stmt` / `balance_sheet` / `cashflow` DataFrames.
+  `_YF_MAP` covers 26 of 30 v1 line_items directly; 4 ratio fields
+  fall back to `get_financial_metrics`.
+- `tests/test_api_rate_limiting.py` deleted (tested the removed FD
+  HTTP retry layer; v2 client has its own backoff).
+
+**Verification**: 197 pre-existing tests still pass. Live smoke
+(3-ticker × quick template × deepseek-chat × 192s):
+- REGN BUY qty 25 conf 75
+- CTSH BUY qty 301 conf 93
+- DXCM SHORT qty 241 conf 100
+
+Real PM decisions citing real analyst signals (155/547/58 insider
+trades analyzed by sentiment_analyst, real DCF values by
+valuation_analyst, real ROE/margins by fundamentals_analyst). The
+"4 silent bugs" follow-up session immediately afterwards (above) caught
+the Finnhub-percentage / momentum-window / valuation-gap issues that
+made some of those numbers still wrong.
+
+
+---
+
+
+## Session — 2026-05-15 (EREV rollback + M9.d target_price_change)
+
+### Why we rolled EREV back
+
+Live probe of `yfinance.Ticker.eps_revisions` showed semantically
+incoherent counts: AAPL/MSFT/TSLA all had `up_last_7d > up_last_30d`,
+which is impossible if both are cumulative event counts (30d window
+includes 7d). The field appears to measure something like
+"current estimates above/below recent consensus" not "revision events".
+Result: EREV fired on ~87/100 NDX tickers during earnings season, far
+beyond an event detector's mandate.
+
+**Action**: EREV removed from `ALL_DETECTORS` (file + class + tests kept
+for forensic value). Marked `task_plan_scanner_v2.md §3.8` as BLOCKED.
+
+### M9.d — `target_price_change` (the signal we actually wanted) (✅)
+
+Persisted-snapshot detector that captures "analysts raised/cut median
+target by ≥5% over 7 days". This is what users intuitively mean by
+"analyst changed target price."
+
+**DB layer**:
+- New table `analyst_target_snapshots` (id, ticker, asof_date,
+  target_mean/median/high/low, current_price, n_analysts, created_at)
+  with `UNIQUE(ticker, asof_date)` so daily upserts are idempotent.
+- Alembic migration `a2c4e6b8d0f3` added (also auto-created via
+  `Base.metadata.create_all()` at backend startup).
+- New `AnalystTargetSnapshotRepository.upsert` (insert-or-update) +
+  `list_for_tickers(tickers, lookback_days, end_date)` returning
+  `dict[ticker, list[snapshot]]` ordered oldest→newest per ticker.
+
+**Service layer**:
+- `ScannerService._refresh_target_snapshots(tickers, end_date)`:
+  parallel-fetches yfinance `analyst_price_targets` for every ticker,
+  upserts each into DB, then loads the past 14 days back. Uses
+  `YFinanceClient` directly (yfinance has no rate limit; no need to
+  go through hybrid composite). Per-ticker failures isolated — a single
+  yfinance HTML hiccup can't abort the scan.
+- `_run_phase` calls this BEFORE `run_scan` and passes the resulting
+  dict as new `target_snapshots=` kwarg.
+
+**Runner**:
+- `run_scan` gains `target_snapshots: dict[str, list] | None` kwarg.
+- `_scan_one_ticker` accepts per-ticker `target_snapshots: list | None`
+  and injects into `ScanContext.target_snapshots`.
+
+**Detector** (`v2/scanner/detectors/target_price_change.py`):
+- Reads `ctx.target_snapshots`. Picks today's row (newest) and the
+  OLDEST snapshot within `lookback_days` (default 7) as baseline.
+- Fires when `|pct_change| ≥ min_pct_change` (default 5%).
+- Severity: `pct_change / 0.02` (5% move → severity 2.5) capped at ±5σ.
+- Direction by sign. Symmetric — analysts raising and cutting are
+  equally informative.
+- Returns `None` when fewer than 2 snapshots — bootstrap day 1 produces
+  no triggers; useful signal starts day 2.
+
+**Registration**:
+- Added to `ALL_DETECTORS` (position 8) + `DETECTOR_METADATA`
+  (label "Target Price Shift", default_mult 1.00).
+- UI badge `TGT` in frontend + CLI.
+
+**Tests**:
+- `TestTargetPriceChangeDetector` (9): no snapshots / single-snapshot
+  bootstrap / bullish raise / bearish cut / small change no fire /
+  oldest-in-window anchoring / out-of-window skip / missing today /
+  severity cap.
+- `TestAnalystTargetSnapshotRepository` (7): upsert dedupe same-day /
+  separate rows different days / oldest→newest ordering / lookback
+  window filter / empty inputs / unknown ticker.
+
+Full suite: **313 passed** (was 246 after EREV ship + before rollback;
+the +67 also includes 51 previously-counted-elsewhere yfinance tests
+in scope this run).
+
+### Bootstrap note for the next scan
+
+Day 1 of running with this detector: only today's snapshot exists for
+each ticker, so `target_price_change` returns `None` for every row.
+**TGT badges won't appear in the watchlist on the first scan**. They
+start showing up on the second scan (next day or any future date once
+≥2 distinct daily snapshots are accumulated).
+
+## Session — 2026-05-15 (estimate_revision + multi-horizon breakout)
+
+Goal: ship the two highest-value new detectors from
+`task_plan_scanner_v2.md` §3.8 / §3.5 in one round. Detector count
+7 → 8.
+
+### `estimate_revision` (NEW, ✅)
+
+- `v2/data/models.py` — `EstimateRevisions` Pydantic model (period +
+  up/down counts for last 7d / 30d).
+- `v2/data/protocol.py` — `AnalystDataClient` sub-protocol gains
+  `get_estimate_revisions(ticker, *, period="0q", asof_date=None)`.
+- `v2/data/yfinance_client.py` — implementation reads
+  `Ticker.eps_revisions` DataFrame, extracts the configured period row,
+  returns `EstimateRevisions` or `None` on sparse coverage. Try/except
+  wraps the whole call so a Yahoo HTML change can't crash a scan.
+- `v2/data/composite_client.py` — routes through existing
+  `analyst_backend` slot (same yfinance backend already provides
+  actions/targets — no new slot needed).
+- `v2/scanner/detectors/estimate_revision.py` — new detector. Trigger:
+  `total_7d ≥ 3 AND |net_7d| ≥ 2`. Severity: `max(|net|/0.7, 2.0)`,
+  symmetric direction. Returns `None` when the client lacks the method
+  or yfinance returns None (NOT `triggered=False`).
+
+### `multi_horizon_breakout` (replaces 52w, ✅)
+
+- File rename: `breakout_52w.py` → `breakout_multi_horizon.py`.
+- Class rename: `FiftyTwoWeekBreakoutDetector` → `MultiHorizonBreakoutDetector`.
+- **Kept `.name = "breakout_52w"`** for DB row backward-compat (same
+  precedent as the unchanged `price_volume_anomaly` and `analyst_rating`
+  names).
+- Three horizons (63 / 126 / 252 trading days) checked simultaneously.
+  Severity additive: 2.0 (any) + 0.5 (126d also) + 1.0 (252d also). Max
+  bullish severity 3.5.
+- First-day rule applied **per horizon** — yesterday inside, today out.
+- Asymmetric volume confirmation: bullish gets full severity regardless
+  of today's volume z. Bearish gets severity halved when `volume_z < 1.5`
+  (Murphy: low-volume up-breakouts can be real institutional accumulation;
+  low-volume down-breakouts are commonly fake-outs).
+- Updated `DETECTOR_METADATA["breakout_52w"]`: label `"52-Week Breakout"`
+  → `"Multi-Horizon Breakout"`, description updated.
+
+### Frontend (✅)
+
+- `DETECTOR_LABELS` in `watchlist-table.tsx`: `breakout_52w: '52W'` →
+  `'BREAK'`; new `estimate_revision: 'EREV'`.
+- CLI `_fmt_triggers` short dict in `__main__.py`: added entries for
+  IDAY / BREAK / ANLY / EREV (earlier rounds only had EARN / INSDR / VOL
+  / NEWS — the new detectors fell through to the generic 4-char shorthand).
+- Dialog picker auto-picks up the new detector via the existing
+  `GET /scanner/detectors` endpoint — no frontend dialog code change.
+
+### Tests (✅)
+
+- `TestMultiHorizonBreakoutDetector` (replaces old `TestFiftyTwoWeekBreakoutDetector`):
+  - All 3 horizons firing → severity 3.5 with vol confirmation
+  - 63d only (older bars set higher 126d/252d) → severity 2.0
+  - 63d + 126d but not 252d → severity 2.5
+  - First-day rule rejects yesterday-already-above
+  - Bullish gets full severity on light volume (asymmetric)
+  - Bearish light vol = half severity (3.5 → 1.75)
+  - Insufficient history → None
+- `TestEstimateRevisionDetector` (new, 9 tests):
+  - Fires bullish on net=+3 / bearish on net=-3
+  - Severity formula: `|net|/0.7` with floor 2.0
+  - Doesn't fire on low total or low net
+  - Returns `None` on missing data / missing method / scrape exception
+  - Period constructor arg passes through to client
+
+Full suite: **246 passed** (was 235 — +11 new tests).
+
+### End-to-end verification
+
+`GET /scanner/detectors` now returns 8 entries. Backend up on 8001;
+frontend on 5173 ready for picker test.
+
+## Session — 2026-05-15 (User-selectable detectors + per-detector severity weights)
+
+Goal: let each ScannerConfig pick which detectors run AND tune their
+severity contribution to the composite score. Storage: both inside the
+existing `weights` JSON column (no migration). Backward-compat: missing
+keys → all detectors enabled, all mults = 1.0 (current behavior preserved).
+
+### Backend (✅)
+
+- `v2/scanner/models.py::ScannerWeights` extended with two new fields:
+  - `enabled_detectors: list[str] | None` — None means run all; empty list
+    rejected; unknown names rejected
+  - `detector_severity_mult: dict[str, float]` — missing keys default to 1.0
+    at scoring time; unknown names rejected; values constrained to [0.0, 5.0]
+- `v2/scanner/detectors/__init__.py` — added `DETECTOR_METADATA` registry
+  with label, default_mult, description per detector. Source for the new
+  GET endpoint and the "Recommended Defaults" preset button. Defaults
+  follow task_plan_scanner_v2.md §4.2 (earnings 1.20, intraday 1.10, news
+  0.50 transitional underweight, etc.)
+- `app/backend/routes/scanner.py` — new `GET /scanner/detectors` returning
+  list of `DetectorMetadataResponse` objects in ALL_DETECTORS order
+- `app/backend/services/scanner_service.py::_run_phase` — builds
+  `det_instances = ALL_DETECTORS filtered by weights.enabled_detectors`
+  and passes via `detectors=` kwarg to `run_scan`. Logs which detectors
+  were selected per run.
+- `v2/scanner/scoring.py::compute_composite` — applies
+  `detector_severity_mult.get(name, 1.0)` to abs(severity_z) BEFORE
+  max-takes-all → `weighted_severity` drives `event_score`. The raw
+  unweighted max stays in `event_severity` for the deterministic
+  tiebreaker (per ScoredEntry docstring contract).
+- `_direction_from` now uses the same per-detector mults — the weighted
+  signed sum determines bullish/bearish/neutral.
+
+### Frontend (✅)
+
+- `types/scanner.ts` — `DetectorMetadata` and `ScannerWeightsExtension`
+  interfaces mirroring backend payloads
+- `services/scanner-service.ts` — `listDetectors()` method
+- `scanner-config-dialog.tsx` — collapsible "Detectors" `<details>` section
+  added between Top-N row and error display:
+  - Header shows `N / 7 enabled` count
+  - Three preset buttons: Select All, Clear All, Recommended Defaults
+  - One row per detector: Checkbox + label + description tooltip + range
+    slider (0.0–2.0, step 0.05) + numeric value
+  - On submit: writes only the diff into weights JSON (enabled_detectors=null
+    when all are on; mult dict only includes entries that diverge from 1.0)
+  - Empty selection rejected client-side before POST
+- Dialog widened from 500→640px and `max-h-[90vh] overflow-y-auto` so the
+  Detectors section fits without crowding the form
+
+### Tests (✅)
+
+- `TestComputeComposite` (extended): mult amplifies / mult dampens /
+  missing key defaults to 1.0 / event_severity reports raw unweighted /
+  weighted direction sum can flip bullish↔bearish (6 new)
+- `TestScannerWeightsValidation` (new): empty enabled rejected / unknown
+  name rejected / dedupe / mult unknown rejected / out-of-range rejected /
+  boundary 0.0 and 5.0 pass / partial dict OK (10 tests)
+- `TestScannerServiceExecute` (extended): `enabled_detectors=[a,b]` only
+  passes those two detectors into `run_scan(detectors=...)`; missing
+  enabled_detectors → all 7 still run (2 new)
+- `TestListDetectors` (new): returns all 7 / response shape correct /
+  order matches ALL_DETECTORS (3 new)
+
+Full suite: **235 passed** (was 215 before — +20 new tests).
+
+### End-to-end verification
+
+Backend `GET /scanner/detectors` returns 7 detectors with full metadata.
+Backend `/scanner/configs` 200 OK. Frontend on 5173 ready for dialog test.
+
+## Session — 2026-05-15 (Path B: SPY-relative IDAY + VOL slim)
+
+### Step 5 — Servers up, ready for end-to-end verification (⏳)
+
+Backend: http://127.0.0.1:8001 (PID per launch). Frontend: http://localhost:5173.
+User to run NDX-100 scan via "Run now" and inspect:
+1. Backend log shows `Benchmark QQQ returned N bars for IDAY adjustment`
+2. Trigger rate drops from ~70/100 to ~30-50/100
+3. Random row's components for `intraday_move` shows
+   `benchmark_used: 1.0`, `spy_cvo`, `raw_cvo`, `adjusted_cvo`
+4. PV labels in UI now show as VOL
+
+### Step 4 — Tests (✅)
+
+- `TestVolumeAnomalyDetector` — 8 tests (covered in Step 1)
+- `TestIntradayMoveDetectorBenchmark` — 4 new tests (no benchmark = raw,
+  market-neutralized = no fire, idiosyncratic = fires, missing dates = silent fallback). Helper `_det()` uses `z_threshold=10, range_pct=0.20` so synthetic-flat baselines don't trip the range sub-signal.
+- `TestBenchmarkPlumbing` (`test_runner.py`) — 4 new tests:
+  - benchmark fetched exactly once and injected into every per-ticker ctx
+  - benchmark fetch raise → scan completes, ctx.benchmark_prices=None
+  - benchmark <30 bars → adjustment disabled, ctx.benchmark_prices=None
+  - benchmark_ticker None → ctx.benchmark_prices stays None (current behavior)
+
+Full suite: **89 passed, 2 skipped** in `v2/scanner/` + `v2/signals/`.
+
+### Step 3 — IDAY SPY-relative (✅)
+
+`IntradayMoveDetector.detect()` now reads `ctx.benchmark_prices`. When
+populated, it builds a per-date dict and subtracts the benchmark's same-day
+cvo/gap from BOTH today's bar AND every bar in the trailing z-window.
+Range stays raw. When benchmark missing → silent fallback to raw values
+(all 6 existing IDAY tests pass without modification).
+
+New components surfaced for debugging: `raw_cvo`, `raw_gap`, `spy_cvo`,
+`spy_gap`, `adjusted_cvo`, `adjusted_gap`, `benchmark_used`.
+
+### Step 2 — Benchmark plumbing (✅)
+
+- `ScanContext` gets `benchmark_prices: list[Any] | None` field +
+  `arbitrary_types_allowed=True` config.
+- `run_scan` gets new kwarg `benchmark_ticker: str | None`. Before pool
+  starts, fetches once via `clients[0]` (90-day lookback, ≥30 bars
+  required). Failure → log warning, fall back to None (raw IDAY).
+- `_scan_one_ticker` accepts `benchmark_prices` and passes into ScanContext.
+- `scanner_service._run_phase` adds `BENCHMARK_BY_UNIVERSE` mapping
+  (nasdaq100 → QQQ, all others → SPY) and passes into `run_scan`.
+
+All 11 existing runner tests still pass — feature is additive, default
+`benchmark_ticker=None` preserves prior behavior.
+
+### Step 1 — Volume anomaly slim (✅)
+
+Renamed `v2/scanner/detectors/price_volume.py` → `volume_anomaly.py`. Class
+`PriceVolumeAnomalyDetector` → `VolumeAnomalyDetector`. **Kept `name =
+"price_volume_anomaly"`** for DB row backward compatibility (same precedent
+as the `analyst_rating` detector).
+
+Dropped the entire return-z-score branch (it double-counted IDAY's
+`close_vs_open`). Detector now fires only when:
+- `z_volume >= 2.5` (volume spike vs trailing 20-day mean, std floor 10% of mean)
+- AND `|today_ret| < 0.015` (anti-gate: flat day — Wyckoff stopping volume)
+
+Reason text on non-trigger when volume hit but return too big:
+`"vol z=+X but ret +Y% — IDAY territory"` makes the handoff explicit.
+
+UI label: `PV` → `VOL` in both `v2/scanner/__main__.py` and frontend
+`watchlist-table.tsx::DETECTOR_LABELS`.
+
+Tests: replaced `TestPriceVolumeAnomalyDetector` with `TestVolumeAnomalyDetector`
+(8 tests). All green:
+- volume spike + calm return → fires (bullish/bearish per ret sign)
+- big return alone → does NOT fire (no volume signal)
+- volume spike + big return → does NOT fire (anti-gate, "IDAY territory" reason)
+- adjusted_close used for return calc on dividend days
+- volume std floor regression: 5x mean / 10% floor = bounded z (<100)
+
+## Session — 2026-05-14 (previous)
+
+### High-level status
+
+- **M1 / M2 / M3 / M3.5 / M3.6 / M4 / M5 / M6 / M7**: ✅ all complete
+- **Tests**: 63 passing in `v2/scanner/` + `v2/signals/`, ~300 total across project (14 pre-existing FD-live failures unrelated to scanner — JPM/XOM not in user's FD subscription, returns 402)
+- Scanner is now feature-complete: event-driven candidates → 5 quant factors → composite ranking → live UI + scheduled cron + REST + SSE
+- **Next milestone**: M8 (historical replay / hit-rate evaluation) — not started
+
+### M7 — Quant signals layer (completed today)
+
+The composite score's 40% quant term was previously a no-op (`run_scan` never received signals). M7 fixed that.
+
+**Created `v2/signals/`:**
+- `momentum.py` — 12-1 month return, tanh-saturated at ±50%
+- `value.py` — composite of P/E, P/B, P/S, FCF yield (cheap = bullish)
+- `quality.py` — ROIC / ROE / op margin / gross margin
+- `earnings_quality.py` — revenue / earnings / FCF / EPS growth
+- `technical.py` — RSI(14) + 50-day SMA deviation
+- `__init__.py` — `ALL_SIGNALS` list + `SIGNAL_REGISTRY` dict
+- `test_signals.py` — 22 tests (bull / bear / missing-data per signal + 2 runner integration tests)
+
+**Modified:**
+- `v2/signals/base.py` — `compute()` signature now takes `fd: DataClient` (was missing — runner already passed it but signal interface didn't accept it, latent bug)
+- `v2/scanner/runner.py:_evaluate_quant` — actually passes `fd` to signals now
+- `app/backend/services/scanner_service.py` — wires `quant_signals=[cls() for cls in ALL_SIGNALS]` into `run_scan` call
+
+### M7 lessons learned
+
+1. **`_pick_close(prices, -22)` returned None.** The bounds check `if idx < 0 or idx >= len(prices)` treated negative indices as invalid. Fixed by normalizing `idx = len + idx` first. Reminder: Python negative-index slicing is a convention you have to opt into; bounds checks don't get it for free.
+2. **RSI on a monotonic series saturates to 0 or 100** — meaning a pure downtrend gives RSI=0 ("ultra-oversold = buy") while trend_score=-1 ("downtrend = sell"). The two cancel out in `TechnicalSignal`. That's correct TA — RSI flags reversals, not trend direction. Test expectations had to be loosened to check `trend_score` not the overall signal.
+
+### M6 — Hardening + docs (completed today)
+
+| Item | Status |
+|---|---|
+| Universe refresh script (M6.a) | ✅ done earlier (`v2/scanner/universes/refresh_universes.py`) |
+| Insider M/A/D/F → 0 shares (M6.b) | ✅ done earlier |
+| Composite tiebreaker via raw severity (M6.c) | ✅ done earlier |
+| Std-floor explosive-z fix in insider + earnings (M6.e) | ✅ done today — see "Std floors load-bearing" in `v2/scanner/README.md` |
+| Concurrent-run guard (`ScanAlreadyRunningError`) | ✅ already done in M4 (was wrongly flagged as missing) |
+| Startup cleanup of stale RUNNING rows | ✅ already done in M4 |
+| `v2/scanner/README.md` operator doc | ✅ done today |
+| `SCANNER_LIVE_TEST=1` env-gated live smoke | ✅ done today (`v2/scanner/test_live_smoke.py`) |
+
+### M6.e — Explosive-z bugfix (today)
+
+User reported GEHC with `INSDR +55,257,210,785,000` after a UI scan. Root cause: same `or 1e-6` pattern that bit news_sentiment earlier — `sigma = float(arr.std(ddof=1)) or 1e-6` only fires the fallback when std is *exactly* 0.0, not when it's collapsed-but-nonzero.
+
+Fix applied to both `v2/scanner/detectors/insider.py` and `v2/scanner/detectors/earnings.py`: real std floor that falls back to the categorical-trigger magnitude when the baseline is uninformative. Floor values now documented in scanner README.
+
+Regression tests added:
+- `test_baseline_std_floor_prevents_explosive_z` for insider (8-month all-zero baseline → |z| ≈ 2.5, not 1e13)
+- `test_surprise_std_floor_prevents_explosive_z` for earnings (4 identical historical surprises → |z| ≈ 2.0)
+
+### Earlier sessions (kept for context)
+
+#### M5 — Frontend scanner tab (completed)
+
+- `app/frontend/src/components/panels/scanner/` — ScannerPanel + ConfigDialog + WatchlistTable
+- `app/frontend/src/services/scanner-service.ts` — REST + SSE wrapper
+- `app/frontend/src/types/scanner.ts` — TS types mirroring backend
+- Tabs context extended with `'scanner'` type; click-through to flow tab with `initialTickers` preset
+- TypeScript build green for all scanner code; 18 pre-existing errors in unrelated UI files
+
+#### M4 — APScheduler + REST (completed)
+
+- `apscheduler 3.11.2` in anaconda env
+- `app/backend/services/scheduler_service.py` — BackgroundScheduler, max_instances=1, coalesce=True, NY tz
+- `app/backend/routes/scanner.py` — 8 endpoints incl. SSE stream
+- `main.py` startup cleans interrupted RUNNING + starts scheduler; shutdown stops scheduler
+- 26 new tests (15 scheduler + 11 routes)
+
+#### M3.6 — EODHD + CompositeClient (completed)
+
+- `v2/data/eodhd_client.py` — populates `adjusted_close`, gracefully no-ops on 403
+- `v2/data/composite_client.py` — `make_hybrid_client()` factory (EODHD for prices/news, Finnhub for insider/earnings/facts)
+- Factory branches: `eodhd` and `hybrid` providers
+- `recommend_max_workers("hybrid") = 4` (Finnhub bottleneck)
+
+#### M3.5 — Provider abstraction (completed)
+
+- Extended `DataClient` Protocol with `get_earnings_history` + `get_market_cap`
+- Retrofitted detectors + runner to type-hint against `DataClient` not `FDClient`
+- `provider_factory` kwarg + `fd_factory` deprecation alias
+- `v2/data/finnhub_client.py` raw-`requests` adapter with two-layer rate limit
+- `v2/data/factory.py` with `make_data_client`, `get_provider_factory`, `recommend_max_workers`
+- Added `nasdaq100.csv` + composite `nasdaq100_sp500` universe kind
+
+### Live smoke history
+
+| When | Provider | Universe | Wall-clock | Triggered | Notes |
+|---|---|---|---|---|---|
+| 2026-05-13 (Finnhub) | finnhub | nasdaq100_sp500 (140) | 608s | 48 / 140 | INSDR-only (PV / NEWS blocked) |
+| 2026-05-14 (hybrid v1) | hybrid | nasdaq100_sp500 (140) | 330s | 55 / 140 | All 4 detectors, but PAYX z=-333k bug |
+| 2026-05-14 (hybrid v2) | hybrid | nasdaq100_sp500 (140) | 330s | 55 / 140 | News std floor fixed |
+| 2026-05-14 (full universe) | hybrid | nasdaq100_sp500 (516) | ~5min | 61 / 516 | Insider z exploded on GEHC → triggered M6.e |
+| (pending) | hybrid | nasdaq100_sp500 (516) | tbd | tbd | Re-run after M6.e + M7 — should see quant_score populating + no explosive z's |
+
+### M9.4 — Delete config button + confirm modal (2026-05-15)
+
+Trash button in scanner panel header next to Edit. Click → opens shadcn `<Dialog>` with config name + cascade warning ("also removes all past scan runs and watchlist entries"). Confirm → calls existing `scannerService.deleteConfig(id)` → updates UI:
+- aborts in-flight SSE if any
+- clears `runId`/`run`/`progress`/`entries`/`streamError` state
+- removes config from local list + picks next as selection (or null if empty)
+- toast confirmation
+
+Files:
+- `app/frontend/src/components/panels/scanner/scanner-panel.tsx`:
+  - Added Dialog imports + `Trash2` icon
+  - State: `deleteConfirmOpen`, `deleting`
+  - Trash button between Edit and New, red icon, disabled when no config selected
+  - `handleConfirmDelete()` handles the cascade cleanup
+  - New `<Dialog>` after the existing `ScannerConfigDialog` (Cancel + destructive Delete buttons)
+
+Backend / service layer unchanged — `deleteConfig()` REST wrapper and DELETE `/scanner/configs/{id}` route were already in place from M4. This was purely a missing UI affordance.
+
+### M9.3 — Frontend Quote type + Price/Today columns (2026-05-15)
+
+Watchlist table now shows live current price + today's % change for each ticker. Quotes fetched once when entries + runId both available; cancelled cleanly if either changes.
+
+Files:
+- `app/frontend/src/types/scanner.ts` — `Quote` + `QuotesByTicker` interfaces
+- `app/frontend/src/services/scanner-service.ts` — `getRunQuotes(runId)` REST wrapper
+- `app/frontend/src/components/panels/scanner/watchlist-table.tsx`:
+  - Added `runId?: number | null` prop
+  - useEffect fetches quotes on `[runId, entries]` change with cancellation flag
+  - 2 new sortable columns: **Price** (`$XXX.XX`) and **Today** (`+/-X.XX%` colored green/red)
+  - Loading state: `…` placeholder. Failed/missing: `—`. Real value: rendered.
+  - Sort handlers for new columns; nulls always sort to bottom regardless of direction
+  - Detector label map extended with `intraday_move/breakout_52w/analyst_rating` from M8 — those triggers now render as IDAY / 52W / ANLY badges instead of falling through to the truncated default
+- `app/frontend/src/components/panels/scanner/scanner-panel.tsx` — pass `runId` to WatchlistTable
+
+TS typecheck clean (the 2 remaining errors are pre-existing in backtest UI, unrelated).
+
+### M9.2 — GET /scanner/runs/{id}/quotes endpoint (2026-05-15)
+
+Batch-fetches live Finnhub quotes for every ticker in a run's watchlist. Returns `dict[ticker, QuoteResponse | None]`. Per-ticker exceptions are caught and converted to None — never fails the whole batch. Uses `ThreadPoolExecutor(max_workers=recommend_max_workers())` (4 for hybrid); throughput is bounded by the Finnhub global token bucket regardless.
+
+Behavior matrix:
+- Run not found → 404
+- Run has no entries → `{}`
+- Provider lacks `get_quote` (e.g. FD-only) → all entries return None (frontend treats as missing data)
+- Mixed success/failure → ticker-level None for failures, real QuoteResponse for successes
+
+Files:
+- `app/backend/models/scanner_schemas.py` — new `QuoteResponse`
+- `app/backend/routes/scanner.py` — new `GET /scanner/runs/{id}/quotes`; imports `make_data_client`, `recommend_max_workers`, `ThreadPoolExecutor`
+- `tests/test_scanner_routes.py` — new `TestRunQuotes` (4 tests: 404, empty entries, no-get_quote, mixed success/failure)
+
+16 scanner-route tests pass.
+
+### M9.1 — Quote model + FinnhubClient.get_quote + CompositeClient wiring (2026-05-15)
+
+First piece of "live quotes on watchlist rows" feature.
+
+Files:
+- `v2/data/models.py` — new `Quote` model (ticker, current_price, prev_close, percent_change, asof_timestamp)
+- `v2/data/finnhub_client.py` — new `get_quote()` method hitting `/quote`. All-zero payload (Finnhub's "unknown symbol" response) → None. Goes through existing `_get()` → automatic 429 retry + global token bucket throttle.
+- `v2/data/composite_client.py` — added optional `quotes_backend` slot (mirror of `analyst_backend`). `make_hybrid_client()` wires the existing Finnhub instance into the new slot (close() dedupes by id, so the same instance can serve quotes + insider + earnings + facts + metrics). New `CompositeClient.get_quote()` delegates or returns None.
+
+Tests:
+- `v2/data/test_finnhub_client.py::TestGetQuote` — 5 cases (happy path, zero payload, missing current, missing timestamp, non-dict response)
+- `v2/data/test_composite_client.py::TestQuotesBackend` — 2 cases (None when backend absent, delegation when present)
+
+Not added to base `DataClient` Protocol — same precedent as `AnalystDataClient`. Callers check `hasattr(client, 'get_quote')` before invoking.
+
+196 v2/data tests pass.
+
+### M8.4 — AnalystRatingDetector (2026-05-15)
+
+7th detector. Two OR-combined gates per the design discussion:
+
+**Sub-signal 1 — Net upgrade score z-score**: weighted sum of last 7d analyst actions (up=+1, init=+0.5, main=0, reit=0, down=-1) z-scored against the distribution of non-overlapping 7-day buckets covering days 7-90. Std floor 0.5 weight-units prevents the explosive-z pattern when the baseline is all zeros. Triggers at |z| ≥ 2.0.
+
+**Sub-signal 2 — Target gap**: `(target_mean - current_price) / current_price`. Triggers at |gap| ≥ 15%. gap_z proxy = gap / 0.05 (so 15% gap → z=3), used only for severity comparison with sub-signal 1.
+
+Severity = max abs of the two z-equivalents, signed by whichever sub-signal dominates. Direction follows the sign.
+
+Robustness: if the DataClient doesn't expose analyst methods → return None cleanly. If get_analyst_actions raises → fall back to empty list (other sub-signal can still trigger). If get_analyst_targets raises → fall back to None. Never raise out of the detector.
+
+Files:
+- `v2/scanner/detectors/analyst_rating.py` (new)
+- `v2/scanner/detectors/__init__.py` — registered + exported (ALL_DETECTORS now 7 detectors)
+- `v2/scanner/test_detectors.py` — 6 tests (upgrade cluster, positive target gap, negative target gap, quiet baseline, missing analyst methods, broken analyst client)
+
+269 tests pass across v2 (scanner + signals + all data clients + protocol conformance + factory).
+
+### M8.3 — YFinanceClient + Sub-Protocol + Composite wiring (2026-05-15)
+
+Added yfinance as an optional partial-DataClient backend, providing analyst data only. Everything else on YFinanceClient explicitly raises NotImplementedError so misuse surfaces immediately.
+
+**Design decision (chosen by user)**: kept the analyst surface OFF the base `DataClient` Protocol. Defined a sub-protocol `AnalystDataClient(DataClient, Protocol)` for the two new methods. FD/Finnhub/EODHD don't need to stub anything. CompositeClient gets an optional `analyst_backend` slot — if None, delegation methods return None/[].
+
+Files:
+- `v2/data/models.py` — added `AnalystTarget` + `AnalystAction` Pydantic models
+- `v2/data/protocol.py` — added `AnalystDataClient(DataClient, Protocol)` sub-protocol with `get_analyst_targets` + `get_analyst_actions`
+- `v2/data/yfinance_client.py` (new) — partial client implementing analyst methods, raising NotImplementedError elsewhere; `_normalize_action` maps yfinance Action variants to 5-bucket vocabulary {up, down, main, init, reit}
+- `v2/data/composite_client.py` — added `analyst_backend` slot to `__init__`, `close()`, plus 2 delegation methods. `make_hybrid_client()` now wires YFinanceClient for analyst.
+- `pyproject.toml` — `yfinance = "^0.2.66"` added (already installed in anaconda env locally; needed for Poetry-based CI)
+- `v2/data/test_yfinance_client.py` (new) — 30 tests: action normalization (11 parametrized variants), target happy/empty/exception/default-asof paths, action date-range filtering + limit + exception isolation, all 8 unimplemented-method raises
+
+183 tests pass across all affected modules.
+
+### M8.2 — FiftyTwoWeekBreakoutDetector (2026-05-15)
+
+Fires the first day a stock's close clears its trailing 252d high (bullish) or low (bearish). "First" = yesterday's close was inside the prior range.
+
+Key design choice: the trailing window EXCLUDES both today and yesterday. If yesterday is included in the window that defines hi_level, then yesterday=hi_level by definition and we can't distinguish "yesterday set the high, today continued" from "yesterday was inside, today broke." Excluding yesterday makes the gate semantically clean: `today > hi_level AND yesterday ≤ hi_level` only fires the day breakout actually happens.
+
+Severity = `breakout_pct / 60d daily-return std`. Weak breakouts (today's volume z < 1.5) get severity × 0.5 — they break the level without tape commitment. Tickers with < 252+2 bars (new IPOs, illiquid) return None.
+
+Files:
+- `v2/scanner/detectors/breakout_52w.py` (new) — FiftyTwoWeekBreakoutDetector
+- `v2/scanner/detectors/__init__.py` — registered + exported
+- `v2/scanner/test_detectors.py` — 5 tests (high break, low break, multi-day breakout suppression, volume confirmation halving, insufficient history)
+
+52/52 scanner tests pass (2 skipped live-smoke).
+
+### M8.1 — IntradayMoveDetector (2026-05-15)
+
+New detector capturing intraday price behavior that close-to-close PV misses:
+- `close_vs_open` — open → close return; catches days where market dominated
+- `gap` — prev_close → open return; catches overnight catalyst reactions
+- `range` — (high − low) / open; catches wide-swing days even when close flat
+
+Each sub-signal gated by `|abs| ≥ X%` **OR** `|z| ≥ 2.5` against trailing-60-day distribution. Severity = max |z| of the three, signed by `close_vs_open` (neutral when only range fires). std floor 0.005 on all three baselines.
+
+Files:
+- `v2/scanner/detectors/intraday_move.py` (new) — IntradayMoveDetector
+- `v2/scanner/detectors/__init__.py` — registered + exported
+- `v2/scanner/test_detectors.py` — 6 unit tests (gap up, intraday drop, wide range, quiet day, insufficient history, missing open)
+
+47/49 scanner tests pass (2 skipped are live-smoke gated).
+
+### Windows uvicorn debug detour (2026-05-15 — captured in CLAUDE.md)
+
+After Bug D fix the user reported scans STILL only firing AAPL. Diagnosis path:
+- Independent Python process with `max_workers=4` + new bucket → **32 triggers in 6.7 min** (correct)
+- Backend HTTP scan with same code → 1 trigger in 5 min (wrong)
+- `--reload` parent process was buffering child stdout — couldn't see what the running scan was actually doing
+- Each `Stop-Process -Force` of uvicorn on Windows leaked a listening socket. Port 8000 ended up with 5 zombie listeners owned by dead PIDs (492 / 31168 / 39204 / 44716 / 5144); Windows wouldn't release them
+
+Resolution:
+- Stopped using `--reload` in dev. Run plain `uvicorn ... --host 127.0.0.1 --port 8001 --log-level info` with `PYTHONIOENCODING=utf-8 PYTHONUNBUFFERED=1` so request logs flush.
+- Switched to port 8001 (8000's zombie listeners poisoned the port).
+- Added `app/frontend/.env.local` with `VITE_API_URL=http://localhost:8001` so the frontend follows.
+- Locked these into `CLAUDE.md` under "Windows uvicorn gotchas" so the next session doesn't rediscover them.
+
+After the port switch: NDX-100 scan via the UI produced the expected ~30 triggers in ~7 min. The Bug D rate-limit fix was correct all along — uvicorn `--reload` was masking the fix from taking effect (likely module-cache reuse across reload cycles).
+
+### Bug D — Finnhub rate-limit burst (2026-05-15)
+
+After A/B/C, NDX-100 scans STILL produced 1 trigger (AAPL only). Direct programmatic probe of the same code with max_workers=1 produced **32 triggers**. Diff-bisecting on max_workers identified the culprit: `_TokenBucket(capacity=60, refill_rate=1.0)` permits a 60-token burst at cold start. With 4 workers, all 4 grab tokens instantly and fire 60+ requests in <1 second. Finnhub's server-side 60-second rolling window saturates → request #61 onwards 429s → our 3-attempt retry (5/15/30s) is fully contained within the 60s window so all retries also 429 → call returns empty list → detector silently sees "no insider trades" → no triggers.
+
+Fix in `v2/data/finnhub_client.py`:
+- `capacity=60.0` → `capacity=1.0` — no burst, strict global serialization
+- `refill_rate=1.0` → `refill_rate=0.95` — 5% safety margin under Finnhub's true rolling cap
+
+With the fix, 4 workers serialize through the bucket at ~57 req/min total. Slower than the broken burst behavior at first impression, but correct — burst behavior was producing zeros not throughput. Throughput is now bounded by the actual API contract.
+
+Trade-off: scans get slower in absolute terms (101 tickers × ~3 Finnhub calls = ~300 calls × 1.05s = ~5.5 min minimum). Was the same effective rate before; we just stopped wasting it on 429s.
+
+29/29 Finnhub tests still pass (runtime jumped from <1s to ~28s as tests now go through the live throttle). Backend restarted (`bkytin5ee`).
+
+### Bugs A/B/C — sentiment + earnings fixes (2026-05-15)
+
+User test surfaced that with hybrid provider, NDX-100 scans only triggered 1 ticker (AAPL). Three independent issues compounding:
+
+**Bug B — EODHD sentiment all-positive.** `/sentiments` returns a `normalized` field that's nominally polarity but in practice is positive-skewed: even neutral-news tickers sit at 0.75-0.85, only stressed names (BA, etc.) ever cross below 0.50. Our `_classify_sentiment` threshold (±0.20) → every ticker got "positive" → polarity z-shift = 0. Fix:
+- Added `sentiment_score: float | None` to `v2/data/models.py:CompanyNews` for the continuous signal
+- `v2/data/eodhd_client.py:get_news` populates sentiment_score per article from the day's `/sentiments` reading
+- `v2/scanner/detectors/news_sentiment.py` prefers `sentiment_score` over label-based polarity; labels still drive the FD/Finnhub fallback path
+
+**Bug A — EODHD /news 1000-cap eats the baseline.** Popular tickers (NVDA, MSFT, AAPL) get 1000 articles inside 5-15 days; the 90-day baseline window had **zero** articles for NVDA. Fix:
+- `get_news` now synthesizes one "(daily sentiment aggregate)" CompanyNews per day in the requested window that the /news call didn't cover, populated from /sentiments
+- Detector now sees 60-90 baseline rows even when real articles are clustered in the recent window
+
+**Bug C — Finnhub earnings filing_date = fiscal period end.** `/stock/earnings` doesn't carry the SEC 8-K announcement date, so we used the fiscal period end as a stand-in. That made every earnings record look 30+ business days stale, killing `earnings_surprise` entirely. Fix:
+- `v2/data/finnhub_client.py:get_earnings_history` rewritten to use `/calendar/earnings` instead. That endpoint returns real announcement dates plus actual/estimate EPS + revenue. Cap the historical window at `limit * 100` days; sort newest-first; slice to `limit`.
+- `v2/data/test_finnhub_client.py` updated to mock the new payload shape (`{"earningsCalendar": [...]}`); split into 2 tests for the empty cases (not-a-dict vs missing key)
+
+Verification: probe across 6 NDX names (MSFT/NVDA/GOOGL/META/TSLA/AAPL) now shows:
+- earnings: real filing dates (MSFT 2026-04-29, AAPL 2026-04-30, TSLA 2026-04-22) — 11-17 biz days old, just outside our 5-day window because Q1 reporting ended in early May
+- news: continuous z values in [-0.51, +0.10] across the 6 names (was 0.00 or "0 baseline articles" before)
+- insider: AAPL z=-2.53 TRIGGERED (was +0.81)
+
+137/137 v2 scanner+signals+EODHD+Finnhub+composite tests pass.
+
+### Provider default switched to hybrid (2026-05-14 late)
+
+Smoke after restart caught the latent issue: `.env` had `SCANNER_DATA_PROVIDER` commented out, so the runner fell back to FDClient → every endpoint returned 402 → NDX-100 scan triggered exactly 1 ticker.
+
+Fix applied:
+- `.env`: uncommented + set `SCANNER_DATA_PROVIDER=hybrid`
+- `v2/data/factory.py:get_default_provider()` default flipped from `"fd"` to `"hybrid"` so the project default matches actual usage even when env is missing
+- `v2/data/test_factory.py`: renamed `test_default_is_fd_when_env_unset` → `test_default_is_hybrid_when_env_unset`; split `test_fd_default` (default=16 workers) into `test_hybrid_default_caps_at_4` + `test_fd_explicit_at_16`
+- 19/19 factory tests pass; backend restarted clean
+
+FD code path stays available via explicit `SCANNER_DATA_PROVIDER=fd` but is no longer the silent default.
+
+### Next steps when resuming
+
+1. **Have the user re-run a UI scan** with M6.e + M7 changes. Expect:
+   - No more astronomical z's (GEHC-style)
+   - `quant_score` column populated in WatchlistTable
+   - Composite ordering meaningfully different from event-only ordering — quant breaks the 100/100/100/100 ties at the top
+2. **Decide on M8** — historical replay / hit-rate evaluation:
+   - Replay 6–12 months of trading days through `run_scan(end_date=t)`
+   - For each Top-N pick, compute forward N-day return
+   - Hit rate by direction (bullish picks that gained), distribution of returns
+   - Tune `ScannerWeights.event_weight` / `quant_weight` / `factor_weights` against the results
+   - Storage decision: cache scan outputs to disk (CSV/Parquet) or replay on-the-fly?
+3. **(Optional) Create CLAUDE.md at repo root** to lock in invariants for future Claude sessions:
+   - `anaconda3/python.exe` is the working interpreter (Poetry not on PATH)
+   - `PYTHONIOENCODING=utf-8` for Windows PowerShell color output
+   - API keys live ONLY in `.env`, gitignored
+   - Scanner pipeline invariants: every z-score has a std floor; signals never raise; detectors return None for "no data" vs `EventTrigger(triggered=False)` for "ran cleanly nothing fired"
+
+### Open decisions
+
+- Volume z-score asymmetry (`z_vol >= 2.5` only — misses *low*-volume anomalies). User declined cosmetic display-clip; composite cap at 100 already handles it.
+- Whether to merge `v2/event_study/` retrofit (still FD-only) — deferred indefinitely.
+- M3.7 yfinance adapter for v1 LLM agents — deferred until FD trial expires or v1 work resumes.

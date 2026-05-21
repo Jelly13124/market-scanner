@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import pytest
 
-from tests._detector_lint import DETECTOR_FILES
+from tests._detector_lint import (
+    DETECTOR_FILES,
+    format_violations,
+    scan_forbidden_std_pattern,
+)
 
 
 def _ids(path):
@@ -27,3 +31,10 @@ def test_detector_files_discovered():
         f"expected at least 10 detector files in v2/scanner/detectors/, "
         f"got {len(DETECTOR_FILES)}: {[p.name for p in DETECTOR_FILES]}"
     )
+
+
+@pytest.mark.parametrize("path", DETECTOR_FILES, ids=_ids)
+def test_no_forbidden_std_pattern(path):
+    """RULE-2: no `... .std(...) or NUMBER` fallback patterns."""
+    violations = scan_forbidden_std_pattern(path)
+    assert not violations, format_violations(path, violations)

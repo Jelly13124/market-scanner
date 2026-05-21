@@ -378,3 +378,49 @@ def scan_components_dict_float(path: Path) -> list[Violation]:
                 key_repr = (k.value if isinstance(k, ast.Constant) else "?")
                 _check_value(f"[{key_repr!r}]", v, v.lineno)
     return violations
+
+
+def _block_has_logger_call_or_raise(body: list[ast.stmt]) -> bool:
+    """Return True when the statement block contains either a ``logger.*``
+    call or a ``raise`` (bare or with expression).
+    """
+    for stmt in body:
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Raise):
+                return True
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "logger"):
+                return True
+    return False
+
+
+def scan_bare_except(path: Path) -> list[Violation]:
+    """RULE-5: ``except Exception:`` blocks must call ``logger.*`` or
+    ``raise``. Silent swallows hide real bugs behind the scanner's
+    error-isolation runner.
+
+    Permitted handler signatures:
+      * ``except Exception:``                  — the bare case
+      * ``except Exception as e:``             — common alias form
+
+    Anything narrower (``except ValueError:`` etc.) is NOT covered;
+    we trust specific exception handlers to know what they're doing.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    violations: list[Violation] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ExceptHandler):
+            continue
+        # Only the bare/aliased "Exception" pattern; skip narrower handlers
+        if not (isinstance(node.type, ast.Name) and node.type.id == "Exception"):
+            continue
+        if _block_has_logger_call_or_raise(node.body):
+            continue
+        violations.append(Violation(
+            rule="RULE-5",
+            line=node.lineno,
+            message="bare `except Exception:` without logger.* call or raise",
+        ))
+    return violations

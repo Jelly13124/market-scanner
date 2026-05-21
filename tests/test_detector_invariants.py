@@ -14,7 +14,9 @@ import pytest
 
 from tests._detector_lint import (
     DETECTOR_FILES,
+    collect_all_detector_names,
     format_violations,
+    scan_detector_name_attribute,
     scan_forbidden_std_pattern,
 )
 
@@ -38,3 +40,27 @@ def test_no_forbidden_std_pattern(path):
     """RULE-2: no `... .std(...) or NUMBER` fallback patterns."""
     violations = scan_forbidden_std_pattern(path)
     assert not violations, format_violations(path, violations)
+
+
+@pytest.mark.parametrize("path", DETECTOR_FILES, ids=_ids)
+def test_detector_name_attribute(path):
+    """RULE-6 (per-file): detector class has a non-empty ``name`` that
+    isn't the ABC default 'base'.
+    """
+    violations = scan_detector_name_attribute(path)
+    assert not violations, format_violations(path, violations)
+
+
+def test_detector_names_are_unique_across_files():
+    """RULE-6 (cross-file): no two detector classes share a ``name``.
+
+    Aliasing happens via scanner config rewriting (e.g. legacy
+    ``earnings_surprise`` → ``earnings_event`` per the memory note),
+    NOT via duplicate class names — that would break the scoring
+    weight lookup which is keyed on ``name``.
+    """
+    duplicates = collect_all_detector_names()
+    assert not duplicates, (
+        "Detector name collision detected:\n  "
+        + "\n  ".join(f"{name}: {classes}" for name, classes in duplicates.items())
+    )

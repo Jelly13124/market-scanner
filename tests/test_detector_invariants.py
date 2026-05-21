@@ -19,6 +19,7 @@ from tests._detector_lint import (
     scan_detector_name_attribute,
     scan_detect_return_annotation,
     scan_forbidden_std_pattern,
+    scan_no_client_memoization,
 )
 
 
@@ -71,4 +72,11 @@ def test_detector_names_are_unique_across_files():
 def test_detect_return_annotation(path):
     """RULE-8: detect() return type is EventTrigger | None."""
     violations = scan_detect_return_annotation(path)
+    assert not violations, format_violations(path, violations)
+
+
+@pytest.mark.parametrize("path", DETECTOR_FILES, ids=_ids)
+def test_no_client_memoization(path):
+    """RULE-4: detect() does not stash fd on self."""
+    violations = scan_no_client_memoization(path)
     assert not violations, format_violations(path, violations)

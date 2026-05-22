@@ -1,5 +1,80 @@
 # Progress Log
 
+## Session — 2026-05-22 (Research pipeline Phase 2 landed)
+
+### What shipped
+
+`src/research/personas/` namespace — per-module investor personas wired into the pipeline.
+
+Components:
+
+- **`PersonaPrompt` ABC** (`src/research/personas/base.py`) — abstract base with `name`, `description`,
+  `system_addition()`, and `module_lens(module_name)` methods; concrete subclasses registered in
+  `PERSONA_REGISTRY`.
+- **8 investor personas** fully implemented:
+  `buffett`, `munger`, `graham`, `fisher`, `lynch`, `wood`, `burry`, `druckenmiller` —
+  each with a distinct system prompt fragment and per-module analysis lens.
+- **`router.py`** — LLM persona-router that reads ticker/goal/risk and emits per-module persona
+  assignments plus a `debate` pair. Invalid or absent LLM persona names coerced to `None`.
+- **`debate.py`** — two-persona debate transcript produced in a single LLM call; embedded in the
+  synthesizer's report when the router picks a debate pair.
+- **3 persona-capable modules refactored**:
+  - `fundamentals` — accepts `buffett`, `munger`, `fisher`
+  - `valuation` — accepts `buffett`, `graham`, `munger`, `fisher`
+  - `risk_position` — accepts `druckenmiller`, `burry`
+  - All three prepend `persona.system_addition()` + `persona.module_lens(module_name)` to the LLM
+    prompt when a valid persona is assigned.
+- **`pipeline.py` wired**: when `use_personas=True`, router runs first; each module gets its assigned
+  persona; debate fires and appends to report body when router picks 2 personas.
+- **CLI `--use-personas` flag** + `PERSONA ASSIGNMENTS` section printed in `python -m src.research` output.
+
+### Commits (6e4a2c2 → HEAD, 9 commits)
+
+- `7db90a9` feat(research): PersonaPrompt ABC + Buffett + registry scaffold
+- `5da0595` feat(research): 7 more investor personas (full Phase 2 set)
+- `4f64838` feat(research): persona-router LLM agent
+- `7a7f68a` feat(research): fundamentals module uses persona param
+- `2eb1a0b` feat(research): valuation module uses persona param
+- `0c8724a` feat(research): risk_position module uses persona param
+- `9519503` feat(research): debate module (two-persona transcript)
+- `67eab5e` feat(research): pipeline wires router + persona + debate
+- `a3a67c9` feat(research): CLI --use-personas flag + assignment summary
+
+### Test results (2026-05-22)
+
+- **Research suite**: 88 passed, 0 failed (9.33 s)
+  - Phase 1 tests: 54 | Phase 2 additions: 34 (personas, router, debate, pipeline persona paths)
+- **Full suite**: 886 passed, 20 failed, 3 skipped (81 s)
+  - All 20 failures are pre-existing live-API tests in `v2/data/` and `v2/event_study/`.
+    None are in `src/research/` or `tests/research/`.
+
+### Smoke test (2026-05-22)
+
+`python -m src.research --ticker NVDA --use-personas --risk moderate --goal new_entry`
+
+Result: **PASSED** (~44 s, 11 LLM calls).
+
+- Router rationale visible in `PERSONA ASSIGNMENTS` section:
+  `fundamentals=munger`, `valuation=lynch`, `risk_position=burry`, `debate=wood vs burry`
+- Debate transcript (Wood vs Burry) appears in REPORT body; Burry's bear case dominates.
+- Trade plan: `STAND_ASIDE` (confidence 85/100) — overvaluation + zero ROIC + lagging sector.
+- All modules produced narratives; backtest section ran cleanly (0 matches, caveat emitted).
+
+### Cost per ticker
+
+~12 LLM calls: 8 modules + 1 router + 1 synthesizer + 0–1 debate (fires only when router picks 2 personas).
+
+### Deferred
+
+- **Phase 3**: DB persistence (`ResearchRun` table) + FastAPI endpoints + cron scheduler + HTML email digest
+
+### Workflow
+
+`superpowers:writing-plans` → `superpowers:subagent-driven-development`. Implementer + spec +
+quality reviewer per task. Tasks 1–9 implemented by sub-agents, reviewed per task.
+
+---
+
 ## Session — 2026-05-22 (Research pipeline Phase 1 landed)
 
 ### What shipped

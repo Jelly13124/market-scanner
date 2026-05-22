@@ -29,6 +29,8 @@ from src.research.modules import ALL_MODULES
 from src.research.modules.detector_backtest import (
     BacktestInputs, replay_trade_plan,
 )
+from src.research.router import route_personas
+from src.research.modules.debate import run_debate
 from src.research.shared_data import fetch_shared_data
 from src.research.synthesizer import synthesize
 
@@ -56,9 +58,26 @@ def run_research(request: ResearchRequest) -> ResearchState:
     scan_date = _scan_date(request)
     shared = fetch_shared_data(request.ticker, scan_date)
 
+    # Router (Phase 2). Only when use_personas; otherwise every module
+    # runs objective and debate never fires.
+    persona_assignments: dict[str, str | list[str] | None] | None = None
+    if request.use_personas:
+        try:
+            persona_assignments = route_personas(request, shared)
+        except Exception as e:
+            logger.exception("router failed: %s", e)
+            persona_assignments = None
+
+    def _persona_for(module_name: str) -> str | None:
+        if not persona_assignments:
+            return None
+        value = persona_assignments.get(module_name)
+        if isinstance(value, str):
+            return value
+        return None
+
     module_results: dict[str, ModuleResult] = {}
 
-    # Run every module that's not risk_position first
     risk_position_module = None
     for module_cls in ALL_MODULES:
         if module_cls.__name__ == "RiskPositionModule":
@@ -66,7 +85,11 @@ def run_research(request: ResearchRequest) -> ResearchState:
             continue
         module = module_cls()
         try:
-            result = module.run(request, persona=None, shared_data=shared)
+            result = module.run(
+                request,
+                persona=_persona_for(module.name),
+                shared_data=shared,
+            )
         except Exception as e:
             logger.exception(
                 "module %s raised — should not happen per ABC contract: %s",
@@ -78,7 +101,6 @@ def run_research(request: ResearchRequest) -> ResearchState:
             )
         module_results[module.name] = result
 
-    # Now risk_position with prior_results
     if risk_position_module is not None:
         try:
             m = risk_position_module()
@@ -86,7 +108,12 @@ def run_research(request: ResearchRequest) -> ResearchState:
             kwargs = {}
             if "prior_results" in sig.parameters:
                 kwargs["prior_results"] = module_results
-            result = m.run(request, persona=None, shared_data=shared, **kwargs)
+            result = m.run(
+                request,
+                persona=_persona_for("risk_position"),
+                shared_data=shared,
+                **kwargs,
+            )
         except Exception as e:
             logger.exception("risk_position raised: %s", e)
             result = ModuleResult(
@@ -95,10 +122,22 @@ def run_research(request: ResearchRequest) -> ResearchState:
             )
         module_results["risk_position"] = result
 
-    # Synthesizer
+    # Debate (Phase 2). Only when router picked exactly 2 personas.
+    if persona_assignments:
+        debate_personas = persona_assignments.get("debate") or []
+        if isinstance(debate_personas, list) and len(debate_personas) == 2:
+            try:
+                debate_result = run_debate(request, shared, debate_personas)
+            except Exception as e:
+                logger.exception("debate raised: %s", e)
+                debate_result = ModuleResult(
+                    module_name="debate", persona_used=None, markdown="",
+                    skipped=True, skip_reason=f"Unhandled exception: {e}",
+                )
+            module_results["debate"] = debate_result
+
     report_md, plan = synthesize(request, module_results)
 
-    # Backtest
     triggered: list[str] = []
     if request.scanner_context:
         triggered = list(request.scanner_context.get("triggered_detectors") or [])
@@ -111,7 +150,7 @@ def run_research(request: ResearchRequest) -> ResearchState:
 
     return ResearchState(
         request=request,
-        persona_assignments=None,  # Phase 2 populates
+        persona_assignments=persona_assignments,
         module_results=module_results,
         report_markdown=report_md,
         strategy=plan,

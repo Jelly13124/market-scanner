@@ -23,7 +23,9 @@ class _TechnicalNarrative(BaseModel):
 def _rsi14(closes: list[float]) -> float | None:
     if len(closes) < 15:
         return None
-    deltas = [closes[i] - closes[i - 1] for i in range(1, 15)]
+    # Use the MOST RECENT 14 deltas — RSI is a current-momentum signal,
+    # not a historical one.
+    deltas = [closes[i] - closes[i - 1] for i in range(len(closes) - 14, len(closes))]
     gains = [d if d > 0 else 0.0 for d in deltas]
     losses = [-d if d < 0 else 0.0 for d in deltas]
     avg_gain = sum(gains) / 14

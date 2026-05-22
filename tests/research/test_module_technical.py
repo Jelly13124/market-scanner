@@ -63,3 +63,27 @@ class TestTechnicalModule:
         )
         out = TechnicalModule().run(_req(), None, shared)
         assert out.skipped is True
+
+    @patch("src.research.modules.technical.call_research_llm")
+    def test_rsi_reflects_recent_volatility(self, mock_llm):
+        """RSI(14) should compute on the most recent 14 deltas, NOT the
+        oldest 14. Build a series where the first 100 bars are flat and
+        the last 20 bars are strongly rising; RSI should be high (≥70),
+        not 50."""
+        from src.research.modules.technical import _TechnicalNarrative
+        mock_llm.return_value = _TechnicalNarrative(narrative="ok")
+        flat = [100.0] * 100
+        rising = [100.0 + i * 2.0 for i in range(1, 21)]  # +2/day for 20d
+        closes = flat + rising  # 120 bars total
+        shared = SharedData(
+            ticker="NVDA", scan_date="2026-05-22",
+            prices=_bars(closes), financials=[], insider_trades=[],
+            news=[], analyst_actions=[], analyst_targets=None,
+            earnings_history=[], company_facts={},
+            sector_etf_prices=[], spy_prices=[],
+        )
+        out = TechnicalModule().run(_req(), None, shared)
+        assert out.skipped is False
+        assert out.key_metrics["rsi_14"] >= 70, (
+            f"Expected RSI >=70 reflecting recent rally, got {out.key_metrics['rsi_14']}"
+        )

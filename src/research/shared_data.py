@@ -100,7 +100,7 @@ def _fetch_raw(ticker: str, scan_date: str) -> SharedData:
     except Exception as e:
         logger.warning("shared_data: insider_trades(%s) failed: %s", ticker, e)
     try:
-        bundle.news = client.get_company_news(
+        bundle.news = client.get_news(
             ticker, start_date=start_dt, end_date=scan_date, limit=100,
         )
     except Exception as e:

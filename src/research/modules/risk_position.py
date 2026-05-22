@@ -37,8 +37,7 @@ _RISK_PROFILES = {
 
 class RiskPositionModule(AnalysisModule):
     name = "risk_position"
-    # Phase 2 will add ["druckenmiller", "burry"]
-    supports_personas: list[str] = []
+    supports_personas: list[str] = ["druckenmiller", "burry"]
 
     def run(
         self,
@@ -102,6 +101,19 @@ class RiskPositionModule(AnalysisModule):
             f"(${support:.2f}) and fair-value upper bound (${fv_high:.2f}).\n"
             f"Note the risk if stopped out."
         )
+
+        if persona is not None:
+            from src.research.personas import PERSONA_REGISTRY
+            persona_obj = PERSONA_REGISTRY.get(persona)
+            if persona_obj is not None:
+                prompt = (
+                    persona_obj.system_addition()
+                    + "\n\n"
+                    + persona_obj.module_lens(self.name)
+                    + "\n\n"
+                    + prompt
+                )
+
         narrative = call_research_llm(
             prompt, _RiskNarrative,
             default_factory=lambda: _RiskNarrative(
@@ -112,6 +124,6 @@ class RiskPositionModule(AnalysisModule):
             ),
         )
         return ModuleResult(
-            module_name=self.name, persona_used=None,
+            module_name=self.name, persona_used=persona,
             markdown=narrative.narrative, key_metrics=metrics,
         )

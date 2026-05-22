@@ -64,3 +64,30 @@ class TestRiskPositionModule:
     def test_skipped_when_prior_missing(self):
         out = RiskPositionModule().run(_req(), None, _shared(), prior_results={})
         assert out.skipped is True
+
+
+class TestRiskPositionPersonaPath:
+    @patch("src.research.modules.risk_position.call_research_llm")
+    def test_druckenmiller_persona_recorded(self, mock_llm):
+        from src.research.modules.risk_position import _RiskNarrative
+        captured = {}
+        def _capture(prompt, model, **kw):
+            captured["prompt"] = prompt
+            return _RiskNarrative(narrative="Macro-aware plan.")
+        mock_llm.side_effect = _capture
+        out = RiskPositionModule().run(
+            _req(), "druckenmiller", _shared(), prior_results=_prior(),
+        )
+        assert out.persona_used == "druckenmiller"
+        assert any(kw in captured["prompt"].lower()
+                   for kw in ("druckenmiller", "macro", "asymmetric"))
+
+    @patch("src.research.modules.risk_position.call_research_llm")
+    def test_unsupported_persona_coerced_to_none(self, mock_llm):
+        from src.research.modules.risk_position import _RiskNarrative
+        mock_llm.return_value = _RiskNarrative(narrative="objective.")
+        # Wood is NOT in risk_position.supports_personas
+        out = RiskPositionModule().run(
+            _req(), "wood", _shared(), prior_results=_prior(),
+        )
+        assert out.persona_used is None

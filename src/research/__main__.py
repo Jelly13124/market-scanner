@@ -31,6 +31,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    choices=["new_entry", "hold_review", "exit_decision",
                             "general_research"],
                    default="general_research")
+    p.add_argument("--use-personas", action="store_true",
+                   help="Enable persona-router + persona-aware modules + "
+                        "optional debate panel. Adds 1-2 LLM calls per ticker.")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args(argv)
 
@@ -74,6 +77,25 @@ def _print_summary(state) -> None:
     if backtest.caveat:
         print(f"  Caveat: {backtest.caveat}")
 
+    assignments = state.get("persona_assignments")
+    if assignments:
+        print()
+        print("-" * 72)
+        print("  PERSONA ASSIGNMENTS")
+        print("-" * 72)
+        for module_name in ("fundamentals", "valuation", "risk_position"):
+            persona = assignments.get(module_name)
+            display = persona if persona else "objective"
+            print(f"  {module_name:<16s}: {display}")
+        debate = assignments.get("debate") or []
+        if isinstance(debate, list) and len(debate) == 2:
+            print(f"  {'debate':<16s}: {debate[0]} vs {debate[1]}")
+        else:
+            print(f"  {'debate':<16s}: (none)")
+        rationale = assignments.get("_rationale")
+        if rationale:
+            print(f"  Rationale: {rationale}")
+
     print()
     print("-" * 72)
     print("  REPORT")
@@ -103,7 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         target_position_pct=args.position_pct,
         risk_tolerance=args.risk,
         report_goal=args.goal,
-        use_personas=False,  # Phase 1 has no router
+        use_personas=args.use_personas,
         scanner_context=None,
     )
     state = run_research(request)

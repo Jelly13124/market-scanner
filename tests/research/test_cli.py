@@ -60,3 +60,34 @@ class TestCLI:
                 "--goal", "new_entry",
             ])
         assert exit_code == 0
+
+
+class TestCLIPersonas:
+    def test_use_personas_flag_sets_request_field(self, capsys):
+        """--use-personas should set request.use_personas=True. Patch
+        run_research to capture the request."""
+        from src.research.__main__ import main
+        captured = {}
+        def _capture(request):
+            captured["req"] = request
+            return _fake_state()
+        with patch("src.research.__main__.run_research", side_effect=_capture):
+            main(["--ticker", "NVDA", "--use-personas"])
+        assert captured["req"].use_personas is True
+
+    def test_persona_assignments_shown_in_summary(self, capsys):
+        from src.research.__main__ import main
+        state = _fake_state()
+        state["persona_assignments"] = {
+            "fundamentals": "buffett",
+            "valuation": "graham",
+            "risk_position": None,
+            "debate": ["wood", "burry"],
+            "_rationale": "growth vs value tension",
+        }
+        with patch("src.research.__main__.run_research", return_value=state):
+            main(["--ticker", "NVDA", "--use-personas"])
+        out = capsys.readouterr().out
+        assert "buffett" in out
+        assert "graham" in out
+        assert "debate" in out.lower() or "wood" in out.lower()

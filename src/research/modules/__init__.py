@@ -8,10 +8,10 @@ iterates over.
 """
 
 from src.research.modules.base import AnalysisModule
+from src.research.modules.macro import MacroModule
 
-# ALL_MODULES populated by subsequent commits; intentionally empty here
-# so importing the package doesn't try to load modules that don't exist
-# yet during Task 4. Each module file adds itself in subsequent tasks.
-ALL_MODULES: list[type[AnalysisModule]] = []
+ALL_MODULES: list[type[AnalysisModule]] = [
+    MacroModule,
+]
 
-__all__ = ["AnalysisModule", "ALL_MODULES"]
+__all__ = ["AnalysisModule", "ALL_MODULES", "MacroModule"]

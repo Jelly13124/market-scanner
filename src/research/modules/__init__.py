@@ -11,6 +11,7 @@ from src.research.modules.base import AnalysisModule
 from src.research.modules.financials import FinancialsModule
 from src.research.modules.fundamentals import FundamentalsModule
 from src.research.modules.macro import MacroModule
+from src.research.modules.risk_position import RiskPositionModule
 from src.research.modules.sector import SectorModule
 from src.research.modules.sentiment import SentimentModule
 from src.research.modules.technical import TechnicalModule
@@ -24,11 +25,12 @@ ALL_MODULES: list[type[AnalysisModule]] = [
     ValuationModule,
     TechnicalModule,
     SentimentModule,
+    RiskPositionModule,
 ]
 
 __all__ = [
     "AnalysisModule", "ALL_MODULES",
     "FinancialsModule", "FundamentalsModule",
-    "MacroModule", "SectorModule", "SentimentModule",
-    "TechnicalModule", "ValuationModule",
+    "MacroModule", "RiskPositionModule", "SectorModule",
+    "SentimentModule", "TechnicalModule", "ValuationModule",
 ]

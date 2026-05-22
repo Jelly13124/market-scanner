@@ -76,4 +76,4 @@ class ResearchReportRepository:
             q = q.filter(ResearchReport.ticker == ticker)
         if scan_date:
             q = q.filter(ResearchReport.scan_date == scan_date)
-        return q.order_by(desc(ResearchReport.id)).limit(limit).all()
+        return q.order_by(desc(ResearchReport.created_at), desc(ResearchReport.id)).limit(limit).all()

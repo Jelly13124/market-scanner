@@ -1,4 +1,10 @@
-"""Financials module — quarter-over-quarter trend in income / cash flow."""
+"""Financials module — quarter-over-quarter trend in income / cash flow.
+
+Reads from shared_data.earnings_history (list[EarningsRecord]) because
+the absolute revenue / net_income / free_cash_flow live under
+record.quarterly (EarningsData), NOT on FinancialMetrics which only
+exposes ratios and growth percentages.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +34,16 @@ def _f(getter, default=0.0):
         return default
 
 
+def _quarterly_field(record, attr: str, default: float = 0.0) -> float:
+    """Read ``record.quarterly.<attr>`` defensively. EarningsRecord has
+    ``quarterly: EarningsData | None``; access requires None guard before
+    attribute lookup."""
+    q = getattr(record, "quarterly", None)
+    if q is None:
+        return default
+    return _f(lambda: getattr(q, attr), default)
+
+
 class FinancialsModule(AnalysisModule):
     name = "financials"
     supports_personas: list[str] = []
@@ -35,16 +51,26 @@ class FinancialsModule(AnalysisModule):
     def run(self, request, persona, shared_data: SharedData) -> ModuleResult:
         persona = self._coerce_persona(persona)
 
-        if not shared_data.financials:
+        if not shared_data.earnings_history:
             return ModuleResult(
                 module_name=self.name, persona_used=None, markdown="",
-                skipped=True, skip_reason="No financial_metrics history",
+                skipped=True, skip_reason="No earnings history available",
             )
 
-        series = shared_data.financials[:4]  # most recent 4 quarters
-        rev = [_f(lambda x=row: x.revenue) for row in series]
-        ni = [_f(lambda x=row: x.net_income) for row in series]
-        fcf = [_f(lambda x=row: x.free_cash_flow) for row in series]
+        # Filter records with a quarterly EarningsData payload (skip annual-only / blanks)
+        series = [r for r in shared_data.earnings_history
+                  if getattr(r, "quarterly", None) is not None][:4]
+
+        if not series:
+            return ModuleResult(
+                module_name=self.name, persona_used=None, markdown="",
+                skipped=True,
+                skip_reason="No quarterly earnings records in history",
+            )
+
+        rev = [_quarterly_field(r, "revenue") for r in series]
+        ni = [_quarterly_field(r, "net_income") for r in series]
+        fcf = [_quarterly_field(r, "free_cash_flow") for r in series]
 
         metrics = {
             "revenue_latest": rev[0] if rev else 0.0,
@@ -58,9 +84,10 @@ class FinancialsModule(AnalysisModule):
             metrics["net_income_yoy_growth"] = round((ni[0] / ni[3]) - 1.0, 4)
 
         rows_md = "\n".join(
-            f"  {row.report_period}: revenue ${rev[i] / 1e9:.2f}B, "
+            f"  {getattr(record, 'report_period', '?')}: "
+            f"revenue ${rev[i] / 1e9:.2f}B, "
             f"NI ${ni[i] / 1e9:.2f}B, FCF ${fcf[i] / 1e9:.2f}B"
-            for i, row in enumerate(series)
+            for i, record in enumerate(series)
         )
         prompt = (
             f"Recent quarterly financials for {request.ticker}:\n"

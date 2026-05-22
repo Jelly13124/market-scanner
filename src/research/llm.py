@@ -29,6 +29,23 @@ _DEFAULT_MODEL = "deepseek-chat"
 _DEFAULT_PROVIDER = "DeepSeek"
 
 
+def _schema_hint(pydantic_model: type[BaseModel]) -> str:
+    """Produce a one-liner-per-field schema hint for the LLM."""
+    schema = pydantic_model.model_json_schema()
+    props = schema.get("properties", {})
+    if not props:
+        return "Respond as a JSON object."
+    lines = ["Respond as a JSON object with these exact fields:"]
+    for name, info in props.items():
+        desc = info.get("description", "")
+        type_hint = info.get("type", "string")
+        if desc:
+            lines.append(f'  "{name}" ({type_hint}): {desc}')
+        else:
+            lines.append(f'  "{name}" ({type_hint})')
+    return "\n".join(lines)
+
+
 def call_research_llm(
     prompt,
     pydantic_model: type[_T],
@@ -51,14 +68,19 @@ def call_research_llm(
     llm = get_model(model_name, model_provider)
     structured = llm.with_structured_output(pydantic_model, method="json_mode")
 
-    # DeepSeek (and some other json_mode providers) require the prompt to
-    # contain the literal word "json" when response_format=json_object is
-    # active. Module prompts don't naturally include it, so append a
-    # trailing instruction for string prompts. Structured prompts
-    # (ChatPromptTemplate / message lists) are left alone — advanced
-    # callers handle this themselves.
-    if isinstance(prompt, str) and "json" not in prompt.lower():
-        prompt = prompt + "\n\nRespond as JSON matching the requested schema."
+    # DeepSeek (and other json_mode providers) require:
+    #   (a) the prompt to contain the literal word "json"
+    #   (b) field-name hints, because json_mode does NOT share the
+    #       pydantic schema with the model — without hints DeepSeek
+    #       invents field names like {"summary": ...} when we expected
+    #       {"narrative": ...}.
+    # We append a concrete schema hint listing the expected fields and
+    # their descriptions. Structured prompts (ChatPromptTemplate /
+    # message lists) are left alone — advanced callers handle this
+    # themselves.
+    if isinstance(prompt, str):
+        hint = _schema_hint(pydantic_model)
+        prompt = prompt + "\n\n" + hint
 
     last_exc: Exception | None = None
     for attempt in range(max_retries):

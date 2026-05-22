@@ -1,5 +1,92 @@
 # Progress Log
 
+## Session — 2026-05-22 (Research pipeline Phase 1 landed)
+
+### What shipped
+
+`src/research/` namespace — a deterministic, LLM-backed per-stock research pipeline.
+Components:
+
+- **8 objective analysis modules** (each returns `ModuleResult` with `narrative` + `metrics`):
+  `macro`, `sector`, `fundamentals`, `financials`, `valuation`, `technical`, `sentiment`, `risk_position`
+- **`detector_backtest`** — deterministic replay of scanner detector hits against historical OHLCV;
+  produces `BacktestSummary` with hit-rate, median CAR, caveat if N < 10
+- **`synthesizer`** — DeepSeek LLM agent that reads all module narratives and emits a final
+  `ResearchReport` Markdown + `TradePlan` (action, entry/stop/target or stand-aside)
+- **Linear pipeline** (`run_research`) — fetches `SharedData` once, fans out to all modules in
+  sequence, calls synthesizer, returns `ResearchState`
+- **CLI entrypoint** (`python -m src.research --ticker X --risk moderate --goal new_entry`) with
+  rich Markdown output and formatted trade plan table
+- **54 unit tests, all green** — full mocks; no live API calls in the test suite
+
+### Commits (3fe986a → HEAD, 20 commits)
+
+- `463d26b` feat(research): scaffold package + data models
+- `d73d05e` feat(research): SharedData fetcher with per-process cache
+- `cf4ff80` fix(research): SharedData uses correct v2 protocol method name get_news
+- `f7b8949` feat(research): call_research_llm helper with retry + default factory
+- `b33efe1` feat(research): AnalysisModule ABC + module registry
+- `8d90767` feat(research): macro module (objective)
+- `41b7965` feat(research): sector module (objective)
+- `4a5d81c` feat(research): fundamentals module (objective)
+- `923d1cd` feat(research): financials module (objective)
+- `f65ea3f` fix(research): financials reads from earnings_history not financial_metrics
+- `33a0e38` fix(research): coerce CompanyFacts to dict in SharedData
+- `8abff87` feat(research): valuation module (objective)
+- `648e9f2` feat(research): technical module (objective)
+- `361d9bc` fix(research): RSI(14) uses most recent 14 deltas, not oldest
+- `46b0b5c` feat(research): sentiment module (objective)
+- `c3e9b5d` feat(research): risk_position module (objective)
+- `f4fc99a` feat(research): detector-replay backtest
+- `51ecb26` feat(research): synthesizer LLM agent
+- `9ecd88b` feat(research): pipeline orchestration (linear, no LangGraph yet)
+- `208f9fb` feat(research): CLI entrypoint
+
+### Notable bugs caught by review and fixed
+
+1. **Task 2 — wrong v2 protocol method** (`cf4ff80`): plan said `client.get_company_news` but the
+   v2 `DataClient` protocol exposes `get_news`. Fixed before any module used it.
+2. **Task 8 — financials reading wrong field** (`f65ea3f`): module was looking for
+   `shared_data.financials` but revenue/net_income/free_cash_flow live on `EarningsData` via
+   `earnings_history`. Fixed to iterate `shared_data.earnings_history`.
+3. **Task 10 — RSI(14) computed wrong window** (`361d9bc`): deltas were taken from the *first*
+   14 bars instead of the *last* 14. Caught only because `test_rsi_reflects_recent_volatility`
+   was added as a behavioral test; a pure smoke-pass test would have missed it.
+4. **SharedData — CompanyFacts type inconsistency** (`33a0e38`): `company_facts` could be either a
+   `CompanyFacts` Pydantic model or a raw `dict` depending on the data path. Fixed by calling
+   `.model_dump()` at assignment so downstream code always sees a dict.
+
+### Test results (2026-05-22)
+
+- **Research suite**: 54 passed, 0 failed (10.5 s)
+- **Full suite**: 852 passed, 20 failed, 3 skipped (104 s)
+  - All 20 failures are pre-existing live-API tests in `v2/data/test_client.py`,
+    `v2/data/test_composite_client.py`, `v2/data/test_protocol_conformance.py`,
+    `v2/data/test_yfinance_client.py`, and `v2/event_study/test_event_study.py`
+    (401 Unauthorized / missing API keys in CI environment). None are in `src/research/`
+    or `tests/research/`.
+
+### Smoke test (2026-05-22)
+
+`python -m src.research --ticker NVDA --risk moderate --goal new_entry`
+
+Result: **smoke skipped — DEEPSEEK_API_KEY not set + EODHD/Finnhub keys returning 401**.
+Data fetch 401s logged as WARNINGs (correct behavior — modules skip gracefully).
+LLM calls raise `ValueError("DeepSeek API key not found")` which propagates out of the synthesizer.
+Pipeline structure is correct; end-to-end run requires live API keys in `.env`.
+
+### Deferred
+
+- **Phase 2**: persona modules (Buffett, Burry, Lynch…) + persona router + multi-persona debate panel
+- **Phase 3**: DB persistence (ResearchRun table) + FastAPI endpoints + cron scheduler + HTML email digest
+
+### Workflow
+
+`superpowers:writing-plans` → `superpowers:subagent-driven-development`. Tasks 1–16 implemented by
+Haiku, reviewed by Haiku (spec) + Haiku (code-quality). Task 17 narrative by Sonnet.
+
+---
+
 ## Session — 2026-05-21 (3 production optimizations from backtest evidence)
 
 Acted on three findings from today's backtests. None required new

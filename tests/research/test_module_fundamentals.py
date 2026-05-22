@@ -62,3 +62,58 @@ class TestFundamentalsModule:
         )
         out = FundamentalsModule().run(_req(), None, shared)
         assert out.skipped is True
+
+
+class TestFundamentalsPersonaPath:
+    @patch("src.research.modules.fundamentals.call_research_llm")
+    def test_buffett_persona_recorded(self, mock_llm):
+        from src.research.modules.fundamentals import _FundamentalsNarrative
+        mock_llm.return_value = _FundamentalsNarrative(
+            narrative="Quality moat per Buffett lens.",
+        )
+        shared = SharedData(
+            ticker="NVDA", scan_date="2026-05-22",
+            prices=[], financials=_fundamentals(),
+            insider_trades=[], news=[], analyst_actions=[],
+            analyst_targets=None, earnings_history=[],
+            company_facts={}, sector_etf_prices=[], spy_prices=[],
+        )
+        out = FundamentalsModule().run(_req(), "buffett", shared)
+        assert out.persona_used == "buffett"
+
+    @patch("src.research.modules.fundamentals.call_research_llm")
+    def test_buffett_prompt_includes_persona_voice(self, mock_llm):
+        from src.research.modules.fundamentals import _FundamentalsNarrative
+        captured = {}
+        def _capture(prompt, model, **kw):
+            captured["prompt"] = prompt
+            return _FundamentalsNarrative(narrative="ok")
+        mock_llm.side_effect = _capture
+        shared = SharedData(
+            ticker="NVDA", scan_date="2026-05-22",
+            prices=[], financials=_fundamentals(),
+            insider_trades=[], news=[], analyst_actions=[],
+            analyst_targets=None, earnings_history=[],
+            company_facts={}, sector_etf_prices=[], spy_prices=[],
+        )
+        FundamentalsModule().run(_req(), "buffett", shared)
+        # Persona system prompt should reference Buffett's voice
+        prompt_text = captured["prompt"].lower()
+        assert any(kw in prompt_text for kw in ("buffett", "moat", "owner earnings"))
+
+    @patch("src.research.modules.fundamentals.call_research_llm")
+    def test_unsupported_persona_coerced_to_none(self, mock_llm):
+        """Router could pick a persona not in this module's supports_personas;
+        _coerce_persona returns None and the module runs objective."""
+        from src.research.modules.fundamentals import _FundamentalsNarrative
+        mock_llm.return_value = _FundamentalsNarrative(narrative="objective.")
+        shared = SharedData(
+            ticker="NVDA", scan_date="2026-05-22",
+            prices=[], financials=_fundamentals(),
+            insider_trades=[], news=[], analyst_actions=[],
+            analyst_targets=None, earnings_history=[],
+            company_facts={}, sector_etf_prices=[], spy_prices=[],
+        )
+        # Wood is NOT in fundamentals.supports_personas
+        out = FundamentalsModule().run(_req(), "wood", shared)
+        assert out.persona_used is None

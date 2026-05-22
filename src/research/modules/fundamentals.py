@@ -31,8 +31,7 @@ def _safe(getter, default=None):
 
 class FundamentalsModule(AnalysisModule):
     name = "fundamentals"
-    # Phase 2 will add ["buffett", "munger", "fisher"]
-    supports_personas: list[str] = []
+    supports_personas: list[str] = ["buffett", "munger", "fisher"]
 
     def run(self, request, persona, shared_data: SharedData) -> ModuleResult:
         persona = self._coerce_persona(persona)
@@ -54,7 +53,7 @@ class FundamentalsModule(AnalysisModule):
             "debt_to_equity": _safe(lambda: float(latest.debt_to_equity), 0.0) or 0.0,
         }
 
-        prompt = (
+        objective_prompt = (
             f"Company fundamentals for {request.ticker} "
             f"(latest period: {_safe(lambda: latest.report_period, 'recent')}):\n"
             f"  Revenue growth (YoY): {metrics['revenue_growth'] * 100:+.1f}%\n"
@@ -68,6 +67,20 @@ class FundamentalsModule(AnalysisModule):
             f"profitability, capital efficiency, and apparent moat strength.\n"
             f"Anchor every claim on a number above. Do not predict price."
         )
+
+        prompt = objective_prompt
+        if persona is not None:
+            from src.research.personas import PERSONA_REGISTRY
+            persona_obj = PERSONA_REGISTRY.get(persona)
+            if persona_obj is not None:
+                prompt = (
+                    persona_obj.system_addition()
+                    + "\n\n"
+                    + persona_obj.module_lens(self.name)
+                    + "\n\n"
+                    + objective_prompt
+                )
+
         narrative = call_research_llm(
             prompt, _FundamentalsNarrative,
             default_factory=lambda: _FundamentalsNarrative(
@@ -79,6 +92,6 @@ class FundamentalsModule(AnalysisModule):
             ),
         )
         return ModuleResult(
-            module_name=self.name, persona_used=None,
+            module_name=self.name, persona_used=persona,
             markdown=narrative.narrative, key_metrics=metrics,
         )

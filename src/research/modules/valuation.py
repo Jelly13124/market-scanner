@@ -64,8 +64,7 @@ def _fair_value_range(
 
 class ValuationModule(AnalysisModule):
     name = "valuation"
-    # Phase 2 will add ["buffett", "graham", "munger", "fisher"]
-    supports_personas: list[str] = []
+    supports_personas: list[str] = ["buffett", "graham", "munger", "fisher"]
 
     def run(self, request, persona, shared_data: SharedData) -> ModuleResult:
         persona = self._coerce_persona(persona)
@@ -111,6 +110,19 @@ class ValuationModule(AnalysisModule):
             f"cheap, fair, or stretched, and by how much. Do not predict\n"
             f"future price; describe the gap."
         )
+
+        if persona is not None:
+            from src.research.personas import PERSONA_REGISTRY
+            persona_obj = PERSONA_REGISTRY.get(persona)
+            if persona_obj is not None:
+                prompt = (
+                    persona_obj.system_addition()
+                    + "\n\n"
+                    + persona_obj.module_lens(self.name)
+                    + "\n\n"
+                    + prompt
+                )
+
         narrative = call_research_llm(
             prompt, _ValuationNarrative,
             default_factory=lambda: _ValuationNarrative(
@@ -121,6 +133,6 @@ class ValuationModule(AnalysisModule):
             ),
         )
         return ModuleResult(
-            module_name=self.name, persona_used=None,
+            module_name=self.name, persona_used=persona,
             markdown=narrative.narrative, key_metrics=metrics,
         )

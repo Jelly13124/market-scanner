@@ -83,6 +83,14 @@ def _print_summary(state) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Load .env so DEEPSEEK_API_KEY / EODHD_API_KEY etc. are available
+    # to downstream modules. Mirrors v2/backtesting/cli.py.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+    except ImportError:
+        pass
+
     args = _parse_args(argv)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

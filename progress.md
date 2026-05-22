@@ -1,5 +1,69 @@
 # Progress Log
 
+## Session — 2026-05-22 (Research pipeline Phase 3 landed — production wired)
+
+### What shipped
+
+- **2 new DB tables** (`research_reports` + `research_trade_plans`) via additive Alembic migration `f3a1e43` / `bcec5cf`
+- **`ResearchReportRepository`** with `create_with_plan` / `get_by_id` / `get_plan_for_report` / `list_reports` (ordered by `created_at` desc per spec)
+- **Pydantic API schemas**: `ResearchRunRequest`, `ResearchReportSummary`, `ResearchReportDetail`, `TradePlanPayload`, `BacktestSummaryPayload`
+- **HTML render** via Jinja2 + minimal markdown-to-HTML converter (email-safe with inline styles); no external CSS/JS
+- **Persist helper** bridging `ResearchState` → DB row kwargs (`state_to_db_kwargs`)
+- **4 REST endpoints**: `POST /research/run` (sync, 30-90 s), `GET /research/reports`, `GET /research/reports/{id}`, `GET /research/reports/{id}/html`
+- **Email render path** for research reports (`render_research_html` + `render_research_text`) in `app/backend/services/notifications/`
+- **Notification dispatcher** routes `"research.completed"` event to the research render handlers
+- **Scheduler cron at 16:35 ET** (`tests/test_scheduler_research_job.py`) reads latest legacy `PipelineRun` watchlist for today and fires one research run per ticker
+- **Integration test** (`tests/test_research_integration.py`): POST → list → detail → HTML round-trip with in-memory SQLite + mocked LLM
+
+### Commits (eedd60b → HEAD, 11 commits)
+
+- `f3a1e43` feat(backend): ResearchReport + ResearchTradePlan SQLAlchemy models
+- `bcec5cf` feat(backend): alembic migration for research tables
+- `590805c` feat(backend): ResearchReportRepository
+- `c01b992` fix(backend): research repository orders by created_at (per spec)
+- `055ddd3` feat(backend): pydantic schemas for /research API
+- `c169527` feat(research): HTML render for ResearchState
+- `0e19b79` feat(research): persist helper (ResearchState -> DB kwargs)
+- `35efabb` feat(backend): /research REST API (4 endpoints)
+- `80d10f3` feat(notifications): render_research_html + render_research_text
+- `723b4b2` feat(notifications): dispatcher routes research.completed event
+- `b4463ee` feat(scheduler): daily research cron at 16:35 ET
+
+### Test results (2026-05-22)
+
+- **Phase 3 suite** (research/ + db models + repository + schemas + routes + integration + notifications + scheduler): **136 passed, 0 failed** (23 s)
+  - Phase 1: 54 | Phase 2: 34 | Phase 3 new: 48 (DB models, repository, schemas, routes, HTML render, persist, notifications, scheduler, integration)
+- **Full suite regression**: **934 passed, 20 failed, 3 skipped** (97 s)
+  - All 20 failures are pre-existing live-API tests in `v2/data/` and `v2/event_study/`. None are in `src/research/`, `tests/research/`, `tests/test_research_*`, `tests/notifications/`, or `tests/test_scheduler_research_job.py`.
+
+### Smoke (2026-05-22)
+
+HTTP smoke deferred to user — DO NOT try to start uvicorn in a non-interactive terminal. To verify:
+
+```bash
+uvicorn app.backend.main:app --host 127.0.0.1 --port 8001 --log-level info
+# then in another terminal:
+curl -sX POST http://127.0.0.1:8001/research/run \
+  -H "Content-Type: application/json" \
+  -d '{"ticker":"NVDA","risk_tolerance":"moderate","use_personas":true}' | head -50
+```
+
+CLI smoke from Phase 2 (`python -m src.research --ticker NVDA --use-personas`) still passes unchanged. Integration test (`test_post_then_list_then_detail_then_html`) covers the full POST → persist → list → detail → HTML cycle with a mocked LLM.
+
+### Bugs caught and fixed during implementation
+
+- **Task 3** — list ordering used `desc(id)` instead of spec'd `desc(created_at)`; fixed in `c01b992`
+- **Task 5** — double-escape issue: Jinja `autoescape=True` + manual `_html.escape()` in the markdown converter produced `&amp;lt;` entities; fixed by escaping in the markdown converter and relying on Jinja's autoescape only for raw template variables
+- **Task 9** — email/webhook handler refactor went wider than the plan scope: `email_handler.py` and `webhook_handler.py` were both refactored to accommodate the new `research.completed` event type routing alongside the existing `pipeline.completed` path
+
+### Production state
+
+- Legacy pipeline cron at 16:30 ET fires unchanged; persists into `pipeline_runs` / `watchlist_entries`
+- Research cron at 16:35 ET fires when registered via `init_scheduler_service`; persists into `research_reports` / `research_trade_plans`
+- Both croms fire independently; A/B comparison data accumulates in separate tables
+- Frontend research-request panel explicitly deferred per spec (Phase 4 or UI sprint)
+- Spec is otherwise fully implemented
+
 ## Session — 2026-05-22 (Research pipeline Phase 2 landed)
 
 ### What shipped

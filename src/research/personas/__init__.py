@@ -11,9 +11,28 @@ easy to validate.
 
 from src.research.personas.base import PersonaPrompt
 from src.research.personas.buffett import BuffettPrompt
+from src.research.personas.burry import BurryPrompt
+from src.research.personas.druckenmiller import DruckenmillerPrompt
+from src.research.personas.fisher import FisherPrompt
+from src.research.personas.graham import GrahamPrompt
+from src.research.personas.lynch import LynchPrompt
+from src.research.personas.munger import MungerPrompt
+from src.research.personas.wood import WoodPrompt
 
 PERSONA_REGISTRY: dict[str, PersonaPrompt] = {
-    "buffett": BuffettPrompt(),
+    "buffett":       BuffettPrompt(),
+    "munger":        MungerPrompt(),
+    "graham":        GrahamPrompt(),
+    "fisher":        FisherPrompt(),
+    "lynch":         LynchPrompt(),
+    "wood":          WoodPrompt(),
+    "burry":         BurryPrompt(),
+    "druckenmiller": DruckenmillerPrompt(),
 }
 
-__all__ = ["PERSONA_REGISTRY", "PersonaPrompt", "BuffettPrompt"]
+__all__ = [
+    "PERSONA_REGISTRY", "PersonaPrompt",
+    "BuffettPrompt", "BurryPrompt", "DruckenmillerPrompt",
+    "FisherPrompt", "GrahamPrompt", "LynchPrompt",
+    "MungerPrompt", "WoodPrompt",
+]

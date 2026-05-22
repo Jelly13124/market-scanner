@@ -122,7 +122,8 @@ def _fetch_raw(ticker: str, scan_date: str) -> SharedData:
     except Exception as e:
         logger.warning("shared_data: earnings_history(%s) failed: %s", ticker, e)
     try:
-        bundle.company_facts = client.get_company_facts(ticker) or {}
+        facts = client.get_company_facts(ticker)
+        bundle.company_facts = facts.model_dump() if facts is not None else {}
     except Exception as e:
         logger.warning("shared_data: company_facts(%s) failed: %s", ticker, e)
 

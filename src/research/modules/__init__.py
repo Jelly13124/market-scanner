@@ -8,6 +8,7 @@ iterates over.
 """
 
 from src.research.modules.base import AnalysisModule
+from src.research.modules.financials import FinancialsModule
 from src.research.modules.fundamentals import FundamentalsModule
 from src.research.modules.macro import MacroModule
 from src.research.modules.sector import SectorModule
@@ -16,9 +17,10 @@ ALL_MODULES: list[type[AnalysisModule]] = [
     MacroModule,
     SectorModule,
     FundamentalsModule,
+    FinancialsModule,
 ]
 
 __all__ = [
     "AnalysisModule", "ALL_MODULES",
-    "FundamentalsModule", "MacroModule", "SectorModule",
+    "FinancialsModule", "FundamentalsModule", "MacroModule", "SectorModule",
 ]

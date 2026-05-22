@@ -51,6 +51,15 @@ def call_research_llm(
     llm = get_model(model_name, model_provider)
     structured = llm.with_structured_output(pydantic_model, method="json_mode")
 
+    # DeepSeek (and some other json_mode providers) require the prompt to
+    # contain the literal word "json" when response_format=json_object is
+    # active. Module prompts don't naturally include it, so append a
+    # trailing instruction for string prompts. Structured prompts
+    # (ChatPromptTemplate / message lists) are left alone — advanced
+    # callers handle this themselves.
+    if isinstance(prompt, str) and "json" not in prompt.lower():
+        prompt = prompt + "\n\nRespond as JSON matching the requested schema."
+
     last_exc: Exception | None = None
     for attempt in range(max_retries):
         try:

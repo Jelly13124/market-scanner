@@ -62,3 +62,26 @@ class TestValuationModule:
         shared = _shared(eps_ttm=0.0, fcf_per_share=0.0)
         out = ValuationModule().run(_req(), None, shared)
         assert out.skipped is True
+
+
+class TestValuationPersonaPath:
+    @patch("src.research.modules.valuation.call_research_llm")
+    def test_graham_persona_records_and_prepends(self, mock_llm):
+        from src.research.modules.valuation import _ValuationNarrative
+        captured = {}
+        def _capture(prompt, model, **kw):
+            captured["prompt"] = prompt
+            return _ValuationNarrative(narrative="Graham number says cheap.")
+        mock_llm.side_effect = _capture
+        out = ValuationModule().run(_req(), "graham", _shared())
+        assert out.persona_used == "graham"
+        assert any(kw in captured["prompt"].lower()
+                   for kw in ("graham", "net-net", "margin of safety"))
+
+    @patch("src.research.modules.valuation.call_research_llm")
+    def test_unsupported_persona_coerced_to_none(self, mock_llm):
+        from src.research.modules.valuation import _ValuationNarrative
+        mock_llm.return_value = _ValuationNarrative(narrative="objective.")
+        # Lynch is NOT in valuation.supports_personas
+        out = ValuationModule().run(_req(), "lynch", _shared())
+        assert out.persona_used is None

@@ -94,3 +94,82 @@ class ResearchReportDetail(BaseModel):
     duration_seconds: float | None
     plan: TradePlanPayload
     backtest: BacktestSummaryPayload
+
+
+# ===========================================================================
+# Phase 4 — Analyze (SOP) endpoint schemas
+# ===========================================================================
+
+from typing import Literal as _Literal
+
+_Objective = _Literal[
+    "target_price", "short_term", "medium_term", "long_term",
+    "earnings_review", "general_research",
+]
+_RiskBand = _Literal["conservative", "balanced", "aggressive"]
+
+
+class AnalyzeRunRequest(BaseModel):
+    """POST /research/analyze body."""
+
+    ticker: str
+    objective: _Objective = "general_research"
+    position_budget_usd: float | None = Field(default=None, ge=0.0)
+    already_holds: bool = False
+    cost_basis_usd: float | None = Field(default=None, ge=0.0)
+    risk_tolerance: _RiskBand = "balanced"
+    use_personas: bool = False
+    included_sections: list[str] | None = Field(
+        default=None,
+        description="If null, all 16 SOP sections run. Otherwise restrict to listed.",
+    )
+
+    @field_validator("ticker")
+    @classmethod
+    def _uppercase_ticker(cls, v: str) -> str:
+        return v.strip().upper()
+
+
+class SectionPayloadAPI(BaseModel):
+    """API mirror of SectionPayload (just the bits we expose to consumers)."""
+    name: str
+    markdown: str
+    structured: dict | list | None = None
+    skipped: bool
+    persona_used: str | None = None
+    skip_reason: str | None = None
+
+
+class BacktestVerdictAPI(BaseModel):
+    """API mirror of BacktestVerdict."""
+    signal: str
+    window_start: str
+    window_end: str
+    n_signals: int
+    win_rate_20d: float | None
+    avg_return_20d: float | None
+    t_stat: float | None
+    significant: bool
+    verdict: str
+
+
+class AnalyzeReportDetail(BaseModel):
+    """Response from POST /research/analyze and GET /research/reports/{id}/analyze."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ticker: str
+    scan_date: str
+    created_at: datetime
+    duration_seconds: float | None
+
+    objective: _Objective
+    position_budget_usd: float | None
+    already_holds: bool
+    cost_basis_usd: float | None
+    risk_tolerance: _RiskBand
+    use_personas: bool
+    persona_assignments: dict | None = None
+
+    sections: dict[str, SectionPayloadAPI]
+    backtest: BacktestVerdictAPI | None

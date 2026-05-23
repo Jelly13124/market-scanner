@@ -47,6 +47,24 @@ class ResearchReportRepository:
         self.db.refresh(report_row)
         return report_row
 
+    def create_analyze(
+        self,
+        *,
+        report: dict,
+    ) -> ResearchReport:
+        """Phase 4: insert a ResearchReport WITHOUT a paired TradePlan.
+
+        Phase 4 SOP runs don't produce a single-shot TradePlan — the
+        actionable strategy lives in the final_strategy section
+        markdown and the risk_position section. So we leave the
+        research_trade_plans row absent.
+        """
+        report_row = ResearchReport(**report)
+        self.db.add(report_row)
+        self.db.commit()
+        self.db.refresh(report_row)
+        return report_row
+
     # -- read ---------------------------------------------------------------
 
     def get_by_id(self, report_id: int) -> Optional[ResearchReport]:

@@ -1,5 +1,86 @@
 # Progress Log
 
+## Session — 2026-05-22 (Phase 4 landed — SOP-driven Analyze pipeline)
+
+### What shipped
+
+- **Vendored stock-analyze-skills assets** into `src/research/prompts/` — 10 module prompts + 8 persona briefs + SOP + report template
+- **Vendored skill HTML template** with rich CSS (dark mode + bull/bear pills + score badge + collapsible `<details>` + print stylesheet)
+- **New section-by-section orchestrator** (`run_sop` in `src/research/orchestrator_sop.py`) executing 15 SOP sections + 1 technical backtest sub-section in deterministic order
+- **15 SOP sections** under `src/research/sections/`:
+  - 8 LLM-driven prose sections (Macro, Sector, CompanyFundamentals, FinancialStatements, Valuation, Technical, RiskPosition, EventRisk, ExecutiveSummary, FinalStrategy)
+  - 3 structured-output sections (EvidenceLedger, Scenarios, Conviction)
+  - 2 deterministic no-LLM sections (DataHealth, MissingData)
+  - Debate section wraps the Phase 2 debate engine
+- **Always-75 confidence bug fixed at 2 layers**:
+  - `ConvictionSection` computes `total_score` deterministically from weighted per-category scores
+  - `ExecutiveSummary` reads the score from the prior (LLM has no `score` field in its output schema, so it structurally cannot supply one)
+- **Technical-signal backtest** (RSI / SMA50 / MACD with t-stat significance gate) replaces detector-replay backtest for Analyze reports
+- **SOP HTML render** (`render_sop` in `src/research/html_render.py`) — Jinja scalar fill + Python string injection of per-section bodies under matching `<h2>` slots; preserves the vendored template's CSS verbatim
+- **New REST endpoint** `POST /research/analyze` + `AnalyzeRunRequest` / `AnalyzeReportDetail` schemas; backend orchestrates `run_sop` → `render_sop` → persist → return
+- **Additive Alembic migration** `d9f1c5b8e2a6` adds nullable `analyze_request_json` + `sections_json` columns to `research_reports`; Phase 3 rows preserved untouched
+- **New frontend "Analyze" tab** (Microscope icon, sidebar action independent of Scanner) with:
+  - Gate form (ticker, objective, position budget, risk tolerance, personas)
+  - Flow-style module picker (vertical pipeline visualization, all-modules-on default)
+  - Iframe display of generated HTML report
+  - Recent reports list with click-to-load
+
+### Commits (9a2a384 → HEAD, 22 commits)
+
+`git log --oneline 9a2a384..HEAD` →
+
+- `c16e260` feat(research): vendor stock-analyze-skills prompts into repo
+- `c12ee9c` feat(research): vendor skill HTML template
+- `0540369` feat(research): AnalyzeRequest + AnalyzeReport + SectionPayload
+- `6240714` feat(research): Section ABC + SECTION_REGISTRY + SectionContext
+- `356fcf4` feat(research): DataHealthSection (deterministic, no LLM)
+- `97bf2bf` feat(research): shared LLM section runner helper
+- `0fe0adb` feat(research): MacroSection
+- `24babfa` feat(research): SectorSection
+- `68eb7a0` feat(research): CompanyFundamentalsSection (deepest section)
+- `f0c17e1` feat(research): FinancialStatementsSection (2nd deepest, 600-950w)
+- `d763875` feat(research): Valuation+Technical+RiskPosition sections
+- `6ad65db` feat(research): structured EvidenceLedger+Scenarios+Conviction sections
+- `212efba` feat(research): 5 closing sections - ExecutiveSummary/EventRisk/Debate/FinalStrategy/MissingData
+- `d97c908` feat(research): technical-signal backtest
+- `20f3bcc` feat(research): SOP orchestrator (run_sop)
+- `7482e8f` feat(research): render_sop -- HTML for AnalyzeReport
+- `4c10a47` feat(research): CLI uses run_sop + render_sop
+- `1e76e7e` feat(backend): additive alembic — AnalyzeRequest + sections_json
+- `dfde3c5` feat(backend): POST /research/analyze endpoint (Phase 4 SOP)
+- `f372d28` feat(frontend): Analyze tab type + sidebar action + stub panel
+- `99495d9` feat(frontend): AnalyzePanel — form + flow-style picker + iframe
+
+### Test results (2026-05-22)
+
+- **Phase 4 suite** (research/ + db models + repository + schemas + research routes + analyze routes + notifications + scheduler): **210 passed, 0 failed** (25 s)
+- **Full suite regression**: **1009 passed, 20 failed, 3 skipped** (101 s)
+  - All 20 failures are the same pre-existing live-API tests in `v2/data/` and `v2/event_study/`. None are in `src/research/`, `tests/research/`, `tests/test_research_*`, `tests/test_analyze_routes.py`, `tests/notifications/`, or `tests/test_scheduler_research_job.py`.
+- **Frontend `tsc --noEmit`**: zero errors related to `research`, `analyze`, `module-picker`, or `report-list` files
+
+### Smoke (2026-05-22)
+
+HTTP smoke deferred. Backend at `http://127.0.0.1:8001` is running but was started BEFORE commit `dfde3c5` (POST `/research/analyze`) — `/openapi.json` confirms only the Phase 3 endpoints (`/research/run`, `/research/reports`, `/research/reports/{id}`, `/research/reports/{id}/html`) are registered; `POST /research/analyze` returns 404. To verify end-to-end:
+
+```bash
+# Stop the running uvicorn, then:
+uvicorn app.backend.main:app --host 127.0.0.1 --port 8001 --log-level info
+# In another terminal:
+curl -sX POST http://127.0.0.1:8001/research/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"ticker":"NVDA","objective":"medium_term","position_budget_usd":10000,"risk_tolerance":"balanced","use_personas":true}' | head -80
+```
+
+Test-suite coverage (`tests/test_analyze_routes.py`) exercises the route handler end-to-end with mocked LLM, so the runtime 404 is purely a server-restart artefact, not a code defect.
+
+### What's unchanged
+
+- All Phase 3 endpoints (`/research/run`, `/research/reports`, `/research/reports/{id}`, `/research/reports/{id}/html`) continue to function — additive migration preserves existing rows
+- Legacy `_run_pipeline_job` cron (16:30 ET, populates `pipeline_runs` / `watchlist_entries`) untouched
+- Phase 3 `_run_research_job` cron (16:35 ET, populates Phase 3 rows from latest watchlist) untouched
+- `v2/`, `src/agents/`, and `src/main.py` untouched
+- Phase 3 frontend research panel untouched; Analyze tab is additive and independent
+
 ## Session — 2026-05-22 (Research pipeline Phase 3 landed — production wired)
 
 ### What shipped

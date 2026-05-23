@@ -13,4 +13,27 @@ from src.research.sections.base import Section
 
 SECTION_REGISTRY: dict[str, Section] = {}
 
+# Import each concrete section module so its SECTION_REGISTRY[name] =
+# FooSection() side-effect fires at package-import time. Without these
+# imports, the orchestrator finds an empty registry and emits 'section
+# not yet implemented' for every slot. Order matches SECTION_ORDER.
+from src.research.sections import (  # noqa: E402, F401  (side-effect imports)
+    data_health,
+    executive_summary,
+    evidence_ledger,
+    macro,
+    sector,
+    company_fundamentals,
+    financial_statements,
+    valuation,
+    technical,
+    risk_position,
+    scenarios,
+    conviction,
+    event_risk,
+    debate,
+    final_strategy,
+    missing_data,
+)
+
 __all__ = ["SECTION_REGISTRY", "Section"]

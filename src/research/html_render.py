@@ -1,25 +1,29 @@
-"""Render a ResearchState into a single self-contained HTML document.
+"""Phase 4 HTML rendering for AnalyzeReport.
 
-Inline-style HTML; no external CSS or JS. Email-safe (Gmail strips
-<style> blocks for some flows — every visual rule that matters is also
-inlined on the body element).
+The skill's vendored template has scalar-only Jinja placeholders.
+``render_sop`` is a two-phase pass:
+  1. Jinja fills the 22 scalar placeholders, producing a "skeleton" HTML
+     with empty section bodies (the template's <h2> blocks have empty
+     <tbody>/<ul>/<p> slots designed to be filled post-render).
+  2. Python string-injects each section's markdown-converted HTML body
+     under its <h2> heading.
 
-Markdown bodies (report_markdown, module markdowns) are converted to
-HTML via a minimal markdown-to-HTML pass. We avoid pulling in a heavy
-markdown dependency by handling the small subset the synthesizer emits:
-headings (#, ##, ###), bold (**), italic (*), bullet lists, paragraphs.
-Anything more exotic is left literal.
+The Phase 3 ``render_html(state)`` API is still used by Phase 3
+endpoints (app/backend/routes/research.py + scheduler_service.py).
+It is kept intact until Phase 4 Task 19 swaps callers over to
+``render_sop``.
 """
 
 from __future__ import annotations
 
 import html as _html
 import re
+from datetime import datetime
 from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from src.research.models import ResearchState
+from src.research.models import AnalyzeReport, ResearchState
 
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -29,60 +33,281 @@ _ENV = Environment(
 )
 
 
-def _markdown_to_html(text: str) -> str:
-    """Minimal markdown subset → HTML. Handles what the synthesizer +
-    module prompts realistically emit; does not pretend to be CommonMark.
+# ---------------------------------------------------------------------------
+# Shared markdown converter
+# ---------------------------------------------------------------------------
+
+def _inline(s: str) -> str:
+    """Apply inline markdown (bold, italic, code)."""
+    # Order matters: bold (**) before italic (*) so ** isn't consumed by *.
+    s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
+    s = re.sub(r"(?<![*\w])\*([^*\n]+?)\*(?!\w)", r"<em>\1</em>", s)
+    s = re.sub(r"`([^`]+?)`", r"<code>\1</code>", s)
+    return s
+
+
+def _markdown_to_html(text: str, *, skip_h2: bool = False) -> str:
+    """Minimal markdown subset -> HTML.
+
+    Handles: ## / ### headings, bold (**), italic (*), inline code (`...`),
+    bullet lists (- / *), simple GitHub-style tables, paragraphs.
+
+    ``skip_h2``: when True, drop level-2 headings entirely. The Phase 4
+    template already provides the H2 for each section; re-emitting one
+    inside the injected body would duplicate the heading.
     """
     if not text:
         return ""
-    # Escape first; then unescape the few markdown markers we re-introduce
-    # as real HTML below.
-    out_lines: list[str] = []
+
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
     in_list = False
+    in_table = False
 
-    def _inline(s: str) -> str:
-        # Order matters: bold before italic to avoid ** being consumed by *.
-        s = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", s)
-        s = re.sub(r"(?<![*\w])\*([^*\n]+?)\*(?!\w)", r"<em>\1</em>", s)
-        s = re.sub(r"`([^`]+?)`", r"<code>\1</code>", s)
-        return s
+    while i < len(lines):
+        raw = lines[i].rstrip()
+        stripped = raw.strip()
 
-    for raw in text.split("\n"):
-        line = raw.rstrip()
-        escaped = _html.escape(line)
-        if not line.strip():
+        if not stripped:
             if in_list:
-                out_lines.append("</ul>")
+                out.append("</ul>")
                 in_list = False
-            out_lines.append("")
+            if in_table:
+                out.append("</tbody></table>")
+                in_table = False
+            out.append("")
+            i += 1
             continue
-        # Headings (# ## ###)
-        m = re.match(r"^(#{1,3})\s+(.*)$", line)
+
+        # Markdown table: header row + separator row (---|---) + body rows
+        if (
+            "|" in raw
+            and i + 1 < len(lines)
+            and re.match(r"^\s*\|?\s*[-:|\s]+\|?\s*$", lines[i + 1])
+        ):
+            if in_list:
+                out.append("</ul>")
+                in_list = False
+            headers = [c.strip() for c in raw.strip("|").split("|")]
+            out.append(
+                "<table><thead><tr>"
+                + "".join(
+                    f"<th>{_inline(_html.escape(h))}</th>" for h in headers
+                )
+                + "</tr></thead><tbody>"
+            )
+            i += 2  # skip header + separator
+            in_table = True
+            while i < len(lines) and lines[i].strip().startswith("|"):
+                cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
+                out.append(
+                    "<tr>"
+                    + "".join(
+                        f"<td>{_inline(_html.escape(c))}</td>" for c in cells
+                    )
+                    + "</tr>"
+                )
+                i += 1
+            out.append("</tbody></table>")
+            in_table = False
+            continue
+
+        # Headings (## ###)
+        m = re.match(r"^(#{1,4})\s+(.*)$", stripped)
         if m:
             if in_list:
-                out_lines.append("</ul>")
+                out.append("</ul>")
                 in_list = False
             level = len(m.group(1))
             content = _inline(_html.escape(m.group(2)))
-            out_lines.append(f"<h{level + 2}>{content}</h{level + 2}>")
+            if skip_h2 and level == 2:
+                i += 1
+                continue
+            # Cap at h4 so we don't emit nonsense levels
+            level = min(level, 4)
+            out.append(f"<h{level + 2 if not skip_h2 else level}>"
+                       f"{content}</h{level + 2 if not skip_h2 else level}>")
+            i += 1
             continue
-        # Bullet list item
-        if line.lstrip().startswith(("- ", "* ")):
-            if not in_list:
-                out_lines.append("<ul>")
-                in_list = True
-            item = line.lstrip()[2:]
-            out_lines.append(f"  <li>{_inline(_html.escape(item))}</li>")
-            continue
-        # Paragraph line
-        if in_list:
-            out_lines.append("</ul>")
-            in_list = False
-        out_lines.append(f"<p>{_inline(escaped)}</p>")
-    if in_list:
-        out_lines.append("</ul>")
-    return "\n".join(out_lines)
 
+        # Bullet list item
+        if stripped.startswith(("- ", "* ")):
+            if not in_list:
+                out.append("<ul>")
+                in_list = True
+            item = stripped[2:]
+            out.append(f"<li>{_inline(_html.escape(item))}</li>")
+            i += 1
+            continue
+
+        # Paragraph
+        if in_list:
+            out.append("</ul>")
+            in_list = False
+        out.append(f"<p>{_inline(_html.escape(raw))}</p>")
+        i += 1
+
+    if in_list:
+        out.append("</ul>")
+    if in_table:
+        out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+# ===========================================================================
+# Phase 4: render_sop(AnalyzeReport) -> HTML
+# ===========================================================================
+
+# Map section name -> the H2 heading text in the upstream template.
+# This dict is the contract between SECTION_ORDER and the vendored
+# template. If the template's H2 text changes, update here. Sections
+# that have no <h2> in the template (e.g. evidence_ledger, debate,
+# missing_data — these live inside <details> blocks in the skeleton)
+# get appended at end of <main>.
+_HEADING_MAP = {
+    "data_health":          "Data Health",
+    "executive_summary":    "Executive Summary",
+    "macro":                "Macro Regime",
+    "sector":               "Sector and Peer Comparison",
+    "company_fundamentals": "Company Fundamentals",
+    "financial_statements": "Financial Statement Review",
+    "valuation":            "Valuation Analysis",
+    "technical":            "Technical Analysis",
+    "risk_position":        "Risk and Position Sizing",
+    "scenarios":            "Bear / Base / Bull Scenarios",
+    "conviction":           "Conviction / Setup Quality Score",
+    "event_risk":           "Event Risk Check",
+    "final_strategy":       "Final Conditional Strategy",
+}
+
+# Sections that the template renders inside <details> blocks rather
+# than <h2> sections. Append at end of <main> with a synthetic <h2>
+# so the user sees them.
+_APPENDIX_SECTIONS = {
+    "evidence_ledger": "Evidence Ledger",
+    "debate":          "Debate Summary",
+    "missing_data":    "Missing Data / Low Confidence",
+}
+
+
+def _inject_section_body(html: str, h2_text: str, body_html: str) -> str:
+    """Find <h2>...h2_text...</h2> in ``html`` and replace the skeleton
+    body between it and the next <h2> (or </main>) with ``body_html``.
+
+    Preserves the heading itself. If the heading is not present, append
+    a new section at end of <main>.
+    """
+    pattern = re.compile(
+        r"(<h2[^>]*>\s*" + re.escape(h2_text) + r"\s*</h2>)",
+        re.IGNORECASE,
+    )
+    m = pattern.search(html)
+    if not m:
+        appendix = f"\n<h2>{_html.escape(h2_text)}</h2>\n{body_html}\n"
+        if "</main>" in html:
+            return html.replace("</main>", appendix + "</main>", 1)
+        return html + appendix
+
+    start = m.end()
+    next_h2 = re.search(r"<h2[^>]*>", html[start:])
+    end_main = html.find("</main>", start)
+    if next_h2 and (end_main < 0 or start + next_h2.start() < end_main):
+        cutoff = start + next_h2.start()
+    elif end_main > 0:
+        cutoff = end_main
+    else:
+        cutoff = len(html)
+    return html[:start] + "\n" + body_html + "\n" + html[cutoff:]
+
+
+def render_sop(report: AnalyzeReport) -> str:
+    """Render an ``AnalyzeReport`` into a single self-contained HTML
+    document using the vendored skill template + per-section body
+    injection.
+    """
+    req = report["request"]
+    sections = report.get("sections") or {}
+
+    # Pull conviction.total_score for the {{ score }} placeholder.
+    score: int | str = "n/a"
+    conv = sections.get("conviction")
+    if conv and not conv.skipped and isinstance(conv.structured, dict):
+        s = conv.structured.get("total_score")
+        if isinstance(s, (int, float)):
+            score = int(s)
+
+    backtest = report.get("backtest")
+    signal_name = backtest.signal if backtest else ""
+    backtest_window = ""
+    if backtest:
+        backtest_window = f"{backtest.window_start} to {backtest.window_end}"
+
+    n_items = sum(
+        1 for name, p in sections.items()
+        if not name.startswith("_") and not p.skipped
+    )
+
+    ctx = {
+        "ticker": req.ticker,
+        "company_name": req.ticker,  # company name lookup not wired yet
+        "exchange": "",
+        "sector": "",
+        "industry": "",
+        "report_datetime": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+        "quote_timestamp": "",
+        "filing_date": "",
+        "chart_window": "",
+        "backtest_window": backtest_window,
+        "depth": "full SOP",
+        "objective": req.objective,
+        "position_budget_or_na": (
+            f"${req.position_budget_usd:,.0f}"
+            if req.position_budget_usd else "n/a"
+        ),
+        "risk_profile": req.risk_tolerance,
+        "score": str(score),
+        "score_conservative": "",
+        "score_balanced": "",
+        "score_aggressive": "",
+        "signal_name": signal_name,
+        "n_items": str(n_items),
+        "backtest_bundle_path": "",
+        "placeholder": "",
+    }
+
+    html = _ENV.get_template("report.html").render(**ctx)
+
+    # Inject every section body, in canonical order. The body REPLACES
+    # any scalar Jinja placeholders the template had inside that section
+    # (e.g. {{ score }} inside the Conviction table); we re-emit a
+    # score badge below so the always-75 fix is still visible in HTML.
+    for section_name, h2_text in _HEADING_MAP.items():
+        payload = sections.get(section_name)
+        if payload is None:
+            continue
+        body_html = _markdown_to_html(payload.markdown or "", skip_h2=True)
+        if section_name == "conviction" and score != "n/a":
+            body_html += (
+                f'\n<p><strong>Total score:</strong> '
+                f'<span class="score-badge">{score}/100</span></p>'
+            )
+        html = _inject_section_body(html, h2_text, body_html)
+
+    # Append appendix sections (no <h2> in skeleton).
+    for section_name, h2_text in _APPENDIX_SECTIONS.items():
+        payload = sections.get(section_name)
+        if payload is None:
+            continue
+        body_html = _markdown_to_html(payload.markdown or "", skip_h2=True)
+        html = _inject_section_body(html, h2_text, body_html)
+
+    return html
+
+
+# ===========================================================================
+# Phase 3: render_html(ResearchState) — preserved until Task 19 swaps callers
+# ===========================================================================
 
 def _format_pct(value: float | None) -> str:
     if value is None:
@@ -112,14 +337,18 @@ def _persona_assignments_block(assignments: dict | None) -> str:
 
 
 def render_html(state: ResearchState) -> str:
-    """Convert a ResearchState into the final HTML payload."""
+    """Convert a ResearchState into the final HTML payload.
+
+    Phase 3 API. Kept until Task 19 migrates the last caller
+    (app/backend/routes/research.py + scheduler_service.py) onto
+    ``render_sop(AnalyzeReport)``.
+    """
     request = state["request"]
     plan = state["strategy"]
     backtest = state["backtest_summary"]
     module_results = state.get("module_results") or {}
     assignments = state.get("persona_assignments")
 
-    # Module section list — skip skipped modules
     module_blocks: list[tuple[str, str]] = []
     for name, result in module_results.items():
         if result.skipped:
@@ -159,7 +388,7 @@ def render_html(state: ResearchState) -> str:
         "persona_per_module": persona_per_module,
         "report_html": _markdown_to_html(state.get("report_markdown") or ""),
         "module_blocks": module_blocks,
-        "duration_seconds": "—",  # populated by caller when available
+        "duration_seconds": "—",
     }
     template = _ENV.get_template("report.html")
     return template.render(**ctx)

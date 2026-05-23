@@ -1,93 +1,94 @@
-"""CLI: python -m src.research --ticker NVDA prints a TradePlan summary."""
+"""Phase 4 CLI tests - run_sop + render_sop + file output."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import patch
-from io import StringIO
-import sys
 
 from src.research.models import (
-    BacktestSummary, ResearchRequest, ResearchState, TradePlan,
+    AnalyzeRequest, BacktestVerdict, SECTION_ORDER,
+    SectionPayload,
 )
 
 
-def _fake_state(direction="long"):
-    return ResearchState(
-        request=ResearchRequest(
-            ticker="NVDA", holding_status="watching",
-            target_position_pct=0.05, risk_tolerance="moderate",
-            report_goal="new_entry", use_personas=False, scanner_context=None,
+def _fake_report(ticker="NVDA"):
+    sections = {
+        n: SectionPayload(name=n, markdown=f"## {n}\n\nbody", structured=None,
+                          skipped=False, persona_used=None)
+        for n in SECTION_ORDER
+    }
+    return {
+        "request": AnalyzeRequest(
+            ticker=ticker, objective="medium_term",
+            position_budget_usd=10000, already_holds=False, cost_basis_usd=None,
+            risk_tolerance="balanced", use_personas=False,
         ),
-        persona_assignments=None,
-        module_results={},
-        report_markdown="# NVDA report",
-        strategy=TradePlan(
-            direction=direction, entry_price=145.0, target_price=165.0,
-            stop_price=138.0, horizon_days=30, sizing_pct=0.05,
-            confidence=72, rationale="test",
+        "sections": sections,
+        "persona_assignments": None,
+        "backtest": BacktestVerdict(
+            signal="rsi_oversold", window_start="2020-01-01",
+            window_end="2026-05-22", n_signals=10, win_rate_20d=0.6,
+            avg_return_20d=0.02, t_stat=2.1, significant=True,
+            verdict="significant",
         ),
-        backtest_summary=BacktestSummary(
-            matches_found=5, win_rate=0.6, avg_pnl_pct=0.08,
-            max_drawdown_pct=-0.10, avg_holding_days=20.0,
-            sample_quality="moderate", caveat=None,
-        ),
-        rendered_html=None,
-    )
+        "rendered_html": None,
+    }
 
 
 class TestCLI:
-    def test_main_prints_summary(self, capsys):
+    @patch("src.research.html_render.render_sop")
+    @patch("src.research.sop_orchestrator.run_sop")
+    def test_default_args_writes_tempfile(self, mock_run, mock_render, capsys, tmp_path):
         from src.research.__main__ import main
-        with patch("src.research.__main__.run_research",
-                   return_value=_fake_state()):
-            exit_code = main(["--ticker", "NVDA"])
+        mock_run.return_value = _fake_report("NVDA")
+        mock_render.return_value = "<html><body>NVDA</body></html>"
+        exit_code = main(["--ticker", "NVDA"])
         captured = capsys.readouterr()
         assert exit_code == 0
-        assert "NVDA" in captured.out
-        assert "long" in captured.out.lower()
-        assert "145" in captured.out
-        assert "moderate" in captured.out.lower()
+        # The stdout line is the path
+        path = Path(captured.out.strip())
+        assert path.exists()
+        assert path.read_text(encoding="utf-8") == "<html><body>NVDA</body></html>"
 
-    def test_main_with_custom_request(self, capsys):
+    @patch("src.research.html_render.render_sop")
+    @patch("src.research.sop_orchestrator.run_sop")
+    def test_request_carries_all_args(self, mock_run, mock_render, capsys):
         from src.research.__main__ import main
-        with patch("src.research.__main__.run_research",
-                   return_value=_fake_state(direction="stand_aside")):
-            exit_code = main([
-                "--ticker", "NVDA",
-                "--holding-status", "considering_buy",
-                "--position-pct", "0.03",
-                "--risk", "aggressive",
-                "--goal", "new_entry",
-            ])
-        assert exit_code == 0
+        captured_req = {}
+        def _capture(req):
+            captured_req["req"] = req
+            return _fake_report(req.ticker)
+        mock_run.side_effect = _capture
+        mock_render.return_value = "<html></html>"
+        main([
+            "--ticker", "nvda",
+            "--objective", "short_term",
+            "--budget", "5000",
+            "--holds", "--cost-basis", "120.5",
+            "--risk", "aggressive",
+            "--use-personas",
+            "--only", "macro",
+            "--only", "technical",
+        ])
+        req = captured_req["req"]
+        assert req.ticker == "NVDA"  # uppercased
+        assert req.objective == "short_term"
+        assert req.position_budget_usd == 5000.0
+        assert req.already_holds is True
+        assert req.cost_basis_usd == 120.5
+        assert req.risk_tolerance == "aggressive"
+        assert req.use_personas is True
+        assert req.included_sections == {"macro", "technical"}
 
-
-class TestCLIPersonas:
-    def test_use_personas_flag_sets_request_field(self, capsys):
-        """--use-personas should set request.use_personas=True. Patch
-        run_research to capture the request."""
+    @patch("src.research.html_render.render_sop")
+    @patch("src.research.sop_orchestrator.run_sop")
+    def test_stderr_summary_printed(self, mock_run, mock_render, capsys):
         from src.research.__main__ import main
-        captured = {}
-        def _capture(request):
-            captured["req"] = request
-            return _fake_state()
-        with patch("src.research.__main__.run_research", side_effect=_capture):
-            main(["--ticker", "NVDA", "--use-personas"])
-        assert captured["req"].use_personas is True
-
-    def test_persona_assignments_shown_in_summary(self, capsys):
-        from src.research.__main__ import main
-        state = _fake_state()
-        state["persona_assignments"] = {
-            "fundamentals": "buffett",
-            "valuation": "graham",
-            "risk_position": None,
-            "debate": ["wood", "burry"],
-            "_rationale": "growth vs value tension",
-        }
-        with patch("src.research.__main__.run_research", return_value=state):
-            main(["--ticker", "NVDA", "--use-personas"])
-        out = capsys.readouterr().out
-        assert "buffett" in out
-        assert "graham" in out
-        assert "debate" in out.lower() or "wood" in out.lower()
+        mock_run.return_value = _fake_report("NVDA")
+        mock_render.return_value = "<html></html>"
+        main(["--ticker", "NVDA"])
+        err = capsys.readouterr().err
+        assert "SECTIONS" in err
+        assert "BACKTEST VERDICT" in err
+        # No PERSONA ASSIGNMENTS box when no assignments
+        assert "PERSONA ASSIGNMENTS" not in err

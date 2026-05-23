@@ -9,7 +9,7 @@ plumbing without changing the shapes.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 
 HoldingStatus = Literal["holding", "watching", "considering_buy", "considering_short"]
@@ -113,4 +113,93 @@ class ResearchState(TypedDict, total=False):
     report_markdown: str | None
     strategy: TradePlan | None
     backtest_summary: BacktestSummary | None
+    rendered_html: str | None
+
+
+# ===========================================================================
+# Phase 4 - SOP-driven analyze pipeline
+# ===========================================================================
+
+Objective = Literal[
+    "target_price", "short_term", "medium_term", "long_term",
+    "earnings_review", "general_research",
+]
+RiskBand = Literal["conservative", "balanced", "aggressive"]
+
+
+# Canonical SOP section order. Section runners are dispatched in this
+# order so that downstream sections can read upstream payloads (e.g.
+# Executive Summary reads Evidence Ledger; Scenarios reads Valuation).
+SECTION_ORDER: list[str] = [
+    "data_health",
+    "executive_summary",
+    "evidence_ledger",
+    "macro",
+    "sector",
+    "company_fundamentals",
+    "financial_statements",
+    "valuation",
+    "technical",
+    "risk_position",
+    "scenarios",
+    "conviction",
+    "event_risk",
+    "debate",
+    "final_strategy",
+    "missing_data",
+]
+
+
+@dataclass
+class AnalyzeRequest:
+    """User-supplied parameters for a full SOP run.
+
+    Mirrors the skill's combined-question gate. ``included_sections``
+    drives the flow-style module picker; sections not listed are
+    rendered as 'n/a -- user excluded'.
+    """
+    ticker: str
+    objective: Objective
+    position_budget_usd: float | None
+    already_holds: bool
+    cost_basis_usd: float | None
+    risk_tolerance: RiskBand
+    use_personas: bool
+    included_sections: set[str] = field(default_factory=lambda: set(SECTION_ORDER))
+
+
+@dataclass
+class SectionPayload:
+    """One SOP section's output. ``structured`` is section-specific
+    (e.g. Evidence Ledger emits a list[dict]; Scenarios emits a dict
+    with bear/base/bull; most prose sections leave it None)."""
+    name: str
+    markdown: str
+    structured: Any | None
+    skipped: bool
+    persona_used: str | None
+    skip_reason: str | None = None
+
+
+@dataclass
+class BacktestVerdict:
+    """Output of the technical-signal backtest, embedded inside the
+    Technical Analysis section under 'Backtest Validation'."""
+    signal: str
+    window_start: str
+    window_end: str
+    n_signals: int
+    win_rate_20d: float | None
+    avg_return_20d: float | None
+    t_stat: float | None
+    significant: bool
+    verdict: str
+
+
+class AnalyzeReport(TypedDict, total=False):
+    """End-to-end output of sop_orchestrator.run_sop."""
+    request: AnalyzeRequest
+    sections: dict[str, SectionPayload]
+    persona_assignments: dict | None
+    backtest: BacktestVerdict | None
     rendered_html: str | None

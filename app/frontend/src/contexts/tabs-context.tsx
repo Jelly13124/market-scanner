@@ -2,7 +2,7 @@ import { Flow } from '@/types/flow';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 // Define tab types
-export type TabType = 'flow' | 'settings';
+export type TabType = 'flow' | 'settings' | 'scanner' | 'analyze';
 
 export interface Tab {
   id: string;
@@ -68,6 +68,15 @@ export function TabsProvider({ children }: TabsProviderProps) {
     }
     if (type === 'settings') {
       return 'settings';
+    }
+    if (type === 'scanner') {
+      // Single scanner tab — configId is selected within the panel itself, so
+      // we don't key the tab by config id.
+      return 'scanner';
+    }
+    if (type === 'analyze') {
+      // Single analyze tab.
+      return 'analyze';
     }
     return `${type}-${Date.now()}`;
   }, []);

@@ -5,6 +5,8 @@ import { ReactNode, useEffect } from 'react';
 import { FlowActions } from './flow-actions';
 import { FlowCreateDialog } from './flow-create-dialog';
 import { FlowList } from './flow-list';
+import { AnalyzeAction } from './analyze-action';
+import { ScannerAction } from './scanner-action';
 
 interface LeftSidebarProps {
   children?: ReactNode;
@@ -63,11 +65,15 @@ export function LeftSidebar({
         width: `${width}px`
       }}
     >
+      <ScannerAction />
+
+      <AnalyzeAction />
+
       <FlowActions
         onSave={handleSaveCurrentFlow}
         onCreate={handleCreateNewFlow}
       />
-      
+
       <FlowList
         flows={flows}
         searchQuery={searchQuery}

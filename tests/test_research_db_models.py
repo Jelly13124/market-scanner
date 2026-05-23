@@ -44,3 +44,20 @@ def test_research_trade_plan_fk_to_report():
     fks = list(inspect(ResearchTradePlan).columns["report_id"].foreign_keys)
     assert len(fks) == 1
     assert fks[0].column.table.name == "research_reports"
+
+
+def test_research_report_has_phase4_columns():
+    """Phase 4 added analyze_request_json + sections_json."""
+    from sqlalchemy import inspect
+    from app.backend.database.models import ResearchReport
+    cols = {c.name for c in inspect(ResearchReport).columns}
+    assert "analyze_request_json" in cols
+    assert "sections_json" in cols
+
+
+def test_phase4_columns_are_nullable():
+    from sqlalchemy import inspect
+    from app.backend.database.models import ResearchReport
+    for c in inspect(ResearchReport).columns:
+        if c.name in ("analyze_request_json", "sections_json"):
+            assert c.nullable is True, f"{c.name} must be nullable for backwards compat"

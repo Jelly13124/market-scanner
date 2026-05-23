@@ -358,6 +358,10 @@ class ResearchReport(Base):
     # wall-clock seconds for the full run_research call
     duration_seconds = Column(Float, nullable=True)
 
+    # Phase 4 — full SOP structured payload + AnalyzeRequest serialization
+    analyze_request_json = Column(JSON, nullable=True)
+    sections_json = Column(JSON, nullable=True)
+
     __table_args__ = (
         Index("ix_research_reports_ticker_scan_date", "ticker", "scan_date"),
     )

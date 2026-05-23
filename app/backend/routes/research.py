@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
@@ -22,17 +23,22 @@ from sqlalchemy.orm import Session
 
 from app.backend.database import get_db
 from app.backend.models.research_schemas import (
+    AnalyzeReportDetail,
+    AnalyzeRunRequest,
     BacktestSummaryPayload,
+    BacktestVerdictAPI,
     ResearchReportDetail,
     ResearchReportSummary,
     ResearchRunRequest,
+    SectionPayloadAPI,
     TradePlanPayload,
 )
 from app.backend.repositories.research_repository import ResearchReportRepository
-from src.research.html_render import render_html
-from src.research.models import ResearchRequest
+from src.research.html_render import render_html, render_sop
+from src.research.models import AnalyzeRequest, ResearchRequest, SECTION_ORDER
 from src.research.persist import state_to_db_kwargs
 from src.research.pipeline import run_research
+from src.research.sop_orchestrator import run_sop
 
 logger = logging.getLogger(__name__)
 
@@ -146,3 +152,131 @@ def get_report_html(report_id: int, db: Session = Depends(get_db)) -> HTMLRespon
     if not report:
         raise HTTPException(404, f"No research report with id {report_id}")
     return HTMLResponse(content=report.rendered_html or "<html></html>")
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — POST /research/analyze (SOP pipeline)
+# ---------------------------------------------------------------------------
+
+
+def _to_analyze_request(req: AnalyzeRunRequest) -> AnalyzeRequest:
+    """Convert the API schema to the internal dataclass."""
+    return AnalyzeRequest(
+        ticker=req.ticker,
+        objective=req.objective,
+        position_budget_usd=req.position_budget_usd,
+        already_holds=req.already_holds,
+        cost_basis_usd=req.cost_basis_usd,
+        risk_tolerance=req.risk_tolerance,
+        use_personas=req.use_personas,
+        included_sections=(
+            set(req.included_sections) if req.included_sections
+            else set(SECTION_ORDER)
+        ),
+    )
+
+
+def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
+    """Compose AnalyzeReportDetail from a DB row + the in-memory
+    AnalyzeReport dict. report_dict is the live result from run_sop
+    (with SectionPayload objects), not the DB JSON."""
+    arq = row.analyze_request_json or {}
+    sections_api: dict[str, SectionPayloadAPI] = {}
+    for name, payload in (report_dict.get("sections") or {}).items():
+        if name.startswith("_"):
+            continue  # skip magic keys like _persona_assignments
+        sections_api[name] = SectionPayloadAPI(
+            name=payload.name,
+            markdown=payload.markdown,
+            structured=payload.structured if isinstance(payload.structured, (dict, list)) else None,
+            skipped=payload.skipped,
+            persona_used=payload.persona_used,
+            skip_reason=payload.skip_reason,
+        )
+    bt = report_dict.get("backtest")
+    backtest_api = BacktestVerdictAPI(
+        signal=bt.signal, window_start=bt.window_start, window_end=bt.window_end,
+        n_signals=bt.n_signals, win_rate_20d=bt.win_rate_20d,
+        avg_return_20d=bt.avg_return_20d, t_stat=bt.t_stat,
+        significant=bt.significant, verdict=bt.verdict,
+    ) if bt is not None else None
+
+    return AnalyzeReportDetail(
+        id=row.id,
+        ticker=row.ticker,
+        scan_date=row.scan_date,
+        created_at=row.created_at,
+        duration_seconds=row.duration_seconds,
+        objective=arq.get("objective", "general_research"),
+        position_budget_usd=arq.get("position_budget_usd"),
+        already_holds=arq.get("already_holds", False),
+        cost_basis_usd=arq.get("cost_basis_usd"),
+        risk_tolerance=arq.get("risk_tolerance", "balanced"),
+        use_personas=arq.get("use_personas", False),
+        persona_assignments=report_dict.get("persona_assignments"),
+        sections=sections_api,
+        backtest=backtest_api,
+    )
+
+
+@router.post("/analyze", response_model=AnalyzeReportDetail)
+def trigger_analyze(
+    req: AnalyzeRunRequest,
+    db: Session = Depends(get_db),
+) -> AnalyzeReportDetail:
+    """Run the SOP pipeline, persist, return AnalyzeReportDetail.
+
+    SYNCHRONOUS — full SOP takes 60-120s (~14 LLM calls). Long-poll /
+    streaming is deferred.
+    """
+    internal_req = _to_analyze_request(req)
+    t0 = time.monotonic()
+    try:
+        report = run_sop(internal_req)
+    except Exception as e:
+        logger.exception("analyze run failed for %s", req.ticker)
+        raise HTTPException(500, f"analyze pipeline failed: {type(e).__name__}: {e}")
+    duration = time.monotonic() - t0
+
+    # Render HTML and stash in report
+    html = render_sop(report)
+    report["rendered_html"] = html
+
+    arq_dict = {
+        "ticker": internal_req.ticker,
+        "objective": internal_req.objective,
+        "position_budget_usd": internal_req.position_budget_usd,
+        "already_holds": internal_req.already_holds,
+        "cost_basis_usd": internal_req.cost_basis_usd,
+        "risk_tolerance": internal_req.risk_tolerance,
+        "use_personas": internal_req.use_personas,
+        "included_sections": sorted(internal_req.included_sections),
+    }
+    sections_json = {
+        name: {
+            "markdown": p.markdown, "structured": p.structured,
+            "skipped": p.skipped, "persona_used": p.persona_used,
+            "skip_reason": p.skip_reason,
+        }
+        for name, p in (report.get("sections") or {}).items()
+        if not name.startswith("_")
+    }
+    today_iso = _date.today().isoformat()
+    report_kwargs = {
+        "ticker": internal_req.ticker,
+        "scan_date": today_iso,
+        "request_json": arq_dict,
+        "report_markdown": "\n\n".join(
+            p.markdown for name, p in (report.get("sections") or {}).items()
+            if not name.startswith("_")
+        ),
+        "rendered_html": html,
+        "use_personas": internal_req.use_personas,
+        "persona_assignments_json": report.get("persona_assignments"),
+        "duration_seconds": duration,
+        "analyze_request_json": arq_dict,
+        "sections_json": sections_json,
+    }
+    repo = ResearchReportRepository(db)
+    row = repo.create_analyze(report=report_kwargs)
+    return _report_to_detail(row, report_dict=report)

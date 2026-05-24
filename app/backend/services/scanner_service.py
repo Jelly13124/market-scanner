@@ -230,6 +230,23 @@ class ScannerService:
             if self._broadcaster is not None:
                 self._broadcaster.close(run_id)
 
+        # Phase 5E — auto-SOP follow-up runs OUTSIDE the main try/except so
+        # an LLM/network/email failure here can never roll back the scan
+        # persistence or re-mark the run as ERROR. Wrapped in its own
+        # try/except so an exception here still leaves the scan COMPLETE.
+        try:
+            top_n = int(config_payload.get("auto_sop_top_n") or 0)
+            if top_n > 0:
+                use_personas = bool(
+                    config_payload.get("auto_sop_use_personas") or False,
+                )
+                self._run_auto_sop_followup(run_id, top_n, use_personas)
+        except Exception:
+            logger.exception(
+                "auto_sop follow-up failed for scan_run %s (scan itself OK)",
+                run_id,
+            )
+
     # ------------------------------------------------------------------
     # Phase helpers
     # ------------------------------------------------------------------
@@ -285,6 +302,13 @@ class ScannerService:
                 "watchlist_tickers": watchlist_tickers,
                 "top_n": config.top_n,
                 "weights": config.weights,
+                # Phase 5E — auto-SOP knobs propagated through so the
+                # follow-up hook at the end of _run_to_completion can read
+                # them without reopening a session.
+                "auto_sop_top_n": getattr(config, "auto_sop_top_n", 0) or 0,
+                "auto_sop_use_personas": bool(
+                    getattr(config, "auto_sop_use_personas", False)
+                ),
             }
             return payload, run.id
 
@@ -491,6 +515,78 @@ class ScannerService:
         )
         return per_ticker_min
 
+    def _run_auto_sop_followup(
+        self, scan_run_id: int, top_n: int, use_personas: bool,
+    ) -> None:
+        """Phase 5E: after a scan completes, fire SOP on the top-N watchlist
+        entries and dispatch one bundled email containing all reports.
+
+        All work (SOP runs + persistence + dispatch) happens inside a
+        fresh session so we don't keep a long-running transaction open
+        across the LLM calls. Errors here NEVER propagate to the scan
+        run — the caller wraps the entire call in try/except.
+        """
+        from app.backend.repositories.research_repository import (
+            ResearchReportRepository,
+        )
+        from app.backend.services.auto_sop_runner import run_auto_sop_for_scan
+        from app.backend.services.notifications.dispatcher import (
+            NotificationDispatcher,
+        )
+
+        logger.info(
+            "auto_sop: starting follow-up for scan_run=%s top_n=%d personas=%s",
+            scan_run_id, top_n, use_personas,
+        )
+        with self._session_factory() as session:
+            report_ids = run_auto_sop_for_scan(
+                session, scan_run_id=scan_run_id,
+                top_n=top_n, use_personas=use_personas,
+            )
+        logger.info(
+            "auto_sop: produced %d reports for scan_run=%s",
+            len(report_ids), scan_run_id,
+        )
+
+        if not report_ids:
+            return
+
+        # Reload the report rows in a fresh session so they're attached when
+        # the dispatcher pre-renders the bundled HTML.
+        with self._session_factory() as session:
+            repo = ResearchReportRepository(session)
+            reports = [repo.get_by_id(rid) for rid in report_ids]
+            reports = [r for r in reports if r is not None]
+            # Detach by snapshotting the read-only fields the renderer needs;
+            # the dispatcher will run in its own session that doesn't share
+            # this one's transaction.
+            detached = [
+                _DetachedReport(
+                    id=r.id, ticker=r.ticker, scan_date=r.scan_date,
+                    rendered_html=r.rendered_html,
+                    report_markdown=r.report_markdown,
+                )
+                for r in reports
+            ]
+
+        if not detached:
+            logger.warning(
+                "auto_sop: report_ids non-empty but reload returned nothing "
+                "(scan_run=%s)", scan_run_id,
+            )
+            return
+
+        try:
+            NotificationDispatcher(self._session_factory).dispatch_bundled(
+                event_type="research.bundled",
+                reports=detached,
+                scan_run_id=scan_run_id,
+            )
+        except Exception:
+            logger.exception(
+                "auto_sop: bundled dispatch failed for scan_run=%s", scan_run_id,
+            )
+
     def _publish(self, run_id: int, event: dict) -> None:
         if self._broadcaster is not None:
             self._broadcaster.publish(run_id, event)
@@ -503,3 +599,21 @@ class ScannerService:
             "run_id": run_id,
             **p.model_dump(),
         })
+
+
+class _DetachedReport:
+    """Detached snapshot of a ResearchReport carrying only the fields the
+    bundled-email renderer reads. Used so the dispatch step doesn't need
+    a live SQLAlchemy session attached to each row."""
+
+    __slots__ = ("id", "ticker", "scan_date", "rendered_html", "report_markdown")
+
+    def __init__(
+        self, *, id: int, ticker: str, scan_date: str,
+        rendered_html: str | None, report_markdown: str | None,
+    ) -> None:
+        self.id = id
+        self.ticker = ticker
+        self.scan_date = scan_date
+        self.rendered_html = rendered_html or ""
+        self.report_markdown = report_markdown or ""

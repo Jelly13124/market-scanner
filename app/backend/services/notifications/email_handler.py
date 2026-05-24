@@ -25,6 +25,9 @@ from typing import Any
 
 import httpx
 
+from app.backend.services.notifications.bundled_email import (
+    render_bundled_research_html, render_bundled_research_text,
+)
 from app.backend.services.notifications.render import (
     render_pipeline_html, render_pipeline_text,
     render_research_html, render_research_text,
@@ -68,11 +71,15 @@ class EmailHandler:
             )
 
         try:
-            subject = _make_subject(run)
             # Route to the appropriate render functions based on event_type.
-            # Phase 1: pipeline.completed; Phase 3: research.completed.
+            # Phase 1: pipeline.completed; Phase 3: research.completed;
+            # Phase 5E: research.bundled (run is a list[ResearchReport]).
             event_type = getattr(subscription, "event_type", "pipeline.completed")
-            if event_type == "research.completed":
+            subject = _make_subject(run, event_type=event_type)
+            if event_type == "research.bundled":
+                html_body = render_bundled_research_html(run)
+                text_body = render_bundled_research_text(run)
+            elif event_type == "research.completed":
                 html_body = render_research_html(run)
                 text_body = render_research_text(run)
             else:
@@ -134,7 +141,14 @@ class EmailHandler:
             return _error_result(None, f"{type(e).__name__}: {e}", t0)
 
 
-def _make_subject(run: Any) -> str:
+def _make_subject(run: Any, *, event_type: str = "pipeline.completed") -> str:
+    # Phase 5E — bundled subject reads len(reports) + the first report's
+    # scan_date (all reports in a bundle share the scan date).
+    if event_type == "research.bundled":
+        reports = run if isinstance(run, list) else []
+        n = len(reports)
+        scan_date = getattr(reports[0], "scan_date", "—") if reports else "—"
+        return f"[ai-hedge-fund] Daily SOP — {scan_date} — {n} tickers"
     template = getattr(run, "template", "—")
     scan_date = getattr(run, "scan_date", "—")
     agent_decisions = (

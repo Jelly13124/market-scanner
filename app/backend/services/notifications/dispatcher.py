@@ -33,6 +33,9 @@ from app.backend.repositories.notification_repository import (
 from app.backend.repositories.pipeline_repository import (
     PipelineScheduleRepository,
 )
+from app.backend.services.notifications.bundled_email import (
+    render_bundled_research_html, render_bundled_research_text,
+)
 from app.backend.services.notifications.email_handler import EmailHandler
 from app.backend.services.notifications.gist import generate_gists
 from app.backend.services.notifications.render import (
@@ -67,8 +70,15 @@ class NotificationDispatcher:
         """Pick the (html, text) renderer pair for the given event_type.
 
         Phase 1 ships pipeline.completed; Phase 3 adds research.completed.
+        Phase 5E adds research.bundled — here ``run`` is interpreted as a
+        ``list[ResearchReport]`` rather than a single row.
         Unknown event_types fall back to pipeline render (safe default).
         """
+        if event_type == "research.bundled":
+            return (
+                render_bundled_research_html(run),
+                render_bundled_research_text(run),
+            )
         if event_type == "research.completed":
             return render_research_html(run), render_research_text(run)
         return render_pipeline_html(run), render_pipeline_text(run)
@@ -122,6 +132,56 @@ class NotificationDispatcher:
         attempts = 0
         for sub in sub_snapshots:
             self._dispatch_one(sub, run_snapshot)
+            attempts += 1
+        return attempts
+
+    def dispatch_bundled(
+        self,
+        *,
+        event_type: str,
+        reports: list,
+        scan_run_id: int | None = None,
+    ) -> int:
+        """Phase 5E: fan a single bundled email out to every enabled sub for
+        ``event_type``. ``reports`` is the list[ResearchReport] payload —
+        handlers read it directly (no PipelineRun involvement). Each
+        attempt is recorded in NotificationDelivery using
+        ``scan_run_id`` (cast to str) as the run_id surrogate.
+
+        Returns the count of dispatch attempts.
+        """
+        if not reports:
+            logger.info(
+                "dispatch_bundled: no reports to send for event=%s scan_run_id=%s",
+                event_type, scan_run_id,
+            )
+            return 0
+        with self._session_factory() as session:
+            subs = SubscriptionRepository(session).list_enabled_for_event(event_type)
+            if not subs:
+                logger.debug(
+                    "dispatch_bundled: no enabled subscriptions for event %r",
+                    event_type,
+                )
+                return 0
+            sub_snapshots = [_snapshot(s) for s in subs]
+
+        # ``run`` for the handler is a list[ResearchReport] subclass that
+        # also carries an ``.id`` attribute so _dispatch_one's audit log
+        # gets the scan_run_id as its run_id surrogate. The bundled
+        # renderer iterates the list normally.
+        run_surrogate = _BundledRun(reports)
+        run_surrogate.id = (
+            str(scan_run_id) if scan_run_id is not None else None
+        )
+
+        attempts = 0
+        for sub in sub_snapshots:
+            # Force the event_type on the snapshot so EmailHandler reads
+            # it correctly even if the sub row was created with a
+            # different default.
+            sub.event_type = event_type
+            self._dispatch_one(sub, run_surrogate)
             attempts += 1
         return attempts
 
@@ -248,6 +308,15 @@ def _load_latest_run(session: Session) -> PipelineRun | None:
         .order_by(PipelineRun.created_at.desc())
         .first()
     )
+
+
+class _BundledRun(list):
+    """list[ResearchReport] subclass that carries an ``.id`` attribute so
+    NotificationDispatcher._dispatch_one's audit log gets a stable
+    run_id surrogate (the scan_run_id) when dispatching a bundled
+    research email. The bundled renderer iterates this exactly like a
+    normal list."""
+    pass
 
 
 def _snapshot(sub: NotificationSubscription) -> Any:

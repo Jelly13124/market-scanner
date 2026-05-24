@@ -367,6 +367,52 @@ class ResearchReport(Base):
     )
 
 
+class UserWatchlist(Base):
+    """User-curated watchlist of tickers, shown in the left sidebar.
+
+    Separate from ``WatchlistEntry`` (which is scanner output): this table
+    holds named, hand-picked ticker lists the user maintains via the UI.
+    """
+    __tablename__ = "user_watchlists"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    name = Column(String(200), nullable=False, unique=True, index=True)
+    # list[str] of uppercased tickers; defaults to empty list
+    tickers = Column(JSON, nullable=False, default=list)
+
+
+class AnalyzeFlow(Base):
+    """Saved AnalyzeFlow template — a named canvas layout the UI loads back.
+
+    Phase 5D persists the React Flow canvas state for the Analyze panel.
+    The canvas itself is visual scaffolding; what we persist is the
+    *effective* configuration the orchestrator needs:
+
+      * ``included_sections`` — list[str] of SECTION_ORDER names enabled
+      * ``persona_overrides`` — dict[section_name -> persona_name] for
+        sections the user explicitly pinned a persona on. Absent or None
+        means defer to the router (when use_personas) or run objective.
+      * ``use_personas`` — convenience toggle stored alongside; overrides
+        still take precedence when set even if this is False.
+
+    Intentionally NOT FK'd to ResearchReport: templates are reusable
+    across runs and across tickers.
+    """
+    __tablename__ = "analyze_flows"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    name = Column(String(200), nullable=False, unique=True, index=True)
+    included_sections = Column(JSON, nullable=False, default=list)  # list[str]
+    persona_overrides = Column(JSON, nullable=True)  # dict[section_name, persona_name]
+    use_personas = Column(Boolean, nullable=False, default=False)
+
+
 class ResearchTradePlan(Base):
     """One TradePlan + inlined BacktestSummary, 1-to-1 with ResearchReport.
 

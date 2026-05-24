@@ -6,7 +6,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import type { AnalyzeRunRequest, Objective, RiskBand } from '@/types/analyze';
 import { Loader2, Play } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+function formatElapsed(s: number): string {
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, '0')}`;
+}
 
 interface AnalyzeFormProps {
   defaultTicker?: string;
@@ -38,6 +44,21 @@ export function AnalyzeForm({ defaultTicker = 'NVDA', running, onRun, included }
   const [costBasis, setCostBasis] = useState<string>('');
   const [risk, setRisk] = useState<RiskBand>('balanced');
   const [usePersonas, setUsePersonas] = useState(true);
+  const [elapsed, setElapsed] = useState(0);
+
+  // Live elapsed-time counter while a run is in progress.
+  useEffect(() => {
+    if (!running) {
+      setElapsed(0);
+      return;
+    }
+    setElapsed(0);
+    const startedAt = Date.now();
+    const id = window.setInterval(() => {
+      setElapsed(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [running]);
 
   function submit() {
     const req: AnalyzeRunRequest = {
@@ -140,7 +161,7 @@ export function AnalyzeForm({ defaultTicker = 'NVDA', running, onRun, included }
           {running ? (
             <>
               <Loader2 className="size-3 mr-1 animate-spin" />
-              Running SOP… (60-120s, {included.size} sections)
+              Running… {formatElapsed(elapsed)} (expected 60-120s, {included.size} sections)
             </>
           ) : (
             <>

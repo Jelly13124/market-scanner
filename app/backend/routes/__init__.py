@@ -12,6 +12,9 @@ from app.backend.routes.scanner import router as scanner_router
 from app.backend.routes.pipeline import router as pipeline_router
 from app.backend.routes.notifications import router as notifications_router
 from app.backend.routes.research import router as research_router
+from app.backend.routes.watchlists import router as watchlists_router
+from app.backend.routes.tickers import router as tickers_router
+from app.backend.routes.analyze_flows import router as analyze_flows_router
 
 # Main API router
 api_router = APIRouter()
@@ -29,3 +32,6 @@ api_router.include_router(scanner_router, tags=["scanner"])
 api_router.include_router(pipeline_router, tags=["pipeline"])
 api_router.include_router(notifications_router, tags=["notifications"])
 api_router.include_router(research_router, tags=["research"])
+api_router.include_router(watchlists_router, tags=["watchlists"])
+api_router.include_router(tickers_router, tags=["tickers"])
+api_router.include_router(analyze_flows_router, tags=["analyze-flows"])

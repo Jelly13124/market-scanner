@@ -7,6 +7,7 @@ import { FlowCreateDialog } from './flow-create-dialog';
 import { FlowList } from './flow-list';
 import { AnalyzeAction } from './analyze-action';
 import { ScannerAction } from './scanner-action';
+import { WatchlistSection } from './watchlist-section';
 
 interface LeftSidebarProps {
   children?: ReactNode;
@@ -65,6 +66,8 @@ export function LeftSidebar({
         width: `${width}px`
       }}
     >
+      <WatchlistSection />
+
       <ScannerAction />
 
       <AnalyzeAction />

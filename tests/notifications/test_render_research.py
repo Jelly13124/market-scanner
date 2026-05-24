@@ -48,3 +48,30 @@ class TestRenderResearchText:
         assert "Body content here." in text
         # No HTML tags
         assert "<" not in text
+
+
+class TestServerHostedImageStripping:
+    """Phase 5A — strip <img src="/research/..."> from email HTML
+    (Gmail can't reach localhost). Inline data: URIs are kept."""
+
+    def test_strips_server_hosted_research_img(self):
+        from app.backend.services.notifications.render import render_research_html
+        report = _make_report()
+        report.rendered_html = (
+            '<html><body><p>before</p>'
+            '<img src="/research/reports/42/chart/kline-daily.png" alt="K-line">'
+            '<p>after</p></body></html>'
+        )
+        out = render_research_html(report)
+        assert '/research/reports/42/chart/kline-daily.png' not in out
+        assert 'before' in out and 'after' in out
+
+    def test_keeps_inline_base64_img(self):
+        from app.backend.services.notifications.render import render_research_html
+        report = _make_report()
+        data_uri = "data:image/png;base64,iVBORw0KGgoAAAANS"
+        report.rendered_html = (
+            f'<html><body><img src="{data_uri}" alt="Equity"></body></html>'
+        )
+        out = render_research_html(report)
+        assert data_uri in out

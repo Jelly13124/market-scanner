@@ -1,3 +1,4 @@
+import sqlalchemy as sa
 from sqlalchemy import Column, Integer, Float, String, DateTime, Text, Boolean, JSON, ForeignKey, Index, UniqueConstraint
 from sqlalchemy.sql import func
 from .connection import Base
@@ -139,6 +140,18 @@ class ScannerConfig(Base):
     # kinds (sp500/nasdaq100/custom/etc.).
     user_watchlist_id = Column(
         Integer, ForeignKey("user_watchlists.id"), nullable=True, index=True,
+    )
+
+    # Phase 5E — when > 0, the scanner runs full SOP analysis on the top-N
+    # watchlist entries after each scan completes and emits ONE bundled email
+    # with all reports. 0 = disabled (default; the legacy behavior).
+    auto_sop_top_n = Column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    # Phase 5E — whether the auto-SOP follow-up routes sections through the
+    # persona router (more LLM calls, richer reports) or runs objective.
+    auto_sop_use_personas = Column(
+        Boolean, nullable=False, default=False, server_default=sa.false(),
     )
 
 

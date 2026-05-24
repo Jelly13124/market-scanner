@@ -55,6 +55,16 @@ class ScannerConfigBase(BaseModel):
     user_watchlist_id: Optional[int] = Field(
         None, description="Required when universe_kind == 'watchlist'"
     )
+    # Phase 5E — when > 0, the scanner triggers a follow-up SOP analyze run
+    # against the top-N watchlist entries and emits a bundled email. 0 = off.
+    auto_sop_top_n: int = Field(
+        0, ge=0, le=50,
+        description="If > 0, run SOP on top-N watchlist entries after each scan",
+    )
+    auto_sop_use_personas: bool = Field(
+        False,
+        description="If true, the auto-SOP runs use the persona router",
+    )
 
     @model_validator(mode="after")
     def _custom_requires_tickers(self):
@@ -85,6 +95,10 @@ class ScannerConfigUpdateRequest(BaseModel):
     top_n: Optional[int] = Field(None, ge=1, le=200)
     weights: Optional[dict[str, Any]] = None
     user_watchlist_id: Optional[int] = None
+    # Phase 5E — same fields as base, but optional so PATCH can leave them
+    # untouched. Field constraints duplicated so update payloads validate.
+    auto_sop_top_n: Optional[int] = Field(None, ge=0, le=50)
+    auto_sop_use_personas: Optional[bool] = None
 
 
 class ScannerConfigResponse(ScannerConfigBase):

@@ -123,6 +123,13 @@ class AnalyzeRunRequest(BaseModel):
         default=None,
         description="If null, all 16 SOP sections run. Otherwise restrict to listed.",
     )
+    persona_overrides: dict[str, str] | None = Field(
+        default=None,
+        description=(
+            "Phase 5D — explicit persona pin per section. Sections absent "
+            "from the dict fall through to the router or objective mode."
+        ),
+    )
 
     @field_validator("ticker")
     @classmethod

@@ -157,6 +157,11 @@ class AnalyzeRequest:
     Mirrors the skill's combined-question gate. ``included_sections``
     drives the flow-style module picker; sections not listed are
     rendered as 'n/a -- user excluded'.
+
+    ``persona_overrides`` (Phase 5D) pins specific personas per section,
+    bypassing the router. Sections absent from the dict fall through to
+    the router (when ``use_personas`` is on) or objective mode (when
+    off). ``None`` means "no overrides at all" — Phase 4 behavior.
     """
     ticker: str
     objective: Objective
@@ -166,6 +171,7 @@ class AnalyzeRequest:
     risk_tolerance: RiskBand
     use_personas: bool
     included_sections: set[str] = field(default_factory=lambda: set(SECTION_ORDER))
+    persona_overrides: dict[str, str] | None = None
 
 
 @dataclass

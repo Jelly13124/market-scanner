@@ -1,5 +1,89 @@
 # Progress Log
 
+## Session — 2026-05-24 (Phase 5 landed — Charts + Watchlist + Flow Analyze + Auto-SOP)
+
+### What shipped
+
+- **Charts in Technical section** (Phase 5A) — matplotlib (`Agg` backend) rendering primitives in `src/research/charts/render.py`:
+  - Equity curve inline as base64 `data:image/png` URI (works in email, ≤30KB after b64)
+  - K-line daily/weekly served from `GET /research/reports/{id}/chart/{type}.png` (web iframe only; remote-image-blocked-by-Gmail trade-off documented)
+  - `BacktestVerdict.signal_indices` added (nullable) so chart can be regenerated from a persisted report
+  - Email render strips server-hosted `<img src="/research/...">` tags; keeps `data:` URIs
+- **User-curated watchlist** (Phase 5B) — new `UserWatchlist` table + repository + Pydantic schemas + `/watchlists` REST CRUD + `/tickers/search` autocomplete (cached static table from nasdaq100 + sp500 + russell3000)
+  - Frontend `WatchlistSection` mounted above ScannerAction in left sidebar: collapsible groups, ticker pills with × to remove, 300ms-debounced ticker search, create/rename/delete dialogs
+- **Scanner config can target a watchlist** (Phase 5C) — `ScannerConfig.user_watchlist_id` FK + `universe_kind='watchlist'` enum value + universe loader knows the new kind + scanner service resolves the FK at scan time
+  - Frontend dialog gains a second dropdown when kind=watchlist, populated from `watchlistService.list()`
+- **Analyze panel as React Flow canvas** (Phase 5D) — replaces the Phase 4 ModulePicker checkbox column:
+  - 16 SOP sections rendered as draggable `SectionNode` custom nodes (XyFlow v12)
+  - Section palette on the left (click-to-add convention matches the existing Flow tab's `right-sidebar.tsx`)
+  - Inline persona dropdown ON each persona-capable section node (no separate persona nodes — keeps the canvas small)
+  - Edges are visual only; orchestrator still runs `SECTION_ORDER`
+  - Saved templates persist to new `AnalyzeFlow` table + `/analyze-flows` REST routes + FlowList top-bar (load / save / new blank)
+  - `AnalyzeRequest.persona_overrides` field threaded through schema → route → orchestrator so per-section persona pins work end-to-end
+- **Auto-SOP cron + bundled email** (Phase 5E) — `ScannerConfig.auto_sop_top_n` + `auto_sop_use_personas` columns:
+  - After `_persist_results` succeeds, scanner service calls `run_auto_sop_for_scan(db, scan_run_id, top_n, use_personas)`
+  - Per-ticker SOP runs are isolated by try/except — one failure doesn't abort the loop
+  - One bundled email via `dispatch_bundled(event_type="research.bundled", reports, scan_run_id)`: master index + per-ticker `<details>` collapsible blocks
+  - `EmailHandler.send` + dispatcher `_render_for_event` both learned `research.bundled` event_type
+  - Hook is OUTSIDE the scan's main try/except — follow-up failures cannot mark the scan ERROR
+
+### Bug fixes during Phase 5
+
+- **Empty SECTION_REGISTRY bug** (caught + fixed before Phase 5 dispatch) — `src/research/sections/__init__.py` was only importing the ABC, not the 16 concrete section modules, so `SECTION_REGISTRY` was empty at runtime and every section emitted "section not yet implemented." Now imports all 16 modules as side-effect imports. Regression guard: `tests/research/test_sop_orchestrator_e2e.py` runs the REAL registry (not the patched stub the unit tests use) — catches this class of bug.
+
+### Migration chain (Phase 5)
+
+```
+d9f1c5b8e2a6 (Phase 4 — research_reports)
+  → e7b9f3c5d1a8 (Phase 5B — user_watchlists)
+  → c5d8a1f3e7b2 (Phase 5D — analyze_flows)
+  → f2a4c6e8b9d1 (Phase 5C — scanner_configs.user_watchlist_id FK)
+  → b8d2f9a4e6c1 (Phase 5E — scanner_configs.auto_sop_*)
+```
+
+All migrations are additive (no destructive ALTERs on Phase 1–4 tables). Each phase used `op.batch_alter_table` for SQLite-safe column adds.
+
+### Commits (14 new on top of `7f71e03`)
+
+```
+80cb1c1 feat(phase5e): tests for auto-SOP runner + bundled email
+61be9b9 feat(phase5e): ScannerService fires auto-SOP follow-up after each scan
+8350a2c feat(phase5e): auto-SOP runner + bundled email + dispatcher routing
+e23a5c6 feat(phase5e): ScannerConfig gets auto_sop_top_n + auto_sop_use_personas
+7436591 feat(phase5c): frontend watchlist picker + integration tests
+2f4df0f feat(phase5c): wire UserWatchlist resolution through scanner service
+65eafcc feat(phase5c): scanner config can target a UserWatchlist as universe
+16af718 feat(phase5d): React Flow Analyze canvas + saved templates + persona overrides
+72ccfa6 feat(phase5b): user-curated watchlist subsystem
+abcf7e6 feat(notifications): strip server-hosted <img> from research emails
+9ec29ff feat(research): GET /research/reports/{id}/chart/{type}.png endpoint
+6854257 feat(research): embed equity-curve PNG + K-line img in Technical section
+da91318 feat(research): add signal_indices to BacktestVerdict
+7449c39 feat(research): chart rendering primitives (kline + equity curve)
+```
+
+### Tests
+
+- **Full pytest:** 1065 passed / 20 failed / 3 skipped. All 20 failures are pre-existing live-API tests in `v2/data/` and `v2/event_study/` — same set as Phase 4. Zero Phase 5 regressions.
+- New tests by phase: A=9, B=15, C=7, D=12, E=10 → 53 new tests for Phase 5
+
+### Smoke checklist (morning verification)
+
+1. Restart backend + frontend (see Phase 4 commands; migrations auto-apply)
+2. Open http://localhost:5173 → left sidebar shows new "Watchlists" section above Scanner
+3. "+ Add watchlist" → name "Test" → "+ Add ticker" → type "NVD" → select NVDA
+4. Scanner icon → "+ New config" → set `universe_kind=watchlist` → second dropdown shows "Test" → also try `auto_sop_top_n=2` + save → run scan → expect bundled email with 2 collapsible report blocks
+5. Microscope (Analyze) icon → tab now shows React Flow canvas (not checkboxes). Click section in palette → node appears on canvas. Toggle persona dropdown on a persona-capable section. Save as "Quick view" via FlowList. Run SOP → 60-120s → iframe HTML has equity-curve `<img>` inline + a K-line `<img>` (loads via /research/reports/{id}/chart/kline-daily.png)
+6. Section status pills + persona assignments box (Phase 4 polish) still render
+
+### Risks for morning
+
+- **Gmail clip** on bundled email if Top-N is large — bundled HTML can exceed 102KB. Master index mitigates navigation; Gmail's "show full message" still loads it
+- **K-line `<img>` in email** — won't load (localhost backend not internet-reachable); equity curve still renders since it's base64-inlined
+- **Auto-SOP duration** — Top-N=10 sequential SOP runs = ~10-20 minutes. The scanner cron at 16:30 ET would still be persisting reports through ~16:50. Not a problem for daily use; the bundled email fires once at the end
+
+---
+
 ## Session — 2026-05-22 (Phase 4 landed — SOP-driven Analyze pipeline)
 
 ### What shipped

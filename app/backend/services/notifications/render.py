@@ -13,7 +13,18 @@ touch the DB and never raise — bad/missing fields render as ``—``.
 from __future__ import annotations
 
 import html
+import re
 from typing import Any
+
+
+# Strips <img src="/research/..."> tags from research HTML before email
+# delivery. Server-hosted PNGs won't load from Gmail (localhost isn't
+# internet-reachable). Inline base64 data: URIs survive — they don't
+# match this pattern.
+_SERVER_IMG_RE = re.compile(
+    r'<img\b[^>]*\bsrc=["\']/research/[^"\']*["\'][^>]*>',
+    re.IGNORECASE,
+)
 
 # Color palette matched to the frontend ActionPill (agent-run-detail.tsx).
 _ACTION_COLORS: dict[str, tuple[str, str]] = {
@@ -387,13 +398,18 @@ def render_research_html(report) -> str:
     """Email-safe HTML for one ResearchReport row.
 
     The pipeline pre-rendered the HTML at run time; here we just return
-    that string. The fallback handles legacy rows or test fixtures that
-    don't carry an HTML payload - wraps the markdown in a minimal
-    envelope so the email is never empty.
+    that string after stripping server-hosted ``<img src="/research/...">``
+    tags (they 404 in email since localhost isn't reachable from Gmail).
+    Inline ``<img src="data:...">`` images survive — those are the
+    base64-embedded equity-curve charts that work in email.
+
+    The fallback handles legacy rows or test fixtures that don't carry
+    an HTML payload — wraps the markdown in a minimal envelope so the
+    email is never empty.
     """
     html_body = getattr(report, "rendered_html", "") or ""
     if html_body.strip():
-        return html_body
+        return _SERVER_IMG_RE.sub("", html_body)
     ticker = _esc(getattr(report, "ticker", ""))
     markdown = _esc(getattr(report, "report_markdown", ""))
     return (

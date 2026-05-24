@@ -18,7 +18,7 @@ import time
 from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from app.backend.database import get_db
@@ -34,10 +34,13 @@ from app.backend.models.research_schemas import (
     TradePlanPayload,
 )
 from app.backend.repositories.research_repository import ResearchReportRepository
+from src.research.backtest_signal import _closes, run_signal_backtest
+from src.research.charts.render import render_equity_curve_png, render_kline_png
 from src.research.html_render import render_html, render_sop
 from src.research.models import AnalyzeRequest, ResearchRequest, SECTION_ORDER
 from src.research.persist import state_to_db_kwargs
 from src.research.pipeline import run_research
+from src.research.shared_data import fetch_shared_data
 from src.research.sop_orchestrator import run_sop
 
 logger = logging.getLogger(__name__)
@@ -173,6 +176,7 @@ def _to_analyze_request(req: AnalyzeRunRequest) -> AnalyzeRequest:
             set(req.included_sections) if req.included_sections
             else set(SECTION_ORDER)
         ),
+        persona_overrides=req.persona_overrides,
     )
 
 
@@ -295,3 +299,53 @@ def trigger_analyze(
         logger.exception("re-render with report_id failed (keeping initial HTML): %s", e)
 
     return _report_to_detail(row, report_dict=report)
+
+
+# ---------------------------------------------------------------------------
+# Phase 5A — chart PNG endpoint
+# ---------------------------------------------------------------------------
+
+_CHART_TYPES = {"kline-daily", "kline-weekly", "equity-curve"}
+
+
+@router.get(
+    "/reports/{report_id}/chart/{chart_type}.png",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+def get_report_chart(
+    report_id: int,
+    chart_type: str,
+    db: Session = Depends(get_db),
+):
+    """Regenerate a chart PNG on demand for the given report.
+
+    No cache (v1): each request re-fetches shared data and re-renders.
+    Cheap enough (~200ms) for the dev environment; revisit with ETag /
+    file cache once we have multiple concurrent users.
+    """
+    if chart_type not in _CHART_TYPES:
+        raise HTTPException(404, f"unknown chart type: {chart_type}")
+
+    report = ResearchReportRepository(db).get_by_id(report_id)
+    if not report:
+        raise HTTPException(404, f"No research report with id {report_id}")
+
+    try:
+        shared = fetch_shared_data(report.ticker, report.scan_date)
+    except Exception as e:
+        logger.exception("fetch_shared_data failed for chart endpoint: %s", e)
+        raise HTTPException(500, f"failed to load shared data: {type(e).__name__}")
+
+    closes = _closes(shared)
+
+    if chart_type == "kline-daily":
+        png = render_kline_png(closes, kind="daily")
+    elif chart_type == "kline-weekly":
+        png = render_kline_png(closes, kind="weekly")
+    else:  # equity-curve
+        verdict = run_signal_backtest(shared, signal="auto")
+        idx = verdict.signal_indices or []
+        png = render_equity_curve_png(closes, idx, horizon=20)
+
+    return Response(content=png, media_type="image/png")

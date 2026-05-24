@@ -221,10 +221,47 @@ def _inject_section_body(html: str, h2_text: str, body_html: str) -> str:
     return html[:start] + "\n" + body_html + "\n" + html[cutoff:]
 
 
-def render_sop(report: AnalyzeReport) -> str:
+def _technical_chart_imgs(payload, *, report_id: int | None) -> str:
+    """Build the trailing <img> block appended to the Technical section.
+
+    Two charts:
+      1. Equity curve (always, if available) — inline base64 so it
+         renders in email + web without server access.
+      2. Daily K-line (web only) — points at the per-report chart
+         endpoint. Skipped when ``report_id`` is None (CLI path) since
+         there's no backend to serve it.
+    """
+    parts: list[str] = []
+    structured = payload.structured if payload is not None else None
+    chart_b64 = None
+    if isinstance(structured, dict):
+        chart_b64 = structured.get("chart_equity_curve_b64")
+
+    if chart_b64:
+        parts.append(
+            f'\n<p><img src="{chart_b64}" alt="Equity curve" '
+            f'style="max-width:100%;height:auto;"></p>'
+        )
+
+    if report_id is not None:
+        parts.append(
+            f'\n<p><img src="/research/reports/{report_id}/chart/kline-daily.png" '
+            f'alt="Daily K-line" style="max-width:100%;height:auto;"></p>'
+        )
+
+    return "".join(parts)
+
+
+def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
     """Render an ``AnalyzeReport`` into a single self-contained HTML
     document using the vendored skill template + per-section body
     injection.
+
+    ``report_id``: when provided, K-line chart <img> tags pointing at
+    ``/research/reports/{id}/chart/kline-{kind}.png`` are appended to
+    the Technical section body. When None (CLI path), only the inline
+    base64 equity-curve image is embedded (no K-line — there is no
+    backend to serve it).
     """
     req = report["request"]
     sections = report.get("sections") or {}
@@ -292,6 +329,8 @@ def render_sop(report: AnalyzeReport) -> str:
                 f'\n<p><strong>Total score:</strong> '
                 f'<span class="score-badge">{score}/100</span></p>'
             )
+        if section_name == "technical":
+            body_html += _technical_chart_imgs(payload, report_id=report_id)
         html = _inject_section_body(html, h2_text, body_html)
 
     # Append appendix sections (no <h2> in skeleton).

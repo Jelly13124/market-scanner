@@ -35,6 +35,8 @@ class ScannerConfigRepository:
         universe_tickers: Optional[List[str]] = None,
         weights: Optional[dict] = None,
         user_watchlist_id: Optional[int] = None,
+        auto_sop_top_n: int = 0,
+        auto_sop_use_personas: bool = False,
     ) -> ScannerConfig:
         config = ScannerConfig(
             name=name,
@@ -45,6 +47,8 @@ class ScannerConfigRepository:
             top_n=top_n,
             weights=weights,
             user_watchlist_id=user_watchlist_id,
+            auto_sop_top_n=auto_sop_top_n,
+            auto_sop_use_personas=auto_sop_use_personas,
         )
         self.db.add(config)
         self.db.commit()
@@ -72,6 +76,8 @@ class ScannerConfigRepository:
         top_n: Optional[int] = None,
         weights: Optional[dict] = None,
         user_watchlist_id: Optional[int] = None,
+        auto_sop_top_n: Optional[int] = None,
+        auto_sop_use_personas: Optional[bool] = None,
         _set_watchlist_id: bool = False,
     ) -> Optional[ScannerConfig]:
         """Partial update. ``_set_watchlist_id`` is the explicit flag the
@@ -96,6 +102,10 @@ class ScannerConfigRepository:
             config.weights = weights
         if _set_watchlist_id or user_watchlist_id is not None:
             config.user_watchlist_id = user_watchlist_id
+        if auto_sop_top_n is not None:
+            config.auto_sop_top_n = auto_sop_top_n
+        if auto_sop_use_personas is not None:
+            config.auto_sop_use_personas = auto_sop_use_personas
         self.db.commit()
         self.db.refresh(config)
         return config

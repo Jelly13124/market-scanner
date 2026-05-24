@@ -15,6 +15,8 @@ export interface AnalyzeRunRequest {
   risk_tolerance?: RiskBand;
   use_personas?: boolean;
   included_sections?: string[] | null;
+  // Phase 5D — pin specific personas per section (canvas overrides).
+  persona_overrides?: Record<string, string> | null;
 }
 
 export interface SectionPayloadAPI {
@@ -89,3 +91,14 @@ export const REQUIRED_SECTIONS: string[] = [
   'data_health', 'executive_summary', 'evidence_ledger',
   'conviction', 'final_strategy',
 ];
+
+// Per-section persona support — mirrors `supports_personas` on each
+// Section subclass in src/research/sections/. The dropdown on a
+// SectionNode shows these (plus an "objective" entry meaning "no
+// override / objective mode").
+export const SECTION_PERSONAS: Record<string, string[]> = {
+  company_fundamentals: ['buffett', 'munger', 'fisher'],
+  valuation:            ['buffett', 'graham', 'munger', 'fisher'],
+  risk_position:        ['druckenmiller', 'burry'],
+  macro:                ['druckenmiller'],
+};

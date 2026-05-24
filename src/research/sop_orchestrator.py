@@ -129,10 +129,16 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
                 skip_reason="no runner registered",
             )
             continue
+        # Resolve persona: router-assigned, then overridden by request
+        # if Phase 5D persona_overrides pins this section.
+        persona_for_section = _persona_for(persona_assignments, name)
+        overrides = getattr(request, "persona_overrides", None)
+        if overrides and name in overrides:
+            persona_for_section = overrides[name]
         ctx = SectionContext(
             request=request,
             shared=shared,
-            persona=_persona_for(persona_assignments, name),
+            persona=persona_for_section,
             prior=dict(sections),  # snapshot — section sees everything before it
         )
         try:

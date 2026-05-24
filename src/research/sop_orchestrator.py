@@ -19,6 +19,7 @@ import logging
 from datetime import date
 
 from src.research.backtest_signal import run_signal_backtest
+from src.research.charts.render import render_equity_curve_b64
 from src.research.models import (
     AnalyzeReport,
     AnalyzeRequest,
@@ -148,17 +149,43 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
             )
         sections[name] = payload
 
-    # Append Backtest Validation to Technical's markdown
+    # Append Backtest Validation to Technical's markdown + embed equity-curve PNG
     if (
         backtest is not None
         and "technical" in sections
         and not sections["technical"].skipped
     ):
         tech = sections["technical"]
+
+        # Generate inline equity-curve b64 for email/web consumption.
+        # Pulled from shared.prices closes + backtest.signal_indices (which
+        # the Phase 5A backtest now exposes). On any failure (e.g. matplotlib
+        # not installed, empty prices), structured stays None and the
+        # rendered HTML simply omits the inline image — the K-line endpoint
+        # will still serve PNGs on demand.
+        chart_b64: str | None = None
+        try:
+            from src.research.backtest_signal import _closes
+            closes = _closes(shared)
+            idx = backtest.signal_indices or []
+            chart_b64 = render_equity_curve_b64(closes, idx, horizon=20)
+        except Exception as e:
+            logger.exception("equity-curve chart render failed: %s", e)
+
+        new_structured: dict | None
+        if isinstance(tech.structured, dict):
+            new_structured = dict(tech.structured)
+        elif tech.structured is None:
+            new_structured = {} if chart_b64 else None
+        else:
+            new_structured = tech.structured  # keep non-dict structured as-is
+        if chart_b64 and isinstance(new_structured, dict):
+            new_structured["chart_equity_curve_b64"] = chart_b64
+
         sections["technical"] = SectionPayload(
             name="technical",
             markdown=tech.markdown + _backtest_validation_md(backtest),
-            structured=tech.structured,
+            structured=new_structured,
             skipped=False,
             persona_used=tech.persona_used,
         )

@@ -238,7 +238,9 @@ def trigger_analyze(
         raise HTTPException(500, f"analyze pipeline failed: {type(e).__name__}: {e}")
     duration = time.monotonic() - t0
 
-    # Render HTML and stash in report
+    # Render once without report_id to get the persisted HTML; we re-render
+    # below with the freshly-inserted id so K-line <img> tags point at the
+    # right URL.
     html = render_sop(report)
     report["rendered_html"] = html
 
@@ -279,4 +281,17 @@ def trigger_analyze(
     }
     repo = ResearchReportRepository(db)
     row = repo.create_analyze(report=report_kwargs)
+
+    # Re-render with the freshly-allocated report id so the K-line chart
+    # <img> tag can point at /research/reports/{id}/chart/kline-daily.png.
+    # Update the persisted row in place.
+    try:
+        html_with_id = render_sop(report, report_id=row.id)
+        row.rendered_html = html_with_id
+        db.commit()
+        db.refresh(row)
+        report["rendered_html"] = html_with_id
+    except Exception as e:
+        logger.exception("re-render with report_id failed (keeping initial HTML): %s", e)
+
     return _report_to_detail(row, report_dict=report)

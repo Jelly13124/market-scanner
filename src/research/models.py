@@ -184,7 +184,13 @@ class SectionPayload:
 @dataclass
 class BacktestVerdict:
     """Output of the technical-signal backtest, embedded inside the
-    Technical Analysis section under 'Backtest Validation'."""
+    Technical Analysis section under 'Backtest Validation'.
+
+    ``signal_indices`` is optional/backwards-compatible: Phase 5A added
+    it so the chart pipeline can re-derive the equity curve without
+    re-running the per-signal detector. None for legacy/test paths that
+    don't populate it.
+    """
     signal: str
     window_start: str
     window_end: str
@@ -194,6 +200,7 @@ class BacktestVerdict:
     t_stat: float | None
     significant: bool
     verdict: str
+    signal_indices: list[int] | None = None
 
 
 class AnalyzeReport(TypedDict, total=False):

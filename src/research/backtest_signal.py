@@ -163,10 +163,14 @@ def run_signal_backtest(
             n_signals=0, win_rate_20d=None, avg_return_20d=None, t_stat=None,
             significant=False,
             verdict="insufficient data - no price history available",
+            signal_indices=[],
         )
 
     candidates = _AVAILABLE if signal == "auto" else (signal,)
-    best: tuple[float, str, int, float, float, float | None] | None = None
+    # ``best`` carries: (score, signal_name, n_returns, win_rate, avg_return,
+    # t_stat, signal_indices). signal_indices is the raw bar indices where
+    # the signal fired (kept so the chart pipeline can replay them).
+    best: tuple[float, str, int, float, float, float | None, list[int]] | None = None
     for sig in candidates:
         idx = _signal_indices(closes, sig)
         rets = _forward_returns(closes, idx, horizon)
@@ -178,7 +182,7 @@ def run_signal_backtest(
         # Score by abs(t)*sqrt(n) to favor signals with both magnitude AND sample size
         score = (abs(t) if t is not None else 0.0) * math.sqrt(len(rets))
         if best is None or score > best[0]:
-            best = (score, sig, len(rets), wr, avg, t)
+            best = (score, sig, len(rets), wr, avg, t, idx)
 
     if best is None:
         return BacktestVerdict(
@@ -187,9 +191,10 @@ def run_signal_backtest(
             n_signals=0, win_rate_20d=None, avg_return_20d=None, t_stat=None,
             significant=False,
             verdict=f"no signal occurrences for {signal} in available history",
+            signal_indices=[],
         )
 
-    _, sig, n, wr, avg, t = best
+    _, sig, n, wr, avg, t, idx = best
     significant = (t is not None and abs(t) >= 1.96)
     t_str = f"{t:.2f}" if t is not None else "n/a"
     verdict = (
@@ -206,4 +211,5 @@ def run_signal_backtest(
         window_start=window_start, window_end=shared.scan_date,
         n_signals=n, win_rate_20d=wr, avg_return_20d=avg,
         t_stat=t, significant=significant, verdict=verdict,
+        signal_indices=idx,
     )

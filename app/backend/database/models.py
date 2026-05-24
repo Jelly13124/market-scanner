@@ -134,6 +134,13 @@ class ScannerConfig(Base):
     # Scoring weights override; null means use defaults from v2/scanner/scoring.py
     weights = Column(JSON, nullable=True)
 
+    # Phase 5C — when universe_kind == 'watchlist', points at the UserWatchlist
+    # row whose ``tickers`` list becomes the scan universe. Null for non-watchlist
+    # kinds (sp500/nasdaq100/custom/etc.).
+    user_watchlist_id = Column(
+        Integer, ForeignKey("user_watchlists.id"), nullable=True, index=True,
+    )
+
 
 class ScanRun(Base):
     """A single execution of the scanner against a configured universe."""

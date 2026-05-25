@@ -93,3 +93,105 @@ class TestVolumeSpikeEntry:
     def test_multiplier_too_large_rejected(self):
         with pytest.raises(ValidationError):
             VolumeSpikeEntry(multiplier=11.0)
+
+
+# ---- Exit blocks ----
+from src.lab.spec.blocks_exit import (
+    StopLossExit, TakeProfitExit, TrailingStopExit, TimeStopExit,
+)
+
+
+class TestStopLossExit:
+    def test_pct(self):
+        b = StopLossExit(mode="pct", value=0.05)
+        assert b.type == "stop_loss" and b.mode == "pct"
+
+    def test_atr(self):
+        b = StopLossExit(mode="atr", value=2.0)
+        assert b.mode == "atr"
+
+    def test_invalid_mode(self):
+        with pytest.raises(ValidationError):
+            StopLossExit(mode="dollar", value=1.0)
+
+
+class TestTakeProfitExit:
+    def test_default(self):
+        b = TakeProfitExit(pct=0.10)
+        assert b.type == "take_profit" and b.pct == 0.10
+
+    def test_pct_negative_rejected(self):
+        with pytest.raises(ValidationError):
+            TakeProfitExit(pct=-0.05)
+
+
+class TestTrailingStopExit:
+    def test_default(self):
+        b = TrailingStopExit(mode="pct", value=0.03)
+        assert b.type == "trailing_stop"
+
+
+class TestTimeStopExit:
+    def test_default(self):
+        b = TimeStopExit(bars=20)
+        assert b.type == "time_stop"
+
+    def test_bars_too_small_rejected(self):
+        with pytest.raises(ValidationError):
+            TimeStopExit(bars=0)
+
+
+# ---- Sizing blocks ----
+from src.lab.spec.blocks_sizing import (
+    FixedPctSizing, EqualWeightSizing, VolTargetedSizing,
+)
+
+
+class TestFixedPctSizing:
+    def test_default(self):
+        b = FixedPctSizing()
+        assert b.type == "fixed_pct" and b.pct == 0.05
+
+    def test_pct_too_small_rejected(self):
+        with pytest.raises(ValidationError):
+            FixedPctSizing(pct=0.001)
+
+
+class TestEqualWeightSizing:
+    def test_just_type(self):
+        b = EqualWeightSizing()
+        assert b.type == "equal_weight"
+
+
+class TestVolTargetedSizing:
+    def test_default(self):
+        b = VolTargetedSizing()
+        assert b.type == "vol_targeted" and b.target_dollar_vol_per_position == 1000
+
+
+# ---- Filter blocks ----
+from src.lab.spec.blocks_filters import (
+    TrendFilter, VolatilityFilter, LiquidityFilter,
+)
+
+
+class TestTrendFilter:
+    def test_default(self):
+        b = TrendFilter(direction="rising")
+        assert b.type == "trend" and b.ma_period == 200
+
+
+class TestVolatilityFilter:
+    def test_default(self):
+        b = VolatilityFilter()
+        assert b.type == "volatility" and b.percentile_min == 0 and b.percentile_max == 100
+
+    def test_percentile_above_100_rejected(self):
+        with pytest.raises(ValidationError):
+            VolatilityFilter(percentile_max=101)
+
+
+class TestLiquidityFilter:
+    def test_default(self):
+        b = LiquidityFilter()
+        assert b.type == "liquidity" and b.min_daily_dollar_volume == 1_000_000

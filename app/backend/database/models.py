@@ -380,3 +380,90 @@ class ResearchTradePlan(Base):
     # 'strong' | 'moderate' | 'weak' | 'insufficient'
     backtest_sample_quality = Column(String(20), nullable=False, default="insufficient")
     backtest_caveat = Column(Text, nullable=True)
+
+
+class Strategy(Base):
+    """Phase 6: a saved StrategySpec. Spec lives in spec_json; version bumps
+    every time user accepts an AI patch or manually edits."""
+    __tablename__ = "strategies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    name = Column(String(200), nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=True)
+    spec_json = Column(JSON, nullable=False)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+
+
+class LabChatMessage(Base):
+    """Phase 6: one chat turn under a Strategy. AI proposals include a
+    spec_patch_json + the resulting spec_snapshot_json if accepted."""
+    __tablename__ = "lab_chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    strategy_id = Column(
+        Integer, ForeignKey("strategies.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    role = Column(String(20), nullable=False)  # 'user' | 'assistant' | 'user_manual_edit'
+    content = Column(Text, nullable=False)
+    spec_snapshot_json = Column(JSON, nullable=True)  # spec AFTER accept
+    spec_patch_json = Column(JSON, nullable=True)     # raw AI patch
+    patch_accepted = Column(Boolean, nullable=True)   # null if N/A
+
+
+class Backtest(Base):
+    """Phase 6: one backtest run on a Strategy's spec snapshot."""
+    __tablename__ = "backtests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    strategy_id = Column(
+        Integer, ForeignKey("strategies.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    spec_snapshot_json = Column(JSON, nullable=False)
+    start_date = Column(String(10), nullable=False)
+    end_date = Column(String(10), nullable=False)
+    midpoint_date = Column(String(10), nullable=False)
+    universe_size = Column(Integer, nullable=False)
+
+    # IS metrics
+    is_total_return = Column(Float, nullable=True)
+    is_cagr = Column(Float, nullable=True)
+    is_sharpe = Column(Float, nullable=True)
+    is_sortino = Column(Float, nullable=True)
+    is_max_drawdown = Column(Float, nullable=True)
+    is_calmar = Column(Float, nullable=True)
+    is_win_rate = Column(Float, nullable=True)
+    is_profit_factor = Column(Float, nullable=True)
+    is_n_trades = Column(Integer, nullable=True)
+    is_avg_holding_days = Column(Float, nullable=True)
+
+    # OOS metrics
+    oos_total_return = Column(Float, nullable=True)
+    oos_cagr = Column(Float, nullable=True)
+    oos_sharpe = Column(Float, nullable=True)
+    oos_sortino = Column(Float, nullable=True)
+    oos_max_drawdown = Column(Float, nullable=True)
+    oos_calmar = Column(Float, nullable=True)
+    oos_win_rate = Column(Float, nullable=True)
+    oos_profit_factor = Column(Float, nullable=True)
+    oos_n_trades = Column(Integer, nullable=True)
+    oos_avg_holding_days = Column(Float, nullable=True)
+
+    degradation_ratio = Column(Float, nullable=True)
+    benchmark_cagr = Column(Float, nullable=True)
+    verdict_label = Column(String(30), nullable=False)
+    verdict_text = Column(Text, nullable=False)
+
+    trades_json = Column(JSON, nullable=False)
+    equity_curve_is = Column(JSON, nullable=False)
+    equity_curve_oos = Column(JSON, nullable=False)
+    benchmark_curve = Column(JSON, nullable=True)
+
+    duration_seconds = Column(Float, nullable=True)
+    error_message = Column(Text, nullable=True)

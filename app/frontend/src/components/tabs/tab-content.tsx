@@ -76,9 +76,23 @@ export function TabContent({ className }: TabContentProps) {
     );
   }
 
+  // Render ALL tabs simultaneously and toggle visibility via display:none.
+  // This preserves React state (and any in-flight work like SOP runs / SSE
+  // streams) when the user switches between tabs. Tabs whose content has
+  // not yet been restored from localStorage are skipped.
   return (
-    <div className={cn("h-full w-full bg-background overflow-hidden", className)}>
-      {activeTab.content}
+    <div className={cn("h-full w-full bg-background overflow-hidden relative", className)}>
+      {tabs.map((tab) =>
+        tab.content ? (
+          <div
+            key={tab.id}
+            className="absolute inset-0 h-full w-full"
+            style={{ display: tab.id === activeTabId ? undefined : 'none' }}
+          >
+            {tab.content}
+          </div>
+        ) : null,
+      )}
     </div>
   );
 } 

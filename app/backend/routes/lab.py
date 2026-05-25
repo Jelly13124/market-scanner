@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -44,6 +44,11 @@ from app.backend.repositories.lab_chat_repository import LabChatRepository
 from app.backend.repositories.lab_strategy_repository import StrategyRepository
 from src.lab.backtest_runner import run_backtest
 from src.lab.catalog import CATALOG
+from src.lab.charts import (
+    render_drawdown_png,
+    render_equity_curve_png,
+    render_monthly_heatmap_png,
+)
 from src.lab.chat import ProposeSpecPatch, run_chat_turn
 from src.lab.spec.strategy import StrategySpec
 
@@ -309,6 +314,32 @@ def get_backtest(backtest_id: int, db: Session = Depends(get_db)):
     if bt is None:
         raise HTTPException(404, f"Backtest {backtest_id} not found")
     return BacktestResponse.model_validate(bt)
+
+
+# ---- Backtest charts ----
+
+@router.get("/backtests/{backtest_id}/chart/{chart_type}.png")
+def get_backtest_chart(
+    backtest_id: int, chart_type: str, db: Session = Depends(get_db),
+):
+    bt = BacktestRepository(db).get(backtest_id)
+    if bt is None:
+        raise HTTPException(404, f"Backtest {backtest_id} not found")
+    if chart_type == "equity_curve":
+        png = render_equity_curve_png(
+            bt.equity_curve_is or [],
+            bt.equity_curve_oos or [],
+            benchmark_curve=bt.benchmark_curve,
+            midpoint_label=bt.midpoint_date or "",
+        )
+    elif chart_type == "drawdown":
+        combined = (bt.equity_curve_is or []) + (bt.equity_curve_oos or [])
+        png = render_drawdown_png(combined)
+    elif chart_type == "monthly_heatmap":
+        png = render_monthly_heatmap_png(bt.trades_json or [])
+    else:
+        raise HTTPException(404, f"Unknown chart type {chart_type}")
+    return Response(content=png, media_type="image/png")
 
 
 # ---- Catalog ----

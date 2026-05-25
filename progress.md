@@ -1,5 +1,106 @@
 # Progress Log
 
+## Session — 2026-05-25 (Phase 6 landed — AI Strategy Lab)
+
+### What shipped
+
+- **18-block catalog** (`src/lab/spec/blocks_*.py`) — Pydantic v2 discriminated
+  unions; 8 entry, 4 exit, 3 sizing, 3 filter blocks. LLM uses
+  `with_structured_output(StrategySpec, method='json_mode')` to emit
+  validated JSON in one shot.
+- **Backtest engine** (`src/lab/engine/`) — universe loader (watchlist
+  + sp500 + nasdaq100), DataLoader (batch OHLCV via existing v2/data),
+  indicator precompute (RSI / SMA / EMA / ATR / MACD / Bollinger /
+  Donchian / volume SMA), per-bar simulation with position cap + cost
+  model, metrics (Sharpe / Sortino / MaxDD / Calmar / profit factor),
+  verdict (insufficient / reject / overfit / weak / underperform_bench /
+  positive_edge) adapted from stock-analyze-skills hard rules.
+- **Walk-forward IS/OOS** — 70/30 default split; degradation ratio
+  flags overfit even when IS looks great.
+- **LLM chat wrapper** (`src/lab/chat.py`) — system prompt assembles
+  catalog + prior strategies summary + current spec + last 20 chat
+  messages; `ChatResponse` discriminated `RootModel` (`ProposeSpecPatch`
+  vs `ChatReply`) keeps the frontend simple.
+- **3 new DB tables** — `strategies` / `lab_chat_messages` / `backtests`
+  (Alembic migration `c3e7f9d2b8a4`); 3 sync Session-injected repos.
+- **13 REST endpoints** under `/lab/*` — strategy CRUD, chat send +
+  apply, backtest run + list + get, 3 chart PNGs, catalog endpoint.
+- **Frontend Lab tab** (FlaskConical sidebar icon) — `StrategyList` +
+  `ChatPanel` + `SpecViewer` 3-column top + `BacktestRunner` +
+  `BacktestResult` (verdict + 3 chart PNGs + IS/OOS metric grid) +
+  `TradeLogTable` + `BacktestHistory` bottom. Tab state preserved via
+  the Phase 5 `display:none` pattern.
+
+### Commits (oldest -> newest)
+
+- 774e8d3 — docs: implementation plan for Phase 6 — AI Strategy Lab
+- 656d232 — feat(lab): 8 entry signal blocks with Pydantic validation
+- 6ed8235 — feat(lab): 10 more blocks — exits + sizing + filters
+- 885b4b1 — feat(lab): StrategySpec + discriminated unions for 18 blocks
+- e5ea27b — feat(lab): CATALOG + LLM prompt text for 18 blocks
+- 094c807 — feat(backend): Strategy + LabChatMessage + Backtest SQLAlchemy models
+- 1073bdb — feat(lab): universe loader (watchlist + sp500 + nasdaq100)
+- 51dd52b — feat(lab): DataLoader — batch OHLCV via existing v2/data layer
+- 7ea6c0f — feat(lab): indicator precompute for all 18 v1 blocks
+- a6a10ad — feat(backend): alembic c3e7f9d2b8a4 — add lab tables
+- 9d260db — feat(backend): Lab repositories — Strategy + LabChat + Backtest
+- 851fa6f — feat(lab): signal evaluation for all 18 blocks
+- 4366ce1 — feat(lab): position sizing — fixed_pct / equal_weight / vol_targeted
+- 6cf0b14 — feat(lab): per-bar simulation loop
+- f66be9d — feat(lab): metrics computation (Sharpe/Sortino/MaxDD/Calmar/win%/PF)
+- ebdea3a — feat(lab): verdict labels (insufficient/reject/overfit/weak/underperform/positive)
+- f4169b0 — feat(backend): Lab Pydantic schemas
+- 1ed0bbd — feat(lab): LLM chat wrapper with ProposeSpecPatch/ChatReply union
+- 3a67b9c — feat(lab): backtest_runner — end-to-end orchestration
+- 4a942e1 — feat(backend): /lab/* REST API (12 endpoints)
+- c7d60a0 — feat(frontend): Lab tab plumbing — types, services, stub panel
+- 8069304 — feat(frontend): Lab StrategyList + ChatPanel + ChatMessage
+- 49ec1dd — feat(frontend): Lab SpecViewer + SpecBlockCard + SpecJsonEditor
+- 71a902d — feat(lab): chart endpoint + 3 PNG renderers
+- 8e924c6 — feat(frontend): Lab BacktestRunner + Result + TradeLog + History
+
+### Tests
+
+- **~76 new backend tests** under `tests/lab/` + `tests/test_lab_*.py`
+  (Phase 6A 40, 6B 27, 6C 9, 6D 12, 6E 18, 6G 7) — all green (103 passed
+  in the Phase 6 surface check)
+- Full pytest: 1186 passed, 20 failed, 3 skipped. All 20 failures are
+  pre-existing — 18 live-API tests in `v2/data/` + `v2/event_study/`
+  (same set as Phase 5), 1 in `v2/data/test_yfinance_client.py`, and
+  1 in `tests/test_scanner_service.py` that expects the old
+  `earnings_surprise` detector name (now alias-rewritten to
+  `earnings_event` at config load per MEMORY.md). No Phase 6
+  regressions.
+- Frontend tsc: clean on Phase 6 surface. Pre-existing errors only in
+  `ui/sidebar.tsx` (ref-type variance, 5 sites), `panels/scanner/
+  agent-run-detail.tsx` (unused Badge import), and `lib/utils.ts`
+  (unused `provider` parameter).
+
+### Plan-code fixes caught during execution
+
+The plan was written without dry-run; subagents caught ~10 latent
+bugs and fixed them inline. Notable ones:
+- `verdict.py` had `f"({x if not None else 'n/a'})"` — string
+  literal masquerading as Python ternary; would crash on
+  `benchmark_cagr=None`.
+- `simulation.py` test fixture didn't trigger any entries (flat 50
+  bars then drop, no breakout before the drop).
+- `signal_eval.py` `ma_cross` missed the NaN-prev-diff edge case on
+  monotone-uptrend fixtures.
+- Multiple sites swapped unicode `+/-`, `x`, `->`, `--`, `>=` to ASCII
+  equivalents for Windows PowerShell encoding safety.
+
+### Notes for next session
+- The pre-existing flow migration `3f9a6b7c8d2e` has a duplicate-index
+  bug that breaks fresh-from-zero `alembic upgrade head` on sqlite;
+  does not affect existing project DBs. Worth fixing some day.
+- `lab-panel.tsx` is fully wired; `BacktestRunner` runs sync (30s-5min);
+  background queue is v2.
+- Chat prompt + catalog text uses ASCII glyphs — if the frontend
+  wants pretty unicode, transform at render time.
+
+---
+
 ## Session — 2026-05-24 (Phase 5 landed — Charts + Watchlist + Flow Analyze + Auto-SOP)
 
 ### What shipped

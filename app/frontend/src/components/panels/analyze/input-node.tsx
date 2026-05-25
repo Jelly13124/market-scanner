@@ -1,9 +1,11 @@
 // Custom React Flow node holding the run-request form (ticker / objective /
-// budget / holds / risk / personas). One instance per canvas. The canvas
-// serializer reads this node's `data` to build the AnalyzeRunRequest at
-// run-time.
+// budget / holds / risk). One instance per canvas. The canvas serializer
+// reads this node's `data` to build the AnalyzeRunRequest at run-time.
 //
-// Kept compact (≤280px) so it sits comfortably alongside SectionNodes.
+// NOTE: `use_personas` is no longer surfaced as a checkbox here — it lives
+// in the Debate node. The field is still in InputNodeData for backwards
+// compat (saved templates / serializer fallback), but is never user-set
+// from this UI. The flow-canvas serializer reads it from the Debate node.
 
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -16,7 +18,11 @@ import { useContext } from 'react';
 import { FlowCanvasContext } from './flow-canvas-context';
 
 /** Shape of the InputNode's `data` payload. Mirrors AnalyzeRunRequest
- * fields the user can control from the canvas. */
+ * fields the user can control from the canvas.
+ *
+ * `use_personas` is retained as a fallback for the serializer — its
+ * authoritative value now lives on the Debate node. When Debate is on
+ * canvas, the flow-canvas serializer ignores this field. */
 export interface InputNodeData {
   ticker: string;
   objective: Objective;
@@ -24,7 +30,7 @@ export interface InputNodeData {
   already_holds: boolean;
   cost_basis_usd: string;
   risk_tolerance: RiskBand;
-  use_personas: boolean;
+  use_personas: boolean;       // fallback only — see Debate node for source of truth
   [key: string]: unknown;
 }
 
@@ -35,7 +41,7 @@ export const DEFAULT_INPUT_NODE_DATA: InputNodeData = {
   already_holds: false,
   cost_basis_usd: '',
   risk_tolerance: 'balanced',
-  use_personas: true,
+  use_personas: false,
 };
 
 const OBJECTIVES: { value: Objective; label: string }[] = [
@@ -64,8 +70,8 @@ export function InputNode({ id, data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        'group relative rounded border bg-card text-card-foreground shadow-sm',
-        'min-w-[260px] max-w-[280px] p-3',
+        'group relative rounded-md border bg-card text-card-foreground shadow-sm',
+        'min-w-[320px] max-w-[340px] p-4',
         selected ? 'border-primary ring-1 ring-primary/30' : 'border-primary/50',
       )}
     >
@@ -79,39 +85,39 @@ export function InputNode({ id, data, selected }: NodeProps) {
         aria-label="Delete Input node"
         title="Delete Input node"
         className={cn(
-          'nodrag absolute -top-1.5 -right-1.5 z-10 size-4 rounded-full',
+          'nodrag absolute -top-2 -right-2 z-10 size-5 rounded-full',
           'bg-destructive text-destructive-foreground border border-background',
           'flex items-center justify-center',
           'opacity-0 group-hover:opacity-100 transition-opacity',
           'hover:bg-destructive/90',
         )}
       >
-        <X className="size-2.5" strokeWidth={3} />
+        <X className="size-3" strokeWidth={3} />
       </button>
 
-      <div className="text-[10px] uppercase font-bold tracking-wider text-primary mb-2">
+      <div className="text-xs uppercase font-bold tracking-wider text-primary mb-3">
         Run Input
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {/* Ticker */}
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] uppercase text-muted-foreground">Ticker</label>
+          <label className="text-xs uppercase text-muted-foreground tracking-wide">Ticker</label>
           <Input
             value={d.ticker}
             onChange={(e) => update({ ticker: e.target.value.toUpperCase() })}
-            className="nodrag h-7 text-xs font-mono uppercase"
+            className="nodrag h-8 text-sm font-mono uppercase"
             placeholder="NVDA"
           />
         </div>
 
         {/* Objective */}
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] uppercase text-muted-foreground">Objective</label>
+          <label className="text-xs uppercase text-muted-foreground tracking-wide">Objective</label>
           <select
             value={d.objective}
             onChange={(e) => update({ objective: e.target.value as Objective })}
-            className="nodrag h-7 px-1 text-xs border rounded bg-background"
+            className="nodrag h-8 px-2 text-sm border rounded bg-background"
           >
             {OBJECTIVES.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -121,23 +127,23 @@ export function InputNode({ id, data, selected }: NodeProps) {
 
         {/* Budget */}
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] uppercase text-muted-foreground">Budget (USD)</label>
+          <label className="text-xs uppercase text-muted-foreground tracking-wide">Budget (USD)</label>
           <Input
             type="number" min="0" step="100"
             value={d.budget_usd}
             onChange={(e) => update({ budget_usd: e.target.value })}
             placeholder="10000"
-            className="nodrag h-7 text-xs"
+            className="nodrag h-8 text-sm"
           />
         </div>
 
         {/* Risk */}
         <div className="flex flex-col gap-1">
-          <label className="text-[10px] uppercase text-muted-foreground">Risk tolerance</label>
+          <label className="text-xs uppercase text-muted-foreground tracking-wide">Risk tolerance</label>
           <select
             value={d.risk_tolerance}
             onChange={(e) => update({ risk_tolerance: e.target.value as RiskBand })}
-            className="nodrag h-7 px-1 text-xs border rounded bg-background"
+            className="nodrag h-8 px-2 text-sm border rounded bg-background"
           >
             {RISKS.map((r) => (
               <option key={r.value} value={r.value}>{r.label}</option>
@@ -146,7 +152,7 @@ export function InputNode({ id, data, selected }: NodeProps) {
         </div>
 
         {/* Holds */}
-        <label className="flex items-center gap-2 text-xs cursor-pointer">
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
           <Checkbox
             checked={d.already_holds}
             onCheckedChange={(v) => update({ already_holds: !!v })}
@@ -154,8 +160,8 @@ export function InputNode({ id, data, selected }: NodeProps) {
           <span>I already hold this</span>
         </label>
         {d.already_holds && (
-          <div className="flex flex-col gap-1 pl-5">
-            <label className="text-[10px] uppercase text-muted-foreground">
+          <div className="flex flex-col gap-1 pl-6">
+            <label className="text-xs uppercase text-muted-foreground tracking-wide">
               Cost basis ($/share)
             </label>
             <Input
@@ -163,19 +169,10 @@ export function InputNode({ id, data, selected }: NodeProps) {
               value={d.cost_basis_usd}
               onChange={(e) => update({ cost_basis_usd: e.target.value })}
               placeholder="120.50"
-              className="nodrag h-7 text-xs"
+              className="nodrag h-8 text-sm"
             />
           </div>
         )}
-
-        {/* Personas */}
-        <label className="flex items-center gap-2 text-xs cursor-pointer">
-          <Checkbox
-            checked={d.use_personas}
-            onCheckedChange={(v) => update({ use_personas: !!v })}
-          />
-          <span>Use personas + debate</span>
-        </label>
       </div>
 
       {/* Output handle (right) — feeds into section nodes */}

@@ -63,6 +63,11 @@ export function AnalyzePanel() {
       toast.error('Enter a ticker in the Input node.');
       return;
     }
+    // Debate settings now live on the Debate node, not the Input node.
+    // If the Debate node is on canvas, its values win; otherwise we send
+    // safe defaults (no personas, rounds=3).
+    const debate = canvasRef.current?.getDebateSettings()
+      ?? { use_personas: false, debate_rounds: 3 };
     const req: AnalyzeRunRequest = {
       ticker,
       objective: input.objective,
@@ -72,7 +77,8 @@ export function AnalyzePanel() {
         ? parseFloat(input.cost_basis_usd)
         : null,
       risk_tolerance: input.risk_tolerance,
-      use_personas: input.use_personas,
+      use_personas: debate.use_personas,
+      debate_rounds: debate.debate_rounds,
       included_sections: cfg.included_sections,
       persona_overrides: Object.keys(cfg.persona_overrides).length
         ? cfg.persona_overrides

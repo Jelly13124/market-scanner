@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 // Define tab types
-export type TabType = 'settings' | 'scanner' | 'analyze';
+export type TabType = 'settings' | 'scanner' | 'analyze' | 'lab';
 
 export interface Tab {
   id: string;
@@ -69,6 +69,10 @@ export function TabsProvider({ children }: TabsProviderProps) {
     if (type === 'analyze') {
       // Single analyze tab.
       return 'analyze';
+    }
+    if (type === 'lab') {
+      // Single lab tab — selected strategy is tracked inside the panel.
+      return 'lab';
     }
     return `${type}-${Date.now()}`;
   }, []);

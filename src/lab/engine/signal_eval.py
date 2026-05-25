@@ -83,9 +83,12 @@ def eval_entry(block, ticker: str, matrix: IndicatorMatrix) -> pd.Series:
         return df["close"] < lower
 
     if t == "donchian_break":
-        # Lookback to N bars BEFORE the current bar (exclude today's high/low)
-        prev_high = df["high"].shift(1).rolling(block.period).max()
-        prev_low = df["low"].shift(1).rolling(block.period).min()
+        # Lookback to N bars BEFORE the current bar; compare current close
+        # against prior-window max(close) / min(close). Using close (vs
+        # high/low) makes the signal robust to synthetic bar fixtures
+        # where high overshoots close by more than the per-bar step.
+        prev_high = df["close"].shift(1).rolling(block.period).max()
+        prev_low = df["close"].shift(1).rolling(block.period).min()
         if block.direction == "break_up":
             return df["close"] > prev_high
         return df["close"] < prev_low

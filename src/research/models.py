@@ -162,6 +162,12 @@ class AnalyzeRequest:
     bypassing the router. Sections absent from the dict fall through to
     the router (when ``use_personas`` is on) or objective mode (when
     off). ``None`` means "no overrides at all" — Phase 4 behavior.
+
+    ``debate_rounds`` (Phase 5E) controls how many back-and-forth rounds
+    the Debate section's single LLM call simulates. Clamped to 1..5;
+    default 3. Only consumed by Debate section when ``use_personas=True``.
+    Kept at the END of the dataclass so existing positional-construction
+    call sites keep working.
     """
     ticker: str
     objective: Objective
@@ -172,6 +178,14 @@ class AnalyzeRequest:
     use_personas: bool
     included_sections: set[str] = field(default_factory=lambda: set(SECTION_ORDER))
     persona_overrides: dict[str, str] | None = None
+    debate_rounds: int = 3
+
+    def __post_init__(self) -> None:
+        # Clamp to a sane window — guards against the API schema being
+        # bypassed (direct dataclass construction from tests / CLI).
+        if not isinstance(self.debate_rounds, int):
+            self.debate_rounds = 3
+        self.debate_rounds = max(1, min(5, self.debate_rounds))
 
 
 @dataclass

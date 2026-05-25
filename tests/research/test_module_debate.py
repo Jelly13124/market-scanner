@@ -55,3 +55,45 @@ class TestDebate:
     def test_skipped_when_invalid_personas(self):
         out = run_debate(_req(), _shared(), ["wood", "hallucinated"])
         assert out.skipped is True
+
+    @patch("src.research.modules.debate.call_research_llm")
+    def test_prompt_contains_requested_rounds_count(self, mock_llm):
+        """Phase 5E — the round count must be embedded in the LLM prompt."""
+        mock_llm.return_value = _DebateTranscript(
+            transcript="x", verdict="y",
+        )
+        run_debate(_req(), _shared(), ["wood", "burry"], debate_rounds=3)
+        prompt = mock_llm.call_args[0][0]
+        assert "3-round" in prompt, prompt
+        # Round labels for 1, 2, 3 should be present in the round instructions.
+        assert "Round 1:" in prompt
+        assert "Round 2:" in prompt
+        assert "Round 3:" in prompt
+        assert "Round 4:" not in prompt
+
+    @patch("src.research.modules.debate.call_research_llm")
+    def test_rounds_clamped_to_5(self, mock_llm):
+        mock_llm.return_value = _DebateTranscript(transcript="x", verdict="y")
+        run_debate(_req(), _shared(), ["wood", "burry"], debate_rounds=99)
+        prompt = mock_llm.call_args[0][0]
+        assert "5-round" in prompt
+        assert "Round 5:" in prompt
+        assert "Round 6:" not in prompt
+
+    @patch("src.research.modules.debate.call_research_llm")
+    def test_rounds_clamped_to_1(self, mock_llm):
+        mock_llm.return_value = _DebateTranscript(transcript="x", verdict="y")
+        run_debate(_req(), _shared(), ["wood", "burry"], debate_rounds=0)
+        prompt = mock_llm.call_args[0][0]
+        assert "1-round" in prompt
+        assert "Round 2:" not in prompt
+
+    @patch("src.research.modules.debate.call_research_llm")
+    def test_default_rounds_is_two_phase2_back_compat(self, mock_llm):
+        """Legacy callers (Phase 2 pipeline) don't pass debate_rounds —
+        the default must remain 2 to preserve current LLM prompt cost."""
+        mock_llm.return_value = _DebateTranscript(transcript="x", verdict="y")
+        run_debate(_req(), _shared(), ["wood", "burry"])
+        prompt = mock_llm.call_args[0][0]
+        assert "2-round" in prompt
+        assert "Round 3:" not in prompt

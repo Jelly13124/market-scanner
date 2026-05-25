@@ -177,6 +177,7 @@ def _to_analyze_request(req: AnalyzeRunRequest) -> AnalyzeRequest:
             else set(SECTION_ORDER)
         ),
         persona_overrides=req.persona_overrides,
+        debate_rounds=req.debate_rounds,
     )
 
 

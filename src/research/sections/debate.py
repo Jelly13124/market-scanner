@@ -54,8 +54,15 @@ class DebateSection(Section):
             report_goal="general_research", use_personas=True,
             scanner_context=None,
         )
+        # Phase 5E: pass the user-chosen number of debate rounds through.
+        # AnalyzeRequest clamps to 1..5 in __post_init__, but be defensive
+        # since this section may be called from tests with bare dataclasses.
+        rounds = getattr(ctx.request, "debate_rounds", 3) or 3
         try:
-            module_result = run_debate(adapter, ctx.shared, debate_personas)
+            module_result = run_debate(
+                adapter, ctx.shared, debate_personas,
+                debate_rounds=rounds,
+            )
         except Exception as e:
             logger.exception("debate raised: %s", e)
             return SectionPayload(

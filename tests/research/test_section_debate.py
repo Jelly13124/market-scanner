@@ -4,11 +4,12 @@ from src.research.sections.base import SectionContext
 from src.research.shared_data import SharedData
 
 
-def _ctx(use_personas=True, with_assignments=None):
+def _ctx(use_personas=True, with_assignments=None, debate_rounds=3):
     req = AnalyzeRequest(
         ticker="NVDA", objective="medium_term",
         position_budget_usd=10000, already_holds=False, cost_basis_usd=None,
         risk_tolerance="balanced", use_personas=use_personas,
+        debate_rounds=debate_rounds,
     )
     shared = SharedData(
         ticker="NVDA", scan_date="2026-05-22",
@@ -64,3 +65,16 @@ def test_registered():
     from src.research.sections.debate import DebateSection
     assert "debate" in SECTION_REGISTRY
     assert isinstance(SECTION_REGISTRY["debate"], DebateSection)
+
+
+@patch("src.research.sections.debate.run_debate")
+def test_section_passes_debate_rounds_to_module(mock_rd):
+    """Phase 5E — the user-chosen rounds value must reach run_debate."""
+    from src.research.sections.debate import DebateSection
+    mock_rd.return_value = ModuleResult(
+        module_name="debate", persona_used="wood+burry",
+        markdown="…", key_metrics={},
+    )
+    DebateSection().run(_ctx(with_assignments=["wood", "burry"], debate_rounds=4))
+    _, kwargs = mock_rd.call_args
+    assert kwargs.get("debate_rounds") == 4

@@ -14,6 +14,10 @@ export interface AnalyzeRunRequest {
   cost_basis_usd?: number | null;
   risk_tolerance?: RiskBand;
   use_personas?: boolean;
+  // Phase 5E — number of debate rounds the LLM simulates (1..5, default 3).
+  // Sourced from the Debate node on the canvas; ignored by the backend's
+  // debate section when use_personas=false.
+  debate_rounds?: number;
   included_sections?: string[] | null;
   // Phase 5D — pin specific personas per section (canvas overrides).
   persona_overrides?: Record<string, string> | null;

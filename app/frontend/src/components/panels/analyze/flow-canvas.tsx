@@ -49,6 +49,14 @@ export interface CanvasConfig {
   persona_overrides: Record<string, string>;
 }
 
+/** Debate-node-derived run settings. Sourced from the Debate node's
+ * `usePersonas` + `debateRounds` data when present; falls back to safe
+ * defaults when the Debate node is absent from the canvas. */
+export interface DebateSettings {
+  use_personas: boolean;   // false when Debate node missing
+  debate_rounds: number;   // default 3 (clamped 1..5)
+}
+
 export interface FlowCanvasHandle {
   addSection: (sectionName: string) => void;
   addInputNode: () => void;
@@ -58,6 +66,7 @@ export interface FlowCanvasHandle {
   resetToDefault: () => void;
   getConfig: () => CanvasConfig;
   getInputData: () => InputNodeData | null;
+  getDebateSettings: () => DebateSettings;
   getPresentSections: () => Set<string>;
   hasInputNode: () => boolean;
 }
@@ -235,6 +244,29 @@ const InnerCanvas = forwardRef<FlowCanvasHandle, InnerCanvasProps>(
           const input = nodes.find((n) => n.id === INPUT_NODE_ID_CONST);
           if (!input) return null;
           return input.data as unknown as InputNodeData;
+        },
+        getDebateSettings: () => {
+          // Source of truth for use_personas + debate_rounds is the Debate
+          // SectionNode. If absent (user deleted it), default to no-personas
+          // and rounds=3 — the backend will still default debate_rounds
+          // independently, but we want a defined value here.
+          const debateNode = nodes.find(
+            (n) => n.type === 'section'
+              && (n.data as unknown as SectionNodeData).name === 'debate',
+          );
+          if (!debateNode) {
+            return { use_personas: false, debate_rounds: 3 };
+          }
+          const d = debateNode.data as unknown as SectionNodeData;
+          // Defaults match section-node.tsx UI defaults.
+          const usePersonas = d.usePersonas ?? true;
+          let rounds = d.debateRounds ?? 3;
+          if (!Number.isFinite(rounds)) rounds = 3;
+          rounds = Math.max(1, Math.min(5, Math.trunc(rounds)));
+          return {
+            use_personas: !!usePersonas && d.enabled !== false,
+            debate_rounds: rounds,
+          };
         },
         getPresentSections: () => {
           const present = new Set<string>();

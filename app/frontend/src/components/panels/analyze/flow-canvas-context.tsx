@@ -8,6 +8,8 @@ import type { SectionNodeData } from './section-node';
 export interface FlowCanvasContextValue {
   /** Merge `patch` into the node with this id. */
   updateNodeData: (nodeId: string, patch: Partial<SectionNodeData>) => void;
+  /** Remove the node (and any incident edges) from the canvas. */
+  deleteNode: (nodeId: string) => void;
 }
 
 export const FlowCanvasContext = createContext<FlowCanvasContextValue | null>(null);

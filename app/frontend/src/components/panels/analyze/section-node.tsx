@@ -13,6 +13,7 @@
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { Handle, NodeProps, Position } from '@xyflow/react';
+import { X } from 'lucide-react';
 import { useContext } from 'react';
 
 import { FlowCanvasContext } from './flow-canvas-context';
@@ -44,7 +45,7 @@ export function SectionNode({ id, data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        'rounded border bg-card text-card-foreground shadow-sm',
+        'group relative rounded border bg-card text-card-foreground shadow-sm',
         'min-w-[180px] max-w-[240px] px-3 py-2',
         selected ? 'border-primary ring-1 ring-primary/30' : 'border-border',
         !d.enabled && 'opacity-60',
@@ -56,6 +57,26 @@ export function SectionNode({ id, data, selected }: NodeProps) {
         position={Position.Left}
         className="!w-2 !h-2 !bg-muted-foreground/40"
       />
+
+      {/* Delete button — visible on hover. nodrag so it doesn't start a drag. */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          ctx?.deleteNode(id);
+        }}
+        aria-label={`Delete ${d.label}`}
+        title="Delete node"
+        className={cn(
+          'nodrag absolute -top-1.5 -right-1.5 z-10 size-4 rounded-full',
+          'bg-destructive text-destructive-foreground border border-background',
+          'flex items-center justify-center',
+          'opacity-0 group-hover:opacity-100 transition-opacity',
+          'hover:bg-destructive/90',
+        )}
+      >
+        <X className="size-2.5" strokeWidth={3} />
+      </button>
 
       <div className="flex items-center gap-2">
         <Checkbox

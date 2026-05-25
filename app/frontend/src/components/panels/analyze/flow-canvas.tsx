@@ -121,9 +121,22 @@ const InnerCanvas = forwardRef<FlowCanvasHandle, InnerCanvasProps>(
       [setNodes, onChange],
     );
 
+    // Stable deleteNode passed via context so node cards can self-remove
+    // via their × button. Also drops any edges incident on the removed node.
+    const deleteNode = useCallback(
+      (nodeId: string) => {
+        setNodes((curr) => curr.filter((n) => n.id !== nodeId));
+        setEdges((curr) =>
+          curr.filter((e) => e.source !== nodeId && e.target !== nodeId),
+        );
+        onChange?.();
+      },
+      [setNodes, setEdges, onChange],
+    );
+
     const ctxValue: FlowCanvasContextValue = useMemo(
-      () => ({ updateNodeData }),
-      [updateNodeData],
+      () => ({ updateNodeData, deleteNode }),
+      [updateNodeData, deleteNode],
     );
 
     const onConnect = useCallback(

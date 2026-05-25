@@ -1,12 +1,24 @@
 // Thin top toolbar for the Analyze panel — Phase 5 polish.
 //
-// Hosts: FlowList template controls + a Run button + a live elapsed
-// indicator while a run is in flight. Everything else (form, canvas,
-// reports) lives below.
+// Hosts: FlowList template controls + an "Add" dropdown (sections / input /
+// reset-to-default) + a Run button + a live elapsed indicator while a run
+// is in flight. Everything else (canvas, reports) lives below.
 
 import { Button } from '@/components/ui/button';
-import { Loader2, Play } from 'lucide-react';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
+import {
+  REQUIRED_SECTIONS,
+  SECTION_LABELS,
+  SECTION_ORDER,
+} from '@/types/analyze';
+import { Loader2, Play, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 import { FlowList, type FlowListProps } from './flow-list';
 
@@ -17,6 +29,16 @@ interface AnalyzeToolbarProps extends FlowListProps {
   onRun: () => void;
   /** Section count surfaced on the Run button label. */
   sectionCount: number;
+  /** Which section names are currently on the canvas (used to disable items). */
+  presentSections: Set<string>;
+  /** Whether the singleton Input node is already on the canvas. */
+  hasInputNode: boolean;
+  /** Add a section node by canonical name. */
+  onAddSection: (sectionName: string) => void;
+  /** Add (or focus) the Input node. */
+  onAddInput: () => void;
+  /** Re-seed the canvas with the default full-pipeline template. */
+  onResetToDefault: () => void;
 }
 
 function formatElapsed(s: number): string {
@@ -26,9 +48,13 @@ function formatElapsed(s: number): string {
 }
 
 export function AnalyzeToolbar({
-  running, canRun, onRun, sectionCount, ...flowListProps
+  running, canRun, onRun, sectionCount,
+  presentSections, hasInputNode, onAddSection, onAddInput, onResetToDefault,
+  ...flowListProps
 }: AnalyzeToolbarProps) {
   const [elapsed, setElapsed] = useState(0);
+  const [addOpen, setAddOpen] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   // Live elapsed counter — restarts when `running` flips true.
   useEffect(() => {
@@ -44,9 +70,118 @@ export function AnalyzeToolbar({
     return () => window.clearInterval(id);
   }, [running]);
 
+  // Reset the confirm-reset state when the popover closes so it always
+  // takes two clicks the next time it's opened.
+  useEffect(() => {
+    if (!addOpen) setConfirmReset(false);
+  }, [addOpen]);
+
+  const missingSections = SECTION_ORDER.filter((s) => !presentSections.has(s));
+  const allSectionsPresent = missingSections.length === 0;
+
   return (
     <div className="border-b bg-background px-3 py-1.5 flex items-center gap-2 flex-wrap">
       <FlowList {...flowListProps} />
+
+      <Popover open={addOpen} onOpenChange={setAddOpen}>
+        <PopoverTrigger asChild>
+          <Button size="sm" variant="outline" className="h-7" title="Add a node to the canvas">
+            <Plus className="size-3 mr-1" />
+            Add
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64 p-0 max-h-[60vh] overflow-auto">
+          {/* Sections */}
+          <div className="px-2 pt-2 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+            Sections
+          </div>
+          {allSectionsPresent ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground italic">
+              All sections already on canvas.
+            </div>
+          ) : (
+            <div className="pb-1">
+              {missingSections.map((name) => {
+                const label = SECTION_LABELS[name] ?? name;
+                const isRequired = REQUIRED_SECTIONS.includes(name);
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => {
+                      onAddSection(name);
+                      setAddOpen(false);
+                    }}
+                    className={cn(
+                      'w-full flex items-center justify-between gap-2 px-3 py-1.5',
+                      'text-left text-sm hover:bg-accent/60 transition-colors',
+                    )}
+                  >
+                    <span className="truncate" title={label}>{label}</span>
+                    {isRequired && (
+                      <span className="text-[10px] uppercase text-muted-foreground shrink-0">
+                        required
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Divider */}
+          <div className="border-t" />
+
+          {/* Input */}
+          <button
+            type="button"
+            disabled={hasInputNode}
+            onClick={() => {
+              onAddInput();
+              setAddOpen(false);
+            }}
+            className={cn(
+              'w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm',
+              'hover:bg-accent/60 transition-colors',
+              hasInputNode && 'opacity-50 cursor-not-allowed hover:bg-transparent',
+            )}
+            title={hasInputNode ? 'Input node already on canvas' : 'Add Input node'}
+          >
+            <Plus className="size-3" />
+            <span>Add Input node</span>
+          </button>
+
+          {/* Divider */}
+          <div className="border-t" />
+
+          {/* Reset to default template — two-click confirm */}
+          <button
+            type="button"
+            onClick={() => {
+              if (!confirmReset) {
+                setConfirmReset(true);
+                return;
+              }
+              onResetToDefault();
+              setAddOpen(false);
+              toast.success('Canvas reset to default template');
+            }}
+            className={cn(
+              'w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm',
+              'hover:bg-accent/60 transition-colors',
+              confirmReset && 'bg-destructive/10 text-destructive hover:bg-destructive/15',
+            )}
+          >
+            <RotateCcw className="size-3" />
+            <span>
+              {confirmReset
+                ? 'Click again to confirm reset'
+                : 'Reset to default template'}
+            </span>
+          </button>
+        </PopoverContent>
+      </Popover>
+
       <div className="flex-1" />
       {running && (
         <span className="text-xs text-muted-foreground tabular-nums px-2">

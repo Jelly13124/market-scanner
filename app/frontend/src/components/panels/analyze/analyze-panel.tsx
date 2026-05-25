@@ -24,7 +24,6 @@ import { toast } from 'sonner';
 import { AnalyzeToolbar } from './analyze-toolbar';
 import { FlowCanvas, type FlowCanvasHandle } from './flow-canvas';
 import { ReportList } from './report-list';
-import { SectionPalette } from './section-palette';
 import {
   PersonaAssignmentsBox,
   SectionStatusPanel,
@@ -121,27 +120,22 @@ export function AnalyzePanel() {
         onNewBlank={() => canvasRef.current?.clear()}
         loadedFlowId={loadedFlowId}
         onLoadedFlowIdChange={setLoadedFlowId}
+        presentSections={presentSet}
+        hasInputNode={hasInput}
+        onAddSection={(name) => canvasRef.current?.addSection(name)}
+        onAddInput={() => {
+          if (canvasRef.current?.hasInputNode()) {
+            canvasRef.current.focusInput();
+          } else {
+            canvasRef.current?.addInputNode();
+          }
+        }}
+        onResetToDefault={() => canvasRef.current?.resetToDefault()}
       />
 
-      {/* 2. Canvas dominates the viewport — palette + React Flow */}
-      <div className="flex-1 min-h-0 grid grid-cols-[200px_1fr] border-b">
-        <div className="border-r overflow-hidden">
-          <SectionPalette
-            presentSections={presentSet}
-            hasInputNode={hasInput}
-            onAdd={(name) => canvasRef.current?.addSection(name)}
-            onAddInput={() => {
-              if (canvasRef.current?.hasInputNode()) {
-                canvasRef.current.focusInput();
-              } else {
-                canvasRef.current?.addInputNode();
-              }
-            }}
-          />
-        </div>
-        <div className="overflow-hidden">
-          <FlowCanvas ref={canvasRef} onChange={onCanvasChange} />
-        </div>
+      {/* 2. Canvas dominates the viewport — full width */}
+      <div className="flex-1 min-h-0 border-b overflow-hidden">
+        <FlowCanvas ref={canvasRef} onChange={onCanvasChange} />
       </div>
 
       {/* 3. Collapsible bottom — status pills, report iframe, history */}

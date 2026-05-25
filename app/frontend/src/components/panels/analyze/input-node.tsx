@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import type { Objective, RiskBand } from '@/types/analyze';
 import { Handle, NodeProps, Position } from '@xyflow/react';
+import { X } from 'lucide-react';
 import { useContext } from 'react';
 
 import { FlowCanvasContext } from './flow-canvas-context';
@@ -63,11 +64,31 @@ export function InputNode({ id, data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        'rounded border bg-card text-card-foreground shadow-sm',
+        'group relative rounded border bg-card text-card-foreground shadow-sm',
         'min-w-[260px] max-w-[280px] p-3',
         selected ? 'border-primary ring-1 ring-primary/30' : 'border-primary/50',
       )}
     >
+      {/* Delete button — visible on hover. nodrag so it doesn't start a drag. */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          ctx?.deleteNode(id);
+        }}
+        aria-label="Delete Input node"
+        title="Delete Input node"
+        className={cn(
+          'nodrag absolute -top-1.5 -right-1.5 z-10 size-4 rounded-full',
+          'bg-destructive text-destructive-foreground border border-background',
+          'flex items-center justify-center',
+          'opacity-0 group-hover:opacity-100 transition-opacity',
+          'hover:bg-destructive/90',
+        )}
+      >
+        <X className="size-2.5" strokeWidth={3} />
+      </button>
+
       <div className="text-[10px] uppercase font-bold tracking-wider text-primary mb-2">
         Run Input
       </div>

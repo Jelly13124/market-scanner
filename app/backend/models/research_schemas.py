@@ -119,6 +119,15 @@ class AnalyzeRunRequest(BaseModel):
     cost_basis_usd: float | None = Field(default=None, ge=0.0)
     risk_tolerance: _RiskBand = "balanced"
     use_personas: bool = False
+    debate_rounds: int = Field(
+        default=3,
+        ge=1,
+        le=5,
+        description=(
+            "Phase 5E — number of debate rounds the Debate section's LLM "
+            "simulates. Only consumed when use_personas=True. Default 3."
+        ),
+    )
     included_sections: list[str] | None = Field(
         default=None,
         description="If null, all 16 SOP sections run. Otherwise restrict to listed.",

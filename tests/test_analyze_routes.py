@@ -119,3 +119,42 @@ class TestAnalyzeEndpoint:
         r2 = client.get(f"/research/reports/{report_id}/html")
         assert r2.status_code == 200
         assert "<html>x</html>" in r2.text
+
+    @patch("app.backend.routes.research.run_sop")
+    @patch("app.backend.routes.research.render_sop")
+    def test_debate_rounds_round_trips(self, mock_render, mock_run, client):
+        """Phase 5E — debate_rounds=4 should flow into the AnalyzeRequest
+        handed to run_sop."""
+        mock_run.return_value = _fake_report("NVDA")
+        mock_render.return_value = "<html></html>"
+        resp = client.post("/research/analyze", json={
+            "ticker": "NVDA",
+            "debate_rounds": 4,
+        })
+        assert resp.status_code == 200, resp.text
+        # run_sop was called with the internal AnalyzeRequest
+        called_with = mock_run.call_args[0][0]
+        assert called_with.debate_rounds == 4
+
+    @patch("app.backend.routes.research.run_sop")
+    @patch("app.backend.routes.research.render_sop")
+    def test_debate_rounds_defaults_to_three(self, mock_render, mock_run, client):
+        """When the field is omitted, backend defaults to 3."""
+        mock_run.return_value = _fake_report("NVDA")
+        mock_render.return_value = "<html></html>"
+        resp = client.post("/research/analyze", json={"ticker": "NVDA"})
+        assert resp.status_code == 200, resp.text
+        called_with = mock_run.call_args[0][0]
+        assert called_with.debate_rounds == 3
+
+    @patch("app.backend.routes.research.run_sop")
+    @patch("app.backend.routes.research.render_sop")
+    def test_debate_rounds_rejects_out_of_range(self, mock_render, mock_run, client):
+        """Pydantic must reject values outside 1..5."""
+        mock_run.return_value = _fake_report("NVDA")
+        mock_render.return_value = "<html></html>"
+        for bad in (0, 6, -1, 100):
+            resp = client.post("/research/analyze", json={
+                "ticker": "NVDA", "debate_rounds": bad,
+            })
+            assert resp.status_code == 422, f"expected 422 for {bad}, got {resp.status_code}"

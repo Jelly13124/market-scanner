@@ -127,78 +127,74 @@ export function FlowList({
   }, [onNewBlank, onLoadedFlowIdChange]);
 
   return (
-    <div className="border rounded p-2 bg-accent/10 space-y-2">
-      <div className="flex flex-wrap gap-2 items-center">
-        <span className="text-xs font-medium uppercase text-muted-foreground">
-          AnalyzeFlow templates
-        </span>
-        <select
-          value={selectedId === '' ? '' : String(selectedId)}
-          onChange={(e) =>
-            setSelectedId(e.target.value === '' ? '' : Number(e.target.value))
-          }
-          className="h-7 text-xs border rounded bg-background px-1 min-w-[160px]"
-        >
-          <option value="">— Pick saved flow —</option>
-          {flows.map((f) => (
-            <option key={f.id} value={f.id}>
-              {f.name} ({f.included_sections.length} sections)
-            </option>
-          ))}
-        </select>
+    <div className="flex items-center gap-1.5 flex-wrap">
+      <select
+        value={selectedId === '' ? '' : String(selectedId)}
+        onChange={(e) =>
+          setSelectedId(e.target.value === '' ? '' : Number(e.target.value))
+        }
+        className="h-7 text-xs border rounded bg-background px-1 min-w-[180px]"
+        title="Saved AnalyzeFlow templates"
+      >
+        <option value="">— Saved templates —</option>
+        {flows.map((f) => (
+          <option key={f.id} value={f.id}>
+            {f.name} ({f.included_sections.length})
+          </option>
+        ))}
+      </select>
+      <Button
+        variant="outline" size="sm" className="h-7 px-2"
+        disabled={selectedId === ''}
+        onClick={handleLoad}
+        title="Load selected"
+      >
+        <FolderOpen className="size-3" />
+      </Button>
+      <Button
+        variant="outline" size="sm" className="h-7 px-2"
+        disabled={selectedId === ''}
+        onClick={handleDelete}
+        title="Delete selected"
+      >
+        <Trash2 className="size-3" />
+      </Button>
+      {loadedFlowId != null && (
         <Button
-          variant="outline" size="sm" className="h-7"
-          disabled={selectedId === ''}
-          onClick={handleLoad}
-        >
-          <FolderOpen className="size-3 mr-1" />
-          Load
-        </Button>
-        <Button
-          variant="outline" size="sm" className="h-7"
-          disabled={selectedId === ''}
-          onClick={handleDelete}
-        >
-          <Trash2 className="size-3 mr-1" />
-          Delete
-        </Button>
-
-        <div className="flex-1" />
-
-        {loadedFlowId != null && (
-          <Button
-            variant="outline" size="sm" className="h-7"
-            onClick={handleUpdateCurrent}
-            title={`Update saved flow #${loadedFlowId}`}
-          >
-            <Save className="size-3 mr-1" />
-            Save
-          </Button>
-        )}
-        <Button
-          variant="outline" size="sm" className="h-7"
-          onClick={() => setShowSave((s) => !s)}
+          variant="outline" size="sm" className="h-7 px-2"
+          onClick={handleUpdateCurrent}
+          title={`Update saved flow #${loadedFlowId}`}
         >
           <Save className="size-3 mr-1" />
-          Save as…
+          Save
         </Button>
-        <Button
-          variant="outline" size="sm" className="h-7"
-          onClick={handleNewBlank}
-        >
-          <FileX className="size-3 mr-1" />
-          New blank
-        </Button>
-      </div>
+      )}
+      <Button
+        variant="outline" size="sm" className="h-7 px-2"
+        onClick={() => setShowSave((s) => !s)}
+        title="Save current canvas as new template"
+      >
+        <Save className="size-3 mr-1" />
+        Save as…
+      </Button>
+      <Button
+        variant="outline" size="sm" className="h-7 px-2"
+        onClick={handleNewBlank}
+        title="Reset to default template"
+      >
+        <FileX className="size-3 mr-1" />
+        New
+      </Button>
 
       {showSave && (
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-1 items-center">
           <Input
             value={savingName}
             onChange={(e) => setSavingName(e.target.value)}
-            placeholder="Template name (e.g. quick-screen)"
-            className="h-7 text-xs flex-1"
+            placeholder="Template name"
+            className="h-7 text-xs w-48"
             onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNew(); }}
+            autoFocus
           />
           <Button size="sm" className="h-7" onClick={handleSaveNew}>
             <Plus className="size-3 mr-1" />

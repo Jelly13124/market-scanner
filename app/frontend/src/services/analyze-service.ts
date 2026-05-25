@@ -9,10 +9,27 @@ import type { ResearchReportSummary } from '@/types/research';
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 async function _toError(res: Response, op: string): Promise<Error> {
+  // FastAPI returns `detail` as a string for HTTPException(...) but as an
+  // array of {loc, msg, type, ...} for Pydantic 422 validation errors.
   let detail = '';
   try {
     const body = await res.json();
-    detail = body?.detail || body?.message || JSON.stringify(body);
+    const d = body?.detail ?? body?.message;
+    if (typeof d === 'string') {
+      detail = d;
+    } else if (Array.isArray(d)) {
+      detail = d
+        .map((e) => {
+          const loc = Array.isArray(e?.loc) ? e.loc.filter((x: unknown) => x !== 'body').join('.') : '';
+          const msg = e?.msg ?? JSON.stringify(e);
+          return loc ? `${loc}: ${msg}` : String(msg);
+        })
+        .join('; ');
+    } else if (d != null) {
+      detail = JSON.stringify(d);
+    } else {
+      detail = JSON.stringify(body);
+    }
   } catch {
     try { detail = await res.text(); } catch { /* swallow */ }
   }

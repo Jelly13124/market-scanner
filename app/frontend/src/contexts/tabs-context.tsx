@@ -1,17 +1,14 @@
-import { Flow } from '@/types/flow';
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 // Define tab types
-export type TabType = 'flow' | 'settings' | 'scanner' | 'analyze';
+export type TabType = 'settings' | 'scanner' | 'analyze';
 
 export interface Tab {
   id: string;
   type: TabType;
   title: string;
   content: ReactNode;
-  // For flow tabs
-  flow?: Flow;
-  // For other tabs (settings, etc.)
+  // For tabs (settings, etc.)
   metadata?: Record<string, any>;
 }
 
@@ -20,7 +17,6 @@ interface SerializableTab {
   id: string;
   type: TabType;
   title: string;
-  flow?: Flow;
   metadata?: Record<string, any>;
 }
 
@@ -35,7 +31,6 @@ interface TabsContextType {
   getTabByIdentifier: (identifier: string, type: TabType) => Tab | undefined;
   reorderTabs: (fromIndex: number, toIndex: number) => void;
   updateTabTitle: (tabId: string, newTitle: string) => void;
-  updateFlowTabTitle: (flowId: number, newTitle: string) => void;
 }
 
 const TabsContext = createContext<TabsContextType | null>(null);
@@ -62,10 +57,7 @@ export function TabsProvider({ children }: TabsProviderProps) {
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Generate unique tab ID
-  const generateTabId = useCallback((type: TabType, identifier?: string): string => {
-    if (type === 'flow' && identifier) {
-      return `flow-${identifier}`;
-    }
+  const generateTabId = useCallback((type: TabType, _identifier?: string): string => {
     if (type === 'settings') {
       return 'settings';
     }
@@ -89,7 +81,6 @@ export function TabsProvider({ children }: TabsProviderProps) {
         id: tab.id,
         type: tab.type,
         title: tab.title,
-        flow: tab.flow,
         metadata: tab.metadata,
       }));
       
@@ -162,9 +153,7 @@ export function TabsProvider({ children }: TabsProviderProps) {
 
   // Open a new tab or focus existing one
   const openTab = useCallback((tabData: Omit<Tab, 'id'> & { id?: string }) => {
-    const tabId = tabData.id || generateTabId(tabData.type, 
-      tabData.type === 'flow' && tabData.flow ? tabData.flow.id.toString() : undefined
-    );
+    const tabId = tabData.id || generateTabId(tabData.type);
 
     setTabs(prevTabs => {
       // Check if tab already exists
@@ -240,24 +229,6 @@ export function TabsProvider({ children }: TabsProviderProps) {
     });
   }, []);
 
-  // Update flow tab title
-  const updateFlowTabTitle = useCallback((flowId: number, newTitle: string) => {
-    setTabs(prevTabs => {
-      const updatedTabs = prevTabs.map(tab => {
-        if (tab.type === 'flow' && tab.flow?.id === flowId) {
-          return { 
-            ...tab, 
-            title: newTitle,
-            // Also update the flow object's name to keep it in sync
-            flow: tab.flow ? { ...tab.flow, name: newTitle } : tab.flow
-          };
-        }
-        return tab;
-      });
-      return updatedTabs;
-    });
-  }, []);
-
   const value = {
     tabs,
     activeTabId,
@@ -269,7 +240,6 @@ export function TabsProvider({ children }: TabsProviderProps) {
     getTabByIdentifier,
     reorderTabs,
     updateTabTitle,
-    updateFlowTabTitle,
   };
 
   return (

@@ -20,17 +20,15 @@ export function TabContent({ className }: TabContentProps) {
         const restoredTab = TabService.restoreTab({
           type: activeTab.type,
           title: activeTab.title,
-          flow: activeTab.flow,
           metadata: activeTab.metadata,
         });
-        
+
         // Update the tab with restored content
         openTab({
           id: activeTab.id,
           type: restoredTab.type,
           title: restoredTab.title,
           content: restoredTab.content,
-          flow: restoredTab.flow,
           metadata: restoredTab.metadata,
         });
       } catch (error) {

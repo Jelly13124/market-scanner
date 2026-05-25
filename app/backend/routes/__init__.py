@@ -12,6 +12,7 @@ from app.backend.routes.research import router as research_router
 from app.backend.routes.watchlists import router as watchlists_router
 from app.backend.routes.tickers import router as tickers_router
 from app.backend.routes.analyze_flows import router as analyze_flows_router
+from app.backend.routes.lab import router as lab_router
 
 # Main API router
 api_router = APIRouter()
@@ -29,3 +30,4 @@ api_router.include_router(research_router, tags=["research"])
 api_router.include_router(watchlists_router, tags=["watchlists"])
 api_router.include_router(tickers_router, tags=["tickers"])
 api_router.include_router(analyze_flows_router, tags=["analyze-flows"])
+api_router.include_router(lab_router, tags=["lab"])

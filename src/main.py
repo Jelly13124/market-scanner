@@ -52,6 +52,7 @@ def run_hedge_fund(
     selected_analysts: list[str] = [],
     model_name: str = "gpt-4.1",
     model_provider: str = "OpenAI",
+    scanner_context: dict | None = None,
 ):
     # Start progress tracking
     progress.start()
@@ -74,6 +75,10 @@ def run_hedge_fund(
                     "start_date": start_date,
                     "end_date": end_date,
                     "analyst_signals": {},
+                    # Per-ticker scanner context (triggered_detectors, severity,
+                    # direction, components). Empty dict when no caller supplied
+                    # it — scanner_signal_agent treats absence as clean abstention.
+                    "scanner_context": scanner_context or {},
                 },
                 "metadata": {
                     "show_reasoning": show_reasoning,

@@ -2,8 +2,10 @@
 // compact persona-assignments line. Extracted from analyze-panel.tsx
 // to keep that file lean.
 
-import { SECTION_LABELS, SECTION_ORDER } from '@/types/analyze';
+import { useSectionLabels } from '@/hooks/use-section-labels';
+import { SECTION_ORDER } from '@/types/analyze';
 import type { AnalyzeReportDetail, SectionPayloadAPI } from '@/types/analyze';
+import { useTranslation } from 'react-i18next';
 
 type PillKind = 'done' | 'excluded' | 'failed';
 
@@ -27,6 +29,8 @@ const PILL_CLASS: Record<PillKind, string> = {
 };
 
 export function SectionStatusPanel({ detail }: { detail: AnalyzeReportDetail }) {
+  const { t } = useTranslation();
+  const sectionLabels = useSectionLabels();
   const ordered: string[] = [
     ...SECTION_ORDER.filter((n) => n in detail.sections),
     ...Object.keys(detail.sections).filter((n) => !SECTION_ORDER.includes(n)),
@@ -41,23 +45,23 @@ export function SectionStatusPanel({ detail }: { detail: AnalyzeReportDetail }) 
     <div className="border rounded p-3 bg-accent/10 space-y-2">
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
-          Sections: <span className="text-green-600 dark:text-green-400">{counts.done} done</span>
+          {t('analyze.status.title')}: <span className="text-green-600 dark:text-green-400">{counts.done} {t('analyze.status.completed')}</span>
           {counts.excluded > 0 && (
-            <> · <span className="text-yellow-600 dark:text-yellow-400">{counts.excluded} excluded</span></>
+            <> · <span className="text-yellow-600 dark:text-yellow-400">{counts.excluded} {t('analyze.status.skipped')}</span></>
           )}
           {counts.failed > 0 && (
-            <> · <span className="text-red-600 dark:text-red-400">{counts.failed} failed</span></>
+            <> · <span className="text-red-600 dark:text-red-400">{counts.failed} {t('analyze.status.failed')}</span></>
           )}
         </span>
         {detail.duration_seconds != null && (
-          <span>Run took {detail.duration_seconds.toFixed(1)}s</span>
+          <span>{detail.duration_seconds.toFixed(1)}s</span>
         )}
       </div>
       <div className="flex flex-wrap gap-1.5">
         {ordered.map((name) => {
           const s = detail.sections[name];
           const kind = classifySection(s);
-          const label = SECTION_LABELS[name] ?? name;
+          const label = sectionLabels[name] ?? name;
           const tip = s.skip_reason ? `${label} — ${s.skip_reason}` : label;
           return (
             <span
@@ -76,6 +80,7 @@ export function SectionStatusPanel({ detail }: { detail: AnalyzeReportDetail }) 
 }
 
 export function PersonaAssignmentsBox({ detail }: { detail: AnalyzeReportDetail }) {
+  const { t } = useTranslation();
   if (!detail.persona_assignments) return null;
   const entries = Object.entries(detail.persona_assignments)
     .filter(([, v]) => v != null && v !== '')
@@ -83,7 +88,7 @@ export function PersonaAssignmentsBox({ detail }: { detail: AnalyzeReportDetail 
   if (entries.length === 0) return null;
   return (
     <div className="border rounded px-3 py-2 bg-accent/10 text-xs text-muted-foreground">
-      <span className="font-medium text-foreground">Personas</span> → {entries.join(' · ')}
+      <span className="font-medium text-foreground">{t('analyze.status.personas')}</span> → {entries.join(' · ')}
     </div>
   );
 }

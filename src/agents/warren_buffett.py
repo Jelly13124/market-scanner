@@ -11,8 +11,11 @@ from src.utils.api_key import get_api_key_from_state
 
 
 class WarrenBuffettSignal(BaseModel):
-    signal: Literal["bullish", "bearish", "neutral"]
-    confidence: int = Field(description="Confidence 0-100")
+    # 'abstain' = ticker is outside Buffett's circle of competence OR
+    # the fundamentals data is too sparse to apply his framework. The PM
+    # aggregator skips abstain votes (they are NOT counted as neutral).
+    signal: Literal["bullish", "bearish", "neutral", "abstain"]
+    confidence: int = Field(description="Confidence 0-100 (use 0 when signal=abstain)")
     reasoning: str = Field(description="Reasoning for the decision")
 
 
@@ -770,9 +773,19 @@ def generate_buffett_output(
         [
             (
                 "system",
-                "You are Warren Buffett. Decide bullish, bearish, or neutral using only the provided facts.\n"
+                "You are Warren Buffett. Decide using ONLY the provided facts.\n"
                 "\n"
-                "Checklist for decision:\n"
+                "REFUSE TO OPINE (signal=abstain, confidence=0) when:\n"
+                "- The business is clearly outside my circle of competence "
+                "(unprofitable biotech / crypto-adjacent / pre-revenue tech / pure speculation).\n"
+                "- No discernible moat AND no consistent earnings history "
+                "(moat score 0 AND consistency details say 'inconsistent' or 'insufficient').\n"
+                "- Fundamentals data is too sparse to apply the framework "
+                "(facts.fundamentals is missing or says 'insufficient data').\n"
+                "Abstaining is more honest than a fake neutral — I would rather "
+                "not vote than vote without conviction.\n"
+                "\n"
+                "Otherwise apply the checklist:\n"
                 "- Circle of competence\n"
                 "- Competitive moat\n"
                 "- Management quality\n"
@@ -780,16 +793,16 @@ def generate_buffett_output(
                 "- Valuation vs intrinsic value\n"
                 "- Long-term prospects\n"
                 "\n"
-                "Signal rules:\n"
+                "Signal rules (when NOT abstaining):\n"
                 "- Bullish: strong business AND margin_of_safety > 0.\n"
                 "- Bearish: poor business OR clearly overvalued.\n"
                 "- Neutral: good business but margin_of_safety <= 0, or mixed evidence.\n"
                 "\n"
-                "Confidence scale:\n"
-                "- 90-100%: Exceptional business within my circle, trading at attractive price\n"
+                "Confidence scale (skip when abstain):\n"
+                "- 90-100%: Exceptional business within my circle, attractive price\n"
                 "- 70-89%: Good business with decent moat, fair valuation\n"
-                "- 50-69%: Mixed signals, would need more information or better price\n"
-                "- 30-49%: Outside my expertise or concerning fundamentals\n"
+                "- 50-69%: Mixed signals\n"
+                "- 30-49%: Concerning fundamentals\n"
                 "- 10-29%: Poor business or significantly overvalued\n"
                 "\n"
                 "Keep reasoning under 120 characters. Do not invent data. Return JSON only."
@@ -800,7 +813,7 @@ def generate_buffett_output(
                 "Facts:\n{facts}\n\n"
                 "Return exactly:\n"
                 "{{\n"
-                '  "signal": "bullish" | "bearish" | "neutral",\n'
+                '  "signal": "bullish" | "bearish" | "neutral" | "abstain",\n'
                 '  "confidence": int,\n'
                 '  "reasoning": "short justification"\n'
                 "}}"

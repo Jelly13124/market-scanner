@@ -3,6 +3,7 @@
 import { backtestService } from '@/services/backtest-service';
 import type { BacktestResponse } from '@/types/backtest';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { TradeLogTable } from './trade-log-table';
 
@@ -21,6 +22,7 @@ const VERDICT_COLORS: Record<string, string> = {
 
 export function BacktestResult({ backtestId }: Props) {
   const [bt, setBt] = useState<BacktestResponse | null>(null);
+  const { t } = useTranslation();
 
   const reload = useCallback(() => {
     backtestService
@@ -33,14 +35,14 @@ export function BacktestResult({ backtestId }: Props) {
     reload();
   }, [reload]);
 
-  if (!bt) return <div className="p-3 text-xs text-muted-foreground">Loading...</div>;
+  if (!bt) return <div className="p-3 text-xs text-muted-foreground">{t('common.loading')}</div>;
 
   const verdictColor = VERDICT_COLORS[bt.verdict_label] || 'bg-muted';
 
   return (
     <div className="border-t p-3 space-y-3">
       <div className={`border rounded p-2 text-sm ${verdictColor}`}>
-        <div className="font-bold uppercase">Verdict: {bt.verdict_label}</div>
+        <div className="font-bold uppercase">{t('lab.backtest.verdict', { label: bt.verdict_label })}</div>
         <div className="text-xs mt-1">{bt.verdict_text}</div>
       </div>
 
@@ -59,42 +61,42 @@ export function BacktestResult({ backtestId }: Props) {
                 <td></td>
                 <td className="text-right">IS</td>
                 <td className="text-right">OOS</td>
-                <td className="text-right">Benchmark</td>
+                <td className="text-right">{t('lab.spec.benchmark')}</td>
               </tr>
             </thead>
             <tbody>
               <MetricRow
-                label="CAGR"
+                label={t('lab.backtest.cagr')}
                 is={bt.is_cagr}
                 oos={bt.oos_cagr}
                 bench={bt.benchmark_cagr}
                 pct
               />
-              <MetricRow label="Sharpe" is={bt.is_sharpe} oos={bt.oos_sharpe} />
-              <MetricRow label="Sortino" is={bt.is_sortino} oos={bt.oos_sortino} />
+              <MetricRow label={t('lab.backtest.sharpe')} is={bt.is_sharpe} oos={bt.oos_sharpe} />
+              <MetricRow label={t('lab.backtest.sortino')} is={bt.is_sortino} oos={bt.oos_sortino} />
               <MetricRow
-                label="Max DD"
+                label={t('lab.backtest.maxDd')}
                 is={bt.is_max_drawdown}
                 oos={bt.oos_max_drawdown}
                 pct
               />
               <MetricRow
-                label="Win rate"
+                label={t('lab.backtest.winRate')}
                 is={bt.is_win_rate}
                 oos={bt.oos_win_rate}
                 pct
               />
               <MetricRow
-                label="Profit factor"
+                label={t('lab.backtest.profitFactor')}
                 is={bt.is_profit_factor}
                 oos={bt.oos_profit_factor}
               />
-              <MetricRow label="Trades" is={bt.is_n_trades} oos={bt.oos_n_trades} />
+              <MetricRow label={t('lab.backtest.trades')} is={bt.is_n_trades} oos={bt.oos_n_trades} />
             </tbody>
           </table>
           {bt.degradation_ratio != null && (
             <div className="text-xs text-muted-foreground">
-              Degradation ratio (OOS/IS CAGR): {bt.degradation_ratio.toFixed(2)}
+              {t('lab.backtest.degradation', { value: bt.degradation_ratio.toFixed(2) })}
             </div>
           )}
         </div>

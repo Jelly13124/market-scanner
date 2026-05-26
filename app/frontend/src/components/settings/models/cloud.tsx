@@ -2,6 +2,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { Cloud, RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface CloudModelsProps {
   className?: string;
@@ -25,6 +26,7 @@ export function CloudModels({ className }: CloudModelsProps) {
   const [providers, setProviders] = useState<ModelProvider[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useTranslation();
 
   const fetchProviders = async () => {
     setLoading(true);
@@ -75,7 +77,7 @@ export function CloudModels({ className }: CloudModelsProps) {
       <div className="space-y-2">
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-medium text-primary
-          ">Available Models</h3>
+          ">{t('settings.availableModels')}</h3>
           <span className="text-xs text-muted-foreground">
             {allModels.length} models from {providers.length} providers
           </span>
@@ -116,7 +118,7 @@ export function CloudModels({ className }: CloudModelsProps) {
           !loading && (
             <div className="text-center py-8 text-muted-foreground">
               <Cloud className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No models available</p>
+              <p className="text-sm">{t('settings.noModelsAvailable')}</p>
             </div>
           )
         )}

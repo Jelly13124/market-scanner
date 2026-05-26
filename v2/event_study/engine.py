@@ -33,6 +33,13 @@ import numpy as np
 
 from v2.data.client import FDClient
 from v2.data.models import EarningsRecord
+from v2.event_study.filters import (
+    RETROSPECTIVE_CUTOFF_DAYS as _RETROSPECTIVE_CUTOFF_DAYS,
+    filter_retrospective_earnings,
+)
+
+# Backward-compatible alias for the pre-refactor private name.
+_filter_retrospective = filter_retrospective_earnings
 from v2.event_study.models import (
     AggregateResult,
     EventCAR,
@@ -57,8 +64,9 @@ _ESTIMATION_START = -250           # start of estimation window (trading days be
 _ESTIMATION_END = -11              # end of estimation window (10-day buffer avoids contamination)
 _MIN_ESTIMATION_DAYS = 200         # skip events without enough pre-event price history
 _MAX_EVENT_WINDOW = 20             # widest post-event window (day 0 through day +20)
-_RETROSPECTIVE_CUTOFF_DAYS = 45    # max days between filing_date and report_period
 _CAR_WINDOWS = [(0, 1), (0, 5), (0, 20)]  # the three event windows we compute CARs for
+# _RETROSPECTIVE_CUTOFF_DAYS is re-exported from v2.event_study.filters above
+# for backward compatibility with any importer pulling the constant from here.
 
 
 # ---------------------------------------------------------------------------
@@ -150,7 +158,7 @@ def _compute_ticker_events(
         return []
 
     # Step 2: Drop retrospective rows (e.g., Q4 data parsed from a Q1 8-K)
-    records = _filter_retrospective(records)
+    records = filter_retrospective_earnings(records)
     if not records:
         return []
 
@@ -358,31 +366,6 @@ def _aggregate(
 def _parse_date(s: str) -> date:
     """Parse 'YYYY-MM-DD' string to a date object."""
     return datetime.strptime(s[:10], "%Y-%m-%d").date()
-
-
-def _filter_retrospective(records: list[EarningsRecord]) -> list[EarningsRecord]:
-    """Drop records where filing_date is >45 days after report_period.
-
-    The ER extractor sometimes parses prior-period comparison data from
-    a current 8-K, producing rows that look like a real Q4 event but are
-    actually anchored on a Q1 filing date (e.g., GS: report_period=2025-12-31,
-    filing_date=2026-04-13 → 103 days, clearly retrospective).
-
-    Without this filter, CARs would be computed around the wrong dates.
-    """
-    kept: list[EarningsRecord] = []
-    for r in records:
-        filing = _parse_date(r.filing_date)
-        report = _parse_date(r.report_period)
-        if (filing - report).days < _RETROSPECTIVE_CUTOFF_DAYS:
-            kept.append(r)
-        else:
-            logger.debug(
-                "Filtered retrospective: %s %s filed %s (report %s, %d days)",
-                r.ticker, r.source_type, r.filing_date, r.report_period,
-                (filing - report).days,
-            )
-    return kept
 
 
 def _find_event_idx(

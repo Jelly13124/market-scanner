@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import type { StrategySpec } from '@/types/strategy';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   open: boolean;
@@ -20,6 +21,7 @@ export function SpecJsonEditor({ open, initialSpec, onCancel, onSave }: Props) {
   const [text, setText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (open) {
@@ -49,9 +51,9 @@ export function SpecJsonEditor({ open, initialSpec, onCancel, onSave }: Props) {
     <Dialog open={open} onOpenChange={(o) => { if (!o) onCancel(); }}>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Edit Spec JSON</DialogTitle>
+          <DialogTitle>{t('lab.specJson.title')}</DialogTitle>
           <DialogDescription>
-            Bypass the AI — edit the raw spec directly. Backend will validate.
+            {t('lab.specJson.description')}
           </DialogDescription>
         </DialogHeader>
         <textarea
@@ -61,9 +63,9 @@ export function SpecJsonEditor({ open, initialSpec, onCancel, onSave }: Props) {
         />
         {error && <div className="text-xs text-red-600 mt-2">{error}</div>}
         <DialogFooter>
-          <Button variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
+          <Button variant="ghost" onClick={onCancel} disabled={saving}>{t('common.cancel')}</Button>
           <Button onClick={handleSave} disabled={saving}>
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? t('lab.specJson.saving') : t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

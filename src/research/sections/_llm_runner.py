@@ -7,7 +7,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from src.research.llm import call_research_llm
+from src.research.llm import call_research_llm, language_instruction
 from src.research.models import SectionPayload
 from src.research.personas import PERSONA_REGISTRY
 from src.research.sections.base import SectionContext
@@ -31,6 +31,11 @@ def run_llm_section(
                 + prompt
             )
             persona_used = ctx.persona
+    # Phase 7 i18n: prepend language instruction LAST (most-recent-wins
+    # for compliance). No-op when report_language == "en".
+    lang_prefix = language_instruction(ctx.request.report_language)
+    if lang_prefix:
+        final = lang_prefix + final
     try:
         r = call_research_llm(
             final, output_model,

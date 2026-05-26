@@ -17,7 +17,12 @@ _IGNORE = {"extra": "ignore"}
 # ---------------------------------------------------------------------------
 
 class Price(BaseModel):
-    """Single OHLCV bar from /prices."""
+    """Single OHLCV bar.
+
+    ``adjusted_close`` is split- and dividend-adjusted (when the provider
+    supplies it). Return calculations should prefer it over ``close`` to avoid
+    false-positive moves on ex-div / split days.
+    """
 
     model_config = _IGNORE
 
@@ -27,6 +32,7 @@ class Price(BaseModel):
     low: float
     volume: int
     time: str
+    adjusted_close: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -140,6 +146,14 @@ class CompanyNews(BaseModel):
     source: str
     date: str | None = None
     url: str | None = None
+    # FD's polarity label, typically one of "positive" / "negative" / "neutral".
+    # Nullable because not every article is scored.
+    sentiment: str | None = None
+    # Continuous polarity score, when the provider supplies one. EODHD's
+    # /sentiments endpoint returns a daily "normalized" score (~[-1, +1] but
+    # positive-skewed in practice) — far more sensitive than the 3-bucket
+    # label. Detectors should prefer this over ``sentiment`` when present.
+    sentiment_score: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +178,9 @@ class CompanyFacts(BaseModel):
     sic_code: str | None = None
     sic_industry: str | None = None
     sic_sector: str | None = None
+    market_cap: float | None = None
+    number_of_employees: int | None = None
+    weighted_average_shares: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +256,9 @@ class EarningsRecord(BaseModel):
     ticker: str
     report_period: str
     source_type: str
-    filing_date: str
+    # Nullable: FD occasionally returns records without a filing_date.
+    # Downstream filters (filter_retrospective_earnings, detector logic) drop these.
+    filing_date: str | None = None
     filing_datetime: str | None = None
     filing_window: str | None = None
     fiscal_period: str | None = None
@@ -268,3 +287,107 @@ class Filing(BaseModel):
     document_count: int | None = None
     is_xbrl: bool | None = None
     url: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Analyst data (yfinance-sourced)
+# ---------------------------------------------------------------------------
+
+class AnalystTarget(BaseModel):
+    """Aggregate analyst price target snapshot for one ticker.
+
+    Source: yfinance ``Ticker.analyst_price_targets`` (Yahoo Finance unofficial).
+    All numeric fields nullable — yfinance may return partial dicts when
+    coverage is thin.
+    """
+
+    model_config = _IGNORE
+
+    ticker: str
+    current_price: float | None = None
+    target_mean: float | None = None
+    target_median: float | None = None
+    target_high: float | None = None
+    target_low: float | None = None
+    n_analysts: int | None = None
+    asof_date: str  # YYYY-MM-DD
+
+
+class AnalystAction(BaseModel):
+    """One analyst upgrade / downgrade / initiation event.
+
+    Source: yfinance ``Ticker.upgrades_downgrades``. Fields mirror the Yahoo
+    columns (Firm / ToGrade / FromGrade / Action) plus a normalized lowercase
+    ``action`` value: 'up', 'down', 'main', 'init', or 'reit'.
+    """
+
+    model_config = _IGNORE
+
+    ticker: str
+    action_date: str  # YYYY-MM-DD
+    firm: str
+    from_grade: str | None = None
+    to_grade: str | None = None
+    action: str  # 'up' | 'down' | 'main' | 'init' | 'reit'
+
+
+# ---------------------------------------------------------------------------
+# Live quote (intraday snapshot)
+# ---------------------------------------------------------------------------
+
+class Quote(BaseModel):
+    """One ticker's live-ish quote snapshot.
+
+    Sourced from Finnhub ``/quote`` in the hybrid setup. Used by the
+    watchlist UI to show current price + today's session change next to
+    each scored row. All numeric fields nullable — providers occasionally
+    return zero or omit fields for illiquid names.
+    """
+
+    model_config = _IGNORE
+
+    ticker: str
+    current_price: float | None = None
+    prev_close: float | None = None
+    percent_change: float | None = None   # today's % move (Finnhub's `dp`)
+    asof_timestamp: int | None = None     # epoch seconds (Finnhub's `t`)
+
+
+class EstimateRevisions(BaseModel):
+    """Net analyst EPS-estimate revisions for one period.
+
+    Sourced from yfinance ``Ticker.eps_revisions``, which returns a
+    DataFrame indexed by period (``0q`` / ``+1q`` / ``0y`` / ``+1y``)
+    with rolling 7-day and 30-day up/down counts. ``EstimateRevisionDetector``
+    consumes this and z-scores via fixed scale (yfinance only exposes the
+    aggregated counts, not per-analyst history).
+    """
+
+    model_config = _IGNORE
+
+    ticker: str
+    asof_date: str
+    period: str            # one of "0q" / "+1q" / "0y" / "+1y"
+    up_last_7d: int = 0
+    down_last_7d: int = 0
+    up_last_30d: int = 0
+    down_last_30d: int = 0
+
+
+class EarningsCalendarEntry(BaseModel):
+    """One scheduled (or recent) earnings event from a provider's calendar feed.
+
+    Used by ``EarningsUpcomingDetector`` to mark tickers with earnings due
+    within the next N days — a forward-looking catalyst-risk signal,
+    distinct from ``EarningsSurpriseDetector`` which fires only after BEAT/MISS.
+    """
+
+    model_config = _IGNORE
+
+    symbol: str
+    date: str                              # ISO YYYY-MM-DD of the report
+    hour: str | None = None                # 'bmo' (before market open) / 'amc' (after market close) / 'dmh' (during market hours)
+    eps_estimate: float | None = None
+    revenue_estimate: float | None = None
+    year: int | None = None
+    quarter: int | None = None

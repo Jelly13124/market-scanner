@@ -7,6 +7,7 @@ import { analyzeService } from '@/services/analyze-service';
 import type { ResearchReportSummary } from '@/types/research';
 import { RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 interface ReportListProps {
@@ -18,6 +19,7 @@ interface ReportListProps {
 export function ReportList({ tickerFilter, currentReportId, onSelect }: ReportListProps) {
   const [rows, setRows] = useState<ResearchReportSummary[]>([]);
   const [loading, setLoading] = useState(false);
+  const { t } = useTranslation();
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -33,18 +35,18 @@ export function ReportList({ tickerFilter, currentReportId, onSelect }: ReportLi
     <div className="border rounded">
       <div className="flex items-center justify-between px-3 py-1.5 border-b bg-accent/30">
         <span className="text-xs font-medium">
-          Recent reports{tickerFilter ? ` for ${tickerFilter}` : ''}
+          {tickerFilter ? t('analyze.reports.titleFor', { ticker: tickerFilter }) : t('analyze.reports.title')}
         </span>
         <Button
           variant="ghost" size="sm"
-          onClick={reload} disabled={loading} title="Refresh"
+          onClick={reload} disabled={loading} title={t('common.refresh')}
         >
           <RefreshCw className={cn('size-3', loading && 'animate-spin')} />
         </Button>
       </div>
       {rows.length === 0 ? (
         <div className="px-3 py-2 text-xs text-muted-foreground">
-          No reports yet. Run one above.
+          {t('analyze.reports.noReports')}
         </div>
       ) : (
         <div className="divide-y max-h-60 overflow-y-auto">

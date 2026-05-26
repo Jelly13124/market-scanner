@@ -1,50 +1,69 @@
-// Default canvas seed — five horizontal rows fanning out from the Input
-// node, covering all 16 SOP sections plus a visual "Manager Check"
-// terminator.
+// Default canvas seed — Phase 5E redesign per user 2026-05-25.
 //
-// Layout (left-to-right):
+// Pipeline shape (left to right):
 //
-//   [Input] ─┬─→ Data Health ──→ Macro ───────→ Sector
-//            ├─→ Company Fund. ─→ Financial St. ─→ Valuation
-//            ├─→ Technical ────→ Risk Position ─→ Event Risk
-//            ├─→ Evidence Ldg. ─→ Scenarios ────→ Conviction
-//            └─→ Debate ──────→ Final Strategy ─→ Executive Summary ─→ [Manager Check]
+//   [Input] → [Data Health] → 10 parallel analyses → [Debate] → [Output]
 //
-// Manager Check is a visual-only terminator (orchestrator skips unknown
-// section names, which is what we want here — the name "manager_check"
-// is not in SECTION_ORDER so the runner ignores it).
+// The 10 mid-sections (macro / sector / company_fundamentals /
+// financial_statements / valuation / technical / risk_position /
+// scenarios / conviction / event_risk) all consume the same upstream
+// (shared data + data_health verdict) and produce independent
+// SectionPayloads. They feed BOTH Debate (which weighs them) and
+// Output (which writes the final report from them + Debate's verdict).
+//
+// The Output node is a single visual aggregator that the canvas
+// serializer expands to four backend SECTION_ORDER entries:
+// evidence_ledger, final_strategy, executive_summary, missing_data.
 
 import type { Edge, Node } from '@xyflow/react';
 
-import {
-  SECTION_LABELS, SECTION_ORDER, SECTION_PERSONAS,
-} from '@/types/analyze';
+import { SECTION_LABELS, SECTION_PERSONAS } from '@/types/analyze';
 
 import { DEFAULT_INPUT_NODE_DATA } from './input-node';
 import type { SectionNodeData } from './section-node';
 
 const INPUT_NODE_ID = 'input:run';
-const MANAGER_NODE_ID = 'section:manager_check';
+const OUTPUT_NODE_ID = 'output:report';
 
-/** Horizontal stride between successive nodes in a row (px). */
-const COL_W = 230;
-/** Vertical stride between rows (px). */
-const ROW_H = 150;
-/** Left margin for the input node. */
-const INPUT_X = 40;
-/** Top margin for the topmost row. */
-const ROW_Y0 = 60;
-/** X position where the first SectionNode column begins (right of input). */
-const COL_X0 = 360;
-
-/** Section ids per row, ordered left-to-right. */
-const ROWS: string[][] = [
-  ['data_health', 'macro', 'sector'],
-  ['company_fundamentals', 'financial_statements', 'valuation'],
-  ['technical', 'risk_position', 'event_risk'],
-  ['evidence_ledger', 'scenarios', 'conviction'],
-  ['debate', 'final_strategy', 'executive_summary'],
+/** Sections that run in parallel after Data Health. Order here only
+ * controls vertical layout on the canvas — the backend dispatches via
+ * SECTION_ORDER and (after this change) gathers these concurrently. */
+const PARALLEL_SECTIONS: string[] = [
+  'macro',
+  'sector',
+  'company_fundamentals',
+  'financial_statements',
+  'valuation',
+  'technical',
+  'risk_position',
+  'scenarios',
+  'conviction',
+  'event_risk',
 ];
+
+/** The 4 backend sections that the single visual Output node represents. */
+export const OUTPUT_BACKEND_SECTIONS: string[] = [
+  'evidence_ledger',
+  'final_strategy',
+  'executive_summary',
+  'missing_data',
+];
+
+// --- Layout constants. Tuned for nodes at min-w 380-440. ---
+const COL_INPUT_X = 40;
+const COL_DATAHEALTH_X = 520;
+const COL_PARALLEL_LEFT_X = 1000;
+const COL_PARALLEL_RIGHT_X = 1500;
+const COL_DEBATE_X = 2080;
+const COL_OUTPUT_X = 2560;
+
+const PARALLEL_ROW_TOP = 40;
+const PARALLEL_ROW_H = 200;
+const PARALLEL_ROWS_PER_COL = 5;   // 5 rows × 2 cols = 10 sections
+
+/** Y position for the single-row nodes (Input / Data Health / Debate / Output)
+ * so they line up with the vertical middle of the 5-row parallel block. */
+const CENTER_Y = PARALLEL_ROW_TOP + Math.floor(PARALLEL_ROWS_PER_COL / 2) * PARALLEL_ROW_H;
 
 function _sectionNodeId(name: string): string {
   return `section:${name}`;
@@ -70,73 +89,79 @@ function _buildSectionNode(
   };
 }
 
-/** Build the default template's nodes + edges. Always returns a fresh
- * deep-cloned object so callers can mutate without affecting future
- * seeds. */
+/** Build the default template — Input → Data Health → 10 parallel →
+ * Debate → Output. */
 export function getDefaultTemplate(): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
-  // 1) Input node — vertically centred against the middle row.
-  const inputY = ROW_Y0 + Math.floor(ROWS.length / 2) * ROW_H;
+  // 1) Input — leftmost, centered.
   nodes.push({
     id: INPUT_NODE_ID,
     type: 'input',
-    position: { x: INPUT_X, y: inputY - 40 },
+    position: { x: COL_INPUT_X, y: CENTER_Y - 40 },
     data: { ...DEFAULT_INPUT_NODE_DATA } as unknown as Record<string, unknown>,
   });
 
-  // 2) Section nodes — one row per pipeline branch.
-  for (let r = 0; r < ROWS.length; r++) {
-    const row = ROWS[r];
-    const y = ROW_Y0 + r * ROW_H;
-    let prevId: string = INPUT_NODE_ID;
-    for (let c = 0; c < row.length; c++) {
-      const name = row[c];
-      const x = COL_X0 + c * COL_W;
-      nodes.push(_buildSectionNode(name, x, y));
-      const id = _sectionNodeId(name);
-      edges.push({
-        id: `e:${prevId}->${id}`,
-        source: prevId,
-        target: id,
-        animated: c === 0,        // highlight the input→first-of-row hop
-      });
-      prevId = id;
-    }
-    // Terminal Manager Check on the last row only.
-    if (r === ROWS.length - 1) {
-      const x = COL_X0 + row.length * COL_W;
-      nodes.push(
-        _buildSectionNode('manager_check', x, y, { label: 'Manager Check', enabled: true }),
-      );
-      edges.push({
-        id: `e:${prevId}->${MANAGER_NODE_ID}`,
-        source: prevId,
-        target: MANAGER_NODE_ID,
-      });
-    }
-  }
+  // 2) Data Health — single gating step after Input, centered.
+  const dataHealthId = _sectionNodeId('data_health');
+  nodes.push(_buildSectionNode('data_health', COL_DATAHEALTH_X, CENTER_Y));
+  edges.push({
+    id: `e:${INPUT_NODE_ID}->${dataHealthId}`,
+    source: INPUT_NODE_ID,
+    target: dataHealthId,
+    animated: true,
+  });
 
-  // 3) Sanity: every SECTION_ORDER entry covered by the rows above,
-  //    plus 'missing_data' which we tack onto the bottom row as a side
-  //    branch off Executive Summary so the canvas surfaces it.
-  const covered = new Set<string>();
-  for (const row of ROWS) for (const s of row) covered.add(s);
-  const missing = SECTION_ORDER.filter((s) => !covered.has(s));
-  for (let i = 0; i < missing.length; i++) {
-    const name = missing[i];
-    const x = COL_X0 + i * COL_W;
-    const y = ROW_Y0 + (ROWS.length + 1) * ROW_H;  // a row below the pipeline
+  // 3) 10 parallel analyses — 2 columns × 5 rows. Each gets an edge
+  //    FROM data_health, and edges TO both Debate and Output.
+  const debateId = _sectionNodeId('debate');
+  PARALLEL_SECTIONS.forEach((name, i) => {
+    const col = Math.floor(i / PARALLEL_ROWS_PER_COL);
+    const row = i % PARALLEL_ROWS_PER_COL;
+    const x = col === 0 ? COL_PARALLEL_LEFT_X : COL_PARALLEL_RIGHT_X;
+    const y = PARALLEL_ROW_TOP + row * PARALLEL_ROW_H;
     nodes.push(_buildSectionNode(name, x, y));
+    const sid = _sectionNodeId(name);
     edges.push({
-      id: `e:${INPUT_NODE_ID}->${_sectionNodeId(name)}`,
-      source: INPUT_NODE_ID,
-      target: _sectionNodeId(name),
+      id: `e:${dataHealthId}->${sid}`,
+      source: dataHealthId,
+      target: sid,
     });
-  }
+    // → Debate
+    edges.push({
+      id: `e:${sid}->${debateId}`,
+      source: sid,
+      target: debateId,
+    });
+    // → Output (per user 2026-05-25: 10 analyses feed BOTH Debate and Output)
+    edges.push({
+      id: `e:${sid}->${OUTPUT_NODE_ID}`,
+      source: sid,
+      target: OUTPUT_NODE_ID,
+    });
+  });
+
+  // 4) Debate — single node, centered.
+  nodes.push(_buildSectionNode('debate', COL_DEBATE_X, CENTER_Y));
+
+  // 5) Output — visual aggregator. Single canvas node that the
+  //    serializer expands to OUTPUT_BACKEND_SECTIONS.
+  nodes.push({
+    id: OUTPUT_NODE_ID,
+    type: 'output',
+    position: { x: COL_OUTPUT_X, y: CENTER_Y - 40 },
+    data: { enabled: true } as Record<string, unknown>,
+  });
+  edges.push({
+    id: `e:${debateId}->${OUTPUT_NODE_ID}`,
+    source: debateId,
+    target: OUTPUT_NODE_ID,
+    animated: true,
+  });
 
   return { nodes, edges };
 }
 
 export const INPUT_NODE_ID_CONST = INPUT_NODE_ID;
+export const OUTPUT_NODE_ID_CONST = OUTPUT_NODE_ID;

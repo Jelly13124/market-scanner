@@ -62,8 +62,27 @@ def test_runs_all_sections_in_order(mock_bt, mock_registry, mock_fetch):
         mock_registry[n] = _StubSection(n)
 
     report = run_sop(_req())
-    # Every section ran, in order
-    assert call_log == SECTION_ORDER
+    # Every section ran. Stricter order assertion was loosened on
+    # 2026-05-25 when the 10 _PARALLEL_SECTIONS started dispatching
+    # via ThreadPoolExecutor (LLM I/O-bound, completion order is
+    # non-deterministic). We now assert section batches in relative
+    # order: pre-parallel sequential -> parallel batch -> post-parallel
+    # sequential, with the parallel batch members allowed in any order.
+    from src.research.sop_orchestrator import _PARALLEL_SECTIONS
+    assert set(call_log) == set(SECTION_ORDER)
+    pre = [n for n in SECTION_ORDER if n not in _PARALLEL_SECTIONS
+           and SECTION_ORDER.index(n) < SECTION_ORDER.index("macro")]
+    post = [n for n in SECTION_ORDER if n not in _PARALLEL_SECTIONS
+            and SECTION_ORDER.index(n) > SECTION_ORDER.index("event_risk")]
+    # Pre-parallel sections retain their SECTION_ORDER positions.
+    for i, n in enumerate(pre):
+        assert call_log[i] == n, f"pre-parallel position {i} should be {n}, got {call_log[i]}"
+    # Parallel batch occupies indices len(pre) .. len(pre)+9 in some order.
+    parallel_slice = call_log[len(pre):len(pre) + len(_PARALLEL_SECTIONS)]
+    assert set(parallel_slice) == _PARALLEL_SECTIONS
+    # Post-parallel sections come after, in their SECTION_ORDER positions.
+    for i, n in enumerate(post):
+        assert call_log[len(pre) + len(_PARALLEL_SECTIONS) + i] == n
     assert "data_health" in report["sections"]
     assert report["backtest"].n_signals == 10
 

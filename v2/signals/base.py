@@ -7,14 +7,18 @@ from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
 
+from v2.data.protocol import DataClient
 from v2.models import SignalResult
 
 
 class BaseSignal(ABC):
     """Abstract base for Layer 1 quantitative signals.
 
-    Each signal fetches data from FD, computes a score in [-1, +1],
-    and returns a SignalResult. No LLM calls — pure Python math.
+    Each signal pulls data via a ``DataClient``, computes a score in
+    ``[-1, +1]``, and returns a ``SignalResult``. Pure Python math — no
+    LLM calls. Implementations must NEVER raise; on missing/insufficient
+    data, return a SignalResult with ``value=0.0`` and a ``metadata``
+    entry explaining why.
     """
 
     @property
@@ -28,10 +32,14 @@ class BaseSignal(ABC):
         self,
         ticker: str,
         end_date: str,
-        *,
-        api_key: str | None = None,
+        fd: DataClient,
     ) -> SignalResult:
-        """Compute the signal for a single ticker as-of *end_date*."""
+        """Compute the signal for a single ticker as-of *end_date*.
+
+        ``fd`` is the per-worker DataClient. Signals should reuse it rather
+        than constructing their own — the scanner pools clients to avoid
+        ``requests.Session`` thread-safety issues.
+        """
         ...
 
     # ------------------------------------------------------------------

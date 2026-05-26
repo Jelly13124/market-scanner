@@ -176,26 +176,15 @@ export function AnalyzePanel() {
                 {t('analyze.reports.reportN', { id: currentReportId })}
               </AccordionTrigger>
               <AccordionContent className="pb-3">
-                <div className="flex items-center justify-end mb-1">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7"
-                    onClick={() => window.open(iframeSrc, '_blank', 'noopener')}
-                  >
-                    <ExternalLink className="size-3 mr-1" />
-                    {t('analyze.reports.openInNewTab')}
-                  </Button>
-                </div>
-                <div className="border rounded overflow-hidden">
-                  <iframe
-                    key={currentReportId}
-                    src={iframeSrc}
-                    title={`Analyze report ${currentReportId}`}
-                    className="w-full h-[50vh]"
-                    style={{ border: 0 }}
-                  />
-                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7"
+                  onClick={() => window.open(iframeSrc, '_blank', 'noopener')}
+                >
+                  <ExternalLink className="size-3 mr-1" />
+                  {t('analyze.reports.openInNewTab')}
+                </Button>
               </AccordionContent>
             </AccordionItem>
           )}

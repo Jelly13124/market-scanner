@@ -30,7 +30,7 @@
   },
   "tabBar": {
     "closeTab": "Close tab",
-    "welcome": "Welcome to the AI Hedge Fund",
+    "welcome": "Welcome to Quant Lab",
     "welcomeHint": "Open a panel from the left sidebar (⌘B) or open settings (⌘,) to configure your preferences."
   },
   "tabs": {
@@ -58,7 +58,12 @@
     "analyzeTooltip": "Open per-stock SOP analyzer",
     "scannerTooltip": "Run universe-wide screening",
     "labTooltip": "AI strategy lab — chat to design, backtest, iterate",
-    "searchTickerPlaceholder": "Search ticker..."
+    "searchTickerPlaceholder": "Search ticker...",
+    "apiKeys": "API Keys",
+    "apiKeysHint": "Keys are saved to backend .env. Click + to get a key.",
+    "apiKeysGetKey": "Sign up / get key",
+    "apiKeysShow": "Show key",
+    "apiKeysHide": "Hide key"
   },
   "topBar": {
     "toggleLeft": "Toggle Left Side Bar",
@@ -258,6 +263,10 @@
   },
   "scanner": {
     "title": "Daily Market Scanner",
+    "tierPaid": "PAID · EODHD",
+    "tierFree": "FREE · Finnhub",
+    "tierPaidHint": "EODHD key detected — using full-history prices + sentiment news",
+    "tierFreeHint": "No EODHD key — falling back to Finnhub (free tier: ~12mo prices, ~7d news). Add an EODHD key in sidebar API Keys for full data.",
     "newConfig": "+ New config",
     "deleteConfig": "Delete config \"{{name}}\"?",
     "deleteThisConfig": "Delete this config",

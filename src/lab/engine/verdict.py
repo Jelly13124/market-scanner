@@ -24,9 +24,14 @@ def make_verdict(is_m: Metrics, oos_m: Metrics, benchmark_cagr: float | None) ->
             degradation_ratio=0.0,
         )
     if is_m.cagr <= 0:
-        degradation = 0.0
-    else:
-        degradation = oos_m.cagr / is_m.cagr
+        return Verdict(
+            label="reject",
+            text=(f"Strategy LOSES money in-sample (IS CAGR {is_m.cagr*100:+.1f}%; "
+                  f"OOS {oos_m.cagr*100:+.1f}%). No edge to begin with - reject. "
+                  "Try different signals, a longer window, or fewer filters."),
+            degradation_ratio=0.0,
+        )
+    degradation = oos_m.cagr / is_m.cagr
     if oos_m.cagr < 0:
         return Verdict(
             label="reject",

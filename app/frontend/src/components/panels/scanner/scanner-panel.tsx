@@ -24,6 +24,7 @@ import type {
 } from '@/types/scanner';
 import { Pencil, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AgentRunsList } from './agent-runs-list';
 import { AnalyzeButton } from './analyze-button';
 import { NotificationSettings } from './notification-settings';
@@ -36,6 +37,7 @@ interface ScannerPanelProps {
 }
 
 export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
+  const { t } = useTranslation();
   // ---- config state -------------------------------------------------------
   const [configs, setConfigs] = useState<ScannerConfigResponse[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(initialConfigId ?? null);
@@ -44,6 +46,17 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
   const [configError, setConfigError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Phase 9: data tier badge — auto-detected from EODHD_API_KEY presence.
+  const [tier, setTier] = useState<'paid' | 'free' | null>(null);
+
+  // Load /tier once on mount; re-load when sidebar saves a new key.
+  useEffect(() => {
+    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    fetch(`${API_BASE}/tier`)
+      .then((r) => r.json())
+      .then((data) => setTier(data.tier))
+      .catch(() => setTier(null));
+  }, []);
 
   // ---- run state ----------------------------------------------------------
   const [runId, setRunId] = useState<number | null>(null);
@@ -215,7 +228,21 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
     <div className="h-full w-full flex flex-col bg-background">
       {/* Header */}
       <div className="flex items-center gap-2 p-4 border-b">
-        <h2 className="text-lg font-semibold mr-2">Daily Market Scanner</h2>
+        <h2 className="text-lg font-semibold mr-2">{t('scanner.title')}</h2>
+
+        {/* Phase 9: data tier badge (paid = EODHD wired, free = Finnhub only) */}
+        {tier && (
+          <span
+            className={
+              tier === 'paid'
+                ? 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-300/40'
+                : 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-300/40'
+            }
+            title={tier === 'paid' ? t('scanner.tierPaidHint') : t('scanner.tierFreeHint')}
+          >
+            {tier === 'paid' ? t('scanner.tierPaid') : t('scanner.tierFree')}
+          </span>
+        )}
 
         <select
           value={selectedId ?? ''}
@@ -223,7 +250,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
           className="rounded-md border bg-background px-3 py-1.5 text-sm min-w-[220px]"
           disabled={configs.length === 0}
         >
-          {configs.length === 0 && <option value="">No configs yet</option>}
+          {configs.length === 0 && <option value="">{t('scanner.noConfigs')}</option>}
           {configs.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name} ({c.universe_kind}, top {c.top_n}
@@ -241,7 +268,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
           size="sm"
           onClick={() => setDeleteConfirmOpen(true)}
           disabled={!selectedConfig}
-          title="Delete this config"
+          title={t('scanner.deleteThisConfig')}
         >
           <Trash2 size={14} className="text-red-600 dark:text-red-400" />
         </Button>
@@ -252,7 +279,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
 
         <div className="flex-1" />
 
-        <Button variant="outline" size="sm" onClick={loadConfigs} title="Reload configs">
+        <Button variant="outline" size="sm" onClick={loadConfigs} title={t('scanner.reloadConfigs')}>
           <RefreshCw size={14} />
         </Button>
         <Button onClick={handleRunNow} disabled={!selectedConfig || isRunning} size="sm">

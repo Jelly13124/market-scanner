@@ -8,6 +8,11 @@ Consumed by:
 
 from __future__ import annotations
 
+import typing
+from typing import get_args, get_origin
+
+from pydantic import BaseModel
+
 from src.lab.spec.blocks_entry import (
     BollingerBreakEntry, DonchianBreakEntry, MACDEntry, MACrossEntry,
     PriceVsMAEntry, RSICrossEntry, RSIEntry, VolumeSpikeEntry,
@@ -108,15 +113,63 @@ CATALOG: dict[str, dict] = {
 }
 
 
+_NAME_TO_MODEL: dict[str, type[BaseModel]] = {
+    "rsi": RSIEntry, "rsi_cross": RSICrossEntry, "ma_cross": MACrossEntry,
+    "price_vs_ma": PriceVsMAEntry, "macd": MACDEntry,
+    "bollinger_break": BollingerBreakEntry, "donchian_break": DonchianBreakEntry,
+    "volume_spike": VolumeSpikeEntry,
+    "stop_loss": StopLossExit, "take_profit": TakeProfitExit,
+    "trailing_stop": TrailingStopExit, "time_stop": TimeStopExit,
+    "fixed_pct": FixedPctSizing, "equal_weight": EqualWeightSizing,
+    "vol_targeted": VolTargetedSizing,
+    "trend": TrendFilter, "volatility": VolatilityFilter, "liquidity": LiquidityFilter,
+}
+
+
+def _field_signature(model: type[BaseModel]) -> str:
+    """Render a compact `field:type=default` signature for LLM consumption.
+
+    Skips the `type` discriminator (always fixed). Inlines Literal options so
+    the LLM emits the exact enum values, not paraphrased English.
+    """
+    parts: list[str] = []
+    for fname, finfo in model.model_fields.items():
+        if fname == "type":
+            continue
+        ann = finfo.annotation
+        if get_origin(ann) is typing.Literal:
+            type_str = "Literal[" + "|".join(repr(a) for a in get_args(ann)) + "]"
+        elif ann is int:
+            type_str = "int"
+        elif ann is float:
+            type_str = "float"
+        elif ann is str:
+            type_str = "str"
+        elif ann is bool:
+            type_str = "bool"
+        else:
+            type_str = getattr(ann, "__name__", str(ann))
+        if finfo.is_required():
+            parts.append(f"{fname}:{type_str} (required)")
+        else:
+            parts.append(f"{fname}:{type_str}={finfo.default!r}")
+    return ", ".join(parts) if parts else "(no fields)"
+
+
 def get_llm_prompt_text() -> str:
     """Build the catalog section of the LLM system prompt.
 
-    Format: category-grouped, one line per block: `name (category): description`.
-    Used by src/lab/chat.py to assemble the chat prompt.
+    Each block line: `name: description` followed by an indented `fields:` line
+    listing exact field names + Literal enum values. The field signatures are
+    introspected from the Pydantic models so they cannot drift from the schema.
     """
     by_cat: dict[str, list[str]] = {"entry": [], "exit": [], "sizing": [], "filter": []}
     for name, entry in CATALOG.items():
-        by_cat[entry["category"]].append(f"  {name}: {entry['description']}")
+        model = _NAME_TO_MODEL[name]
+        sig = _field_signature(model)
+        by_cat[entry["category"]].append(
+            f"  {name}: {entry['description']}\n    fields: type:Literal['{name}'], {sig}"
+        )
 
     out = [
         "AVAILABLE STRATEGY BLOCKS (catalog v1, 18 blocks):",
@@ -133,8 +186,13 @@ def get_llm_prompt_text() -> str:
         "Entry filters (ALL must pass; pick 0-5):",
         *by_cat["filter"],
         "",
-        "CRITICAL: only use these exact block names. Do NOT invent new blocks.",
-        "If user asks for something not covered, suggest the closest catalog block "
-        "or say so explicitly.",
+        "CRITICAL RULES:",
+        "  1. Only use the block names listed above. Do NOT invent new blocks.",
+        "  2. Use the EXACT field names + Literal values shown after 'fields:'.",
+        "     Do not paraphrase (e.g. for bollinger_break use direction='break_up',",
+        "     NOT 'above'; for macd use trigger='bullish_cross', NOT event=...).",
+        "  3. Every block MUST include 'type': '<block_name>' as its first key.",
+        "  4. If user asks for something not covered, suggest the closest catalog",
+        "     block or say so explicitly.",
     ]
     return "\n".join(out)

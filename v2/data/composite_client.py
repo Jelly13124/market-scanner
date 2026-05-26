@@ -262,32 +262,58 @@ class CompositeClient:
 # ----------------------------------------------------------------------
 
 
-def make_hybrid_client(*, include_ashare: bool = True) -> CompositeClient:
-    """Build the recommended hybrid for the $20 EODHD + Finnhub-free combo.
+def _has_eodhd_key() -> bool:
+    """True iff EODHD_API_KEY env is set and non-empty. Used by
+    make_hybrid_client to auto-degrade to a free tier when the user
+    hasn't paid for EODHD."""
+    import os
+    return bool(os.environ.get("EODHD_API_KEY", "").strip())
 
-    Routing:
-        prices    -> EODHD (daily OHLCV)
+
+def make_hybrid_client(
+    *,
+    include_ashare: bool = True,
+    tier: str | None = None,
+) -> CompositeClient:
+    """Build a CompositeClient. Tier auto-detects from EODHD_API_KEY env:
+
+    ``tier='paid'`` (EODHD key present) — recommended $20 hybrid:
+        prices    -> EODHD (daily OHLCV, multi-year)
         news      -> EODHD (articles + daily aggregate sentiment overlay)
+
+    ``tier='free'`` (no EODHD key) — degrades to Finnhub-only for prices/news:
+        prices    -> Finnhub (/stock/candle, ~12mo history on free tier)
+        news      -> Finnhub (/company-news, last 7-30d on free tier)
+
+    Both tiers share the rest of the routing:
         insider   -> Finnhub (/stock/insider-transactions)
-        earnings  -> yfinance (Ticker.get_earnings_dates — trailing 25 quarters
-                     with EPS estimate/actual/surprise. Finnhub free tier only
-                     returns the current quarter which made trailing z-scoring
-                     impossible in live and made backtest fire 0 times.)
-        calendar  -> Finnhub (/calendar/earnings — forward-looking, bulk; the
-                     one earnings endpoint Finnhub free tier serves well)
-        facts     -> Finnhub (/stock/profile2 → company facts + market cap)
-        metrics   -> Finnhub (/stock/metric snapshot)
-        analyst   -> yfinance (Ticker.analyst_price_targets + upgrades_downgrades)
-        quotes    -> Finnhub (/quote → live current + today's % change)
-        ashare    -> AShareClient (mootdx + Eastmoney + CLS — China A-share data).
-                     Used only when ticker matches ``is_ashare``; US tickers
-                     keep the routing above. Set ``include_ashare=False`` to
-                     disable (US-only deployments).
+        earnings  -> yfinance (Ticker.get_earnings_dates — trailing 25 quarters)
+        calendar  -> Finnhub (/calendar/earnings — forward-looking)
+        facts     -> Finnhub (/stock/profile2)
+        metrics   -> Finnhub (/stock/metric)
+        analyst   -> yfinance (Ticker.analyst_price_targets)
+        quotes    -> Finnhub (/quote)
+        ashare    -> AShareClient (mootdx + Eastmoney + CLS — when ticker is
+                     A-share). Set ``include_ashare=False`` to disable.
+
+    Pass ``tier='paid'`` or ``tier='free'`` to override the auto-detect.
     """
     from v2.data.yfinance_client import YFinanceClient
-    eodhd = EODHDClient()
+    if tier is None:
+        tier = "paid" if _has_eodhd_key() else "free"
+
     finnhub = FinnhubClient()
     yfin = YFinanceClient()
+
+    if tier == "paid":
+        eodhd = EODHDClient()
+        prices_backend: DataClient = eodhd
+        news_backend: DataClient = eodhd
+    else:
+        # Free tier: Finnhub does double duty for prices + news.
+        prices_backend = finnhub
+        news_backend = finnhub
+
     ashare: DataClient | None = None
     if include_ashare:
         try:
@@ -297,8 +323,8 @@ def make_hybrid_client(*, include_ashare: bool = True) -> CompositeClient:
             # Optional deps (mootdx etc.) not installed — degrade gracefully.
             ashare = None
     return CompositeClient(
-        prices_backend=eodhd,
-        news_backend=eodhd,
+        prices_backend=prices_backend,
+        news_backend=news_backend,
         insider_backend=finnhub,
         # Earnings history → yfinance (trailing quarters); forward calendar
         # → Finnhub (different endpoint, different shape). Both are reused
@@ -312,3 +338,10 @@ def make_hybrid_client(*, include_ashare: bool = True) -> CompositeClient:
         quotes_backend=finnhub,
         ashare_backend=ashare,
     )
+
+
+def get_active_tier() -> str:
+    """Return 'paid' or 'free' — the tier make_hybrid_client() will use
+    under the current env. Surfaced to the frontend via a /tier endpoint
+    so users can see what data source they're hitting."""
+    return "paid" if _has_eodhd_key() else "free"

@@ -155,6 +155,14 @@ def valuation_analyst_agent(state: AgentState, agent_id: str = "valuation_analys
 
         for v in method_values.values():
             v["gap"] = (v["value"] - market_cap) / market_cap if v["value"] > 0 else None
+            if v["gap"] is not None:
+                # Any single method claiming >200% over/undervaluation is
+                # almost certainly model error for the business type (e.g.
+                # owner_earnings = NI + D&A - capex - ΔWC inflates wildly on
+                # capex-intensive cos like CHTR, where D&A >> capex was the
+                # original Buffett assumption that doesn't hold). Capping
+                # prevents any one method from dictating the weighted gap.
+                v["gap"] = max(-2.0, min(2.0, v["gap"]))
 
         weighted_gap = sum(
             v["weight"] * v["gap"] for v in method_values.values() if v["gap"] is not None

@@ -11,10 +11,12 @@
 // parent FlowCanvas can serialize state without each node owning DB I/O.
 
 import { Checkbox } from '@/components/ui/checkbox';
+import { useSectionLabels } from '@/hooks/use-section-labels';
 import { cn } from '@/lib/utils';
 import { Handle, NodeProps, Position } from '@xyflow/react';
 import { X } from 'lucide-react';
 import { useContext } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import { FlowCanvasContext } from './flow-canvas-context';
 
@@ -36,6 +38,9 @@ const DEBATE_ROUND_CHOICES = [1, 2, 3, 4, 5] as const;
 export function SectionNode({ id, data, selected }: NodeProps) {
   const ctx = useContext(FlowCanvasContext);
   const d = data as unknown as SectionNodeData;
+  const { t } = useTranslation();
+  const sectionLabels = useSectionLabels();
+  const displayLabel = sectionLabels[d.name] ?? d.label;
 
   const onToggleEnabled = (next: boolean) => {
     ctx?.updateNodeData(id, { enabled: next });
@@ -54,9 +59,9 @@ export function SectionNode({ id, data, selected }: NodeProps) {
   return (
     <div
       className={cn(
-        'group relative rounded-md border bg-card text-card-foreground shadow-sm',
-        'min-w-[300px] max-w-[340px] px-4 py-3',
-        selected ? 'border-primary ring-1 ring-primary/30' : 'border-border',
+        'group relative rounded-lg border-2 bg-card text-card-foreground shadow-md',
+        'min-w-[380px] max-w-[440px] px-5 py-4',
+        selected ? 'border-primary ring-2 ring-primary/30' : 'border-border',
         !d.enabled && 'opacity-60',
       )}
     >
@@ -74,8 +79,8 @@ export function SectionNode({ id, data, selected }: NodeProps) {
           e.stopPropagation();
           ctx?.deleteNode(id);
         }}
-        aria-label={`Delete ${d.label}`}
-        title="Delete node"
+        aria-label={`${t('common.delete')} ${displayLabel}`}
+        title={t('analyze.section.deleteNode')}
         className={cn(
           'nodrag absolute -top-2 -right-2 z-10 size-5 rounded-full',
           'bg-destructive text-destructive-foreground border border-background',
@@ -87,29 +92,30 @@ export function SectionNode({ id, data, selected }: NodeProps) {
         <X className="size-3" strokeWidth={3} />
       </button>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <Checkbox
           checked={d.enabled}
           onCheckedChange={(v) => onToggleEnabled(!!v)}
-          aria-label={`Enable ${d.label}`}
+          aria-label={`${t('common.apply')} ${displayLabel}`}
+          className="size-5"
         />
-        <div className="text-base font-semibold truncate flex-1" title={d.label}>
-          {d.label}
+        <div className="text-lg font-semibold truncate flex-1" title={displayLabel}>
+          {displayLabel}
         </div>
       </div>
 
       {supports.length > 0 && (
-        <div className="mt-3">
+        <div className="mt-4">
           <label className="text-xs uppercase text-muted-foreground tracking-wide">
-            Persona
+            {t('analyze.section.persona')}
           </label>
           <select
             value={d.persona ?? '__objective__'}
             onChange={onPickPersona}
             disabled={!d.enabled}
-            className="nodrag w-full h-8 px-2 mt-1 text-sm border rounded bg-background"
+            className="nodrag w-full h-9 px-2 mt-1 text-sm border rounded bg-background"
           >
-            <option value="__objective__">objective</option>
+            <option value="__objective__">{t('analyze.section.objective_persona')}</option>
             {supports.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
@@ -118,7 +124,7 @@ export function SectionNode({ id, data, selected }: NodeProps) {
       )}
 
       {isDebate && (
-        <div className="mt-3 space-y-2 border-t pt-2">
+        <div className="mt-4 space-y-3 border-t pt-3">
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <Checkbox
               checked={debateUsePersonas}
@@ -126,13 +132,13 @@ export function SectionNode({ id, data, selected }: NodeProps) {
                 ctx?.updateNodeData(id, { usePersonas: !!v })
               }
               disabled={!d.enabled}
-              aria-label="Use investor personas"
+              aria-label={t('analyze.section.usePersonas')}
             />
-            <span>Use investor personas</span>
+            <span>{t('analyze.section.usePersonas')}</span>
           </label>
           <div className="flex flex-col gap-1">
             <label className="text-xs uppercase text-muted-foreground tracking-wide">
-              Rounds <span className="normal-case text-[10px]">(max 5, recommended 3)</span>
+              {t('analyze.section.rounds')} <span className="normal-case text-[10px]">{t('analyze.section.roundsHint')}</span>
             </label>
             <select
               value={debateRounds}
@@ -140,7 +146,7 @@ export function SectionNode({ id, data, selected }: NodeProps) {
                 ctx?.updateNodeData(id, { debateRounds: parseInt(e.target.value, 10) })
               }
               disabled={!d.enabled}
-              className="nodrag w-full h-8 px-2 text-sm border rounded bg-background"
+              className="nodrag w-full h-9 px-2 text-sm border rounded bg-background"
             >
               {DEBATE_ROUND_CHOICES.map((n) => (
                 <option key={n} value={n}>{n}</option>

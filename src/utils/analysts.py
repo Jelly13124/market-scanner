@@ -20,6 +20,9 @@ from src.agents.mohnish_pabrai import mohnish_pabrai_agent
 from src.agents.nassim_taleb import nassim_taleb_agent
 from src.agents.news_sentiment import news_sentiment_agent
 from src.agents.growth_agent import growth_analyst_agent
+from src.agents.scanner_signal import scanner_signal_agent
+from src.agents.macro_agent import macro_agent
+from src.agents.sector_agent import sector_agent
 
 # Define analyst configuration - single source of truth
 ANALYST_CONFIG = {
@@ -174,6 +177,30 @@ ANALYST_CONFIG = {
         "agent_func": valuation_analyst_agent,
         "type": "analyst",
         "order": 18,
+    },
+    "scanner_signal": {
+        "display_name": "Scanner Signal",
+        "description": "v2 Scanner Detector Bridge",
+        "investing_style": "Translates the v2 quantitative scanner's daily detector context (triggered detectors, severity, direction, components) into a standard analyst signal. Signal/confidence are rule-based from the scanner output; reasoning is LLM-generated.",
+        "agent_func": scanner_signal_agent,
+        "type": "analyst",
+        "order": 19,
+    },
+    "macro_signal": {
+        "display_name": "Macro Signal",
+        "description": "Global Regime Specialist",
+        "investing_style": "Reads the SPY 20-day trend + VIX level into a regime classification (up/down/chop × low/normal/high vol) and emits a portfolio-level signal — same signal value for every ticker in the run, because macro context is portfolio-wide. Rule-based; no LLM call.",
+        "agent_func": macro_agent,
+        "type": "analyst",
+        "order": 20,
+    },
+    "sector_signal": {
+        "display_name": "Sector Signal",
+        "description": "GICS Sector Relative-Strength Specialist",
+        "investing_style": "Looks up each ticker's GICS sector, maps to the SPDR sector ETF (XLK/XLV/etc.), and computes 20d relative strength (ticker return − sector ETF return). Bullish/bearish when |RS| ≥ 3pp. Rule-based; no LLM call.",
+        "agent_func": sector_agent,
+        "type": "analyst",
+        "order": 21,
     },
 }
 

@@ -10,14 +10,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
+import { useSectionLabels } from '@/hooks/use-section-labels';
 import { cn } from '@/lib/utils';
 import {
   REQUIRED_SECTIONS,
-  SECTION_LABELS,
   SECTION_ORDER,
 } from '@/types/analyze';
 import { Loader2, Play, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { FlowList, type FlowListProps } from './flow-list';
@@ -55,6 +56,8 @@ export function AnalyzeToolbar({
   const [elapsed, setElapsed] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const { t } = useTranslation();
+  const sectionLabels = useSectionLabels();
 
   // Live elapsed counter — restarts when `running` flips true.
   useEffect(() => {
@@ -85,24 +88,24 @@ export function AnalyzeToolbar({
 
       <Popover open={addOpen} onOpenChange={setAddOpen}>
         <PopoverTrigger asChild>
-          <Button size="sm" variant="outline" className="h-7" title="Add a node to the canvas">
+          <Button size="sm" variant="outline" className="h-7" title={t('analyze.toolbar.addSection')}>
             <Plus className="size-3 mr-1" />
-            Add
+            {t('common.add')}
           </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-64 p-0 max-h-[60vh] overflow-auto">
           {/* Sections */}
           <div className="px-2 pt-2 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-            Sections
+            {t('analyze.palette.title')}
           </div>
           {allSectionsPresent ? (
             <div className="px-3 py-2 text-xs text-muted-foreground italic">
-              All sections already on canvas.
+              {t('analyze.palette.alreadyOnCanvas')}
             </div>
           ) : (
             <div className="pb-1">
               {missingSections.map((name) => {
-                const label = SECTION_LABELS[name] ?? name;
+                const label = sectionLabels[name] ?? name;
                 const isRequired = REQUIRED_SECTIONS.includes(name);
                 return (
                   <button
@@ -120,7 +123,7 @@ export function AnalyzeToolbar({
                     <span className="truncate" title={label}>{label}</span>
                     {isRequired && (
                       <span className="text-[10px] uppercase text-muted-foreground shrink-0">
-                        required
+                        {t('common.confirm')}
                       </span>
                     )}
                   </button>
@@ -145,10 +148,10 @@ export function AnalyzeToolbar({
               'hover:bg-accent/60 transition-colors',
               hasInputNode && 'opacity-50 cursor-not-allowed hover:bg-transparent',
             )}
-            title={hasInputNode ? 'Input node already on canvas' : 'Add Input node'}
+            title={hasInputNode ? t('analyze.palette.alreadyOnCanvas') : t('analyze.toolbar.addInput')}
           >
             <Plus className="size-3" />
-            <span>Add Input node</span>
+            <span>{t('analyze.toolbar.addInput')}</span>
           </button>
 
           {/* Divider */}
@@ -164,7 +167,7 @@ export function AnalyzeToolbar({
               }
               onResetToDefault();
               setAddOpen(false);
-              toast.success('Canvas reset to default template');
+              toast.success(t('analyze.toasts.canvasReset'));
             }}
             className={cn(
               'w-full flex items-center gap-2 px-3 py-1.5 text-left text-sm',
@@ -175,8 +178,8 @@ export function AnalyzeToolbar({
             <RotateCcw className="size-3" />
             <span>
               {confirmReset
-                ? 'Click again to confirm reset'
-                : 'Reset to default template'}
+                ? t('common.confirm')
+                : t('analyze.toolbar.resetToDefault')}
             </span>
           </button>
         </PopoverContent>
@@ -185,7 +188,7 @@ export function AnalyzeToolbar({
       <div className="flex-1" />
       {running && (
         <span className="text-xs text-muted-foreground tabular-nums px-2">
-          elapsed: {formatElapsed(elapsed)}
+          {t('analyze.toolbar.elapsed')}: {formatElapsed(elapsed)}
         </span>
       )}
       <Button
@@ -193,17 +196,17 @@ export function AnalyzeToolbar({
         disabled={running || !canRun}
         size="sm"
         className="h-7"
-        title={canRun ? 'Run SOP analysis' : 'Add an Input node first'}
+        title={canRun ? t('analyze.toolbar.run') : t('analyze.errors.noInput')}
       >
         {running ? (
           <>
             <Loader2 className="size-3 mr-1 animate-spin" />
-            Running… ({sectionCount} sections)
+            {t('analyze.toolbar.running')}… ({sectionCount})
           </>
         ) : (
           <>
             <Play className="size-3 mr-1" />
-            Run ({sectionCount})
+            {t('common.run')} ({sectionCount})
           </>
         )}
       </Button>

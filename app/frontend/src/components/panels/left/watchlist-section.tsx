@@ -31,6 +31,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const DEBOUNCE_MS = 300;
 
@@ -42,6 +43,7 @@ export function WatchlistSection() {
   const [deleting, setDeleting] = useState<UserWatchlist | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { success, error } = useToastManager();
+  const { t } = useTranslation();
 
   const refresh = useCallback(async () => {
     try {
@@ -85,14 +87,14 @@ export function WatchlistSection() {
       <div className="p-2 flex justify-between items-center mt-4">
         <span className="text-primary text-sm font-medium ml-4 flex items-center gap-1.5">
           <Star size={12} className="text-yellow-500" />
-          Watchlists
+          {t('sidebar.watchlists')}
         </span>
         <Button
           variant="ghost"
           size="icon"
           onClick={() => setCreateOpen(true)}
           className="h-6 w-6 text-primary hover-bg"
-          title="Create a new watchlist"
+          title={t('sidebar.newWatchlist')}
         >
           <Plus size={14} />
         </Button>
@@ -134,7 +136,7 @@ export function WatchlistSection() {
                     size="icon"
                     className="h-5 w-5 text-primary hover-bg"
                     onClick={() => setRenaming(wl)}
-                    title="Rename"
+                    title={t('common.rename')}
                   >
                     <Pencil size={11} />
                   </Button>
@@ -143,7 +145,7 @@ export function WatchlistSection() {
                     size="icon"
                     className="h-5 w-5 text-red-500 hover-bg"
                     onClick={() => setDeleting(wl)}
-                    title="Delete"
+                    title={t('common.delete')}
                   >
                     <Trash2 size={11} />
                   </Button>
@@ -232,15 +234,14 @@ export function WatchlistSection() {
         <Dialog open onOpenChange={(open) => !open && setDeleting(null)}>
           <DialogContent className="sm:max-w-[400px]">
             <DialogHeader>
-              <DialogTitle>Delete "{deleting.name}"?</DialogTitle>
+              <DialogTitle>{t('sidebar.deleteWatchlist', { name: deleting.name })}</DialogTitle>
               <DialogDescription>
-                This watchlist ({deleting.tickers.length} ticker
-                {deleting.tickers.length === 1 ? '' : 's'}) will be removed.
+                {t('sidebar.tickerCount', { count: deleting.tickers.length })}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeleting(null)}>
-                Cancel
+                {t('common.cancel')}
               </Button>
               <Button
                 variant="destructive"
@@ -258,7 +259,7 @@ export function WatchlistSection() {
                   }
                 }}
               >
-                Delete
+                {t('common.delete')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -291,6 +292,7 @@ function AddTickerAutocomplete({
   const [isSearching, setIsSearching] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const { t } = useTranslation();
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -350,7 +352,7 @@ function AddTickerAutocomplete({
           setShowDropdown(true);
         }}
         onFocus={() => setShowDropdown(true)}
-        placeholder="+ Add ticker (e.g. NVDA)"
+        placeholder={`+ ${t('sidebar.addTicker')}`}
         className="h-7 text-xs"
       />
       {showDropdown && (
@@ -402,6 +404,7 @@ function WatchlistCreateDialog({
   onCreate,
 }: WatchlistCreateDialogProps) {
   const [name, setName] = useState('');
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (isOpen) setName('');
@@ -416,7 +419,7 @@ function WatchlistCreateDialog({
     <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>New Watchlist</DialogTitle>
+          <DialogTitle>{t('sidebar.newWatchlist')}</DialogTitle>
           <DialogDescription>
             Give the list a name. You can add tickers next.
           </DialogDescription>
@@ -432,7 +435,7 @@ function WatchlistCreateDialog({
             onKeyDown={(e) => {
               if (e.key === 'Enter' && name.trim()) submit();
             }}
-            placeholder="My Mega-caps"
+            placeholder={t('sidebarDialogs.watchlistNamePlaceholder')}
             autoFocus
           />
         </div>
@@ -466,6 +469,7 @@ function WatchlistRenameDialog({
 }: WatchlistRenameDialogProps) {
   const [name, setName] = useState(watchlist.name);
   const [isLoading, setIsLoading] = useState(false);
+  const { t } = useTranslation();
 
   const submit = async () => {
     const trimmed = name.trim();
@@ -485,7 +489,7 @@ function WatchlistRenameDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Rename "{watchlist.name}"</DialogTitle>
+          <DialogTitle>{t('common.rename')} "{watchlist.name}"</DialogTitle>
         </DialogHeader>
         <div className="grid gap-2 py-2">
           <Input
@@ -499,10 +503,10 @@ function WatchlistRenameDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button onClick={submit} disabled={isLoading || !name.trim()}>
-            {isLoading ? 'Saving...' : 'Save'}
+            {isLoading ? t('lab.specJson.saving') : t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

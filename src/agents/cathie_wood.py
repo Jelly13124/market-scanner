@@ -11,7 +11,10 @@ from src.utils.api_key import get_api_key_from_state
 
 
 class CathieWoodSignal(BaseModel):
-    signal: Literal["bullish", "bearish", "neutral"]
+    # 'abstain' = no plausible disruptive-innovation thesis applicable
+    # (traditional mature business / no R&D intensity / no exponential
+    # growth pattern). PM aggregator skips abstain votes.
+    signal: Literal["bullish", "bearish", "neutral", "abstain"]
     confidence: float
     reasoning: str
 
@@ -382,7 +385,17 @@ def generate_cathie_wood_output(
             5. Accept higher volatility in pursuit of high returns.
             6. Evaluate management's vision and ability to invest in R&D.
 
-            Rules:
+            REFUSE TO OPINE (signal=abstain, confidence=0) when:
+            - The business is a mature traditional industry (REITs, integrated
+              oil, regulated utilities, money-center banks, packaged food, etc.)
+              with no disruptive-innovation angle visible in the data.
+            - R&D intensity is unavailable or clearly negligible AND no other
+              transformation pathway is documented.
+            - There is no evidence of exponential growth or platform dynamics.
+            Abstaining on a mature value play is more honest than forcing a
+            fake disruptive-innovation thesis.
+
+            Rules (when NOT abstaining):
             - Identify disruptive or breakthrough technology.
             - Evaluate strong potential for multi-year revenue growth.
             - Check if the company can scale effectively in a large market.
@@ -410,8 +423,8 @@ def generate_cathie_wood_output(
 
             Return the trading signal in this JSON format:
             {{
-              "signal": "bullish/bearish/neutral",
-              "confidence": float (0-100),
+              "signal": "bullish/bearish/neutral/abstain",
+              "confidence": float (0-100, use 0 when abstain),
               "reasoning": "string"
             }}
             """,
@@ -419,7 +432,10 @@ def generate_cathie_wood_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({
+        "analysis_data": json.dumps(analysis_data, indent=2),
+        "ticker": ticker,
+    })
 
     def create_default_cathie_wood_signal():
         return CathieWoodSignal(signal="neutral", confidence=0.0, reasoning="Error in analysis, defaulting to neutral")

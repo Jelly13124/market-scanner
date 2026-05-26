@@ -8,6 +8,7 @@ import { analyzeFlowService } from '@/services/analyze-flow-service';
 import type { AnalyzeFlowResponse } from '@/types/analyze-flow';
 import { FileX, FolderOpen, Plus, Save, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 export interface FlowListProps {
@@ -33,6 +34,7 @@ export function FlowList({
   const [selectedId, setSelectedId] = useState<number | ''>('');
   const [savingName, setSavingName] = useState<string>('');
   const [showSave, setShowSave] = useState(false);
+  const { t } = useTranslation();
 
   const refresh = useCallback(async () => {
     try {
@@ -134,9 +136,9 @@ export function FlowList({
           setSelectedId(e.target.value === '' ? '' : Number(e.target.value))
         }
         className="h-7 text-xs border rounded bg-background px-1 min-w-[180px]"
-        title="Saved AnalyzeFlow templates"
+        title={t('analyze.flowList.savedTemplates')}
       >
-        <option value="">— Saved templates —</option>
+        <option value="">— {t('analyze.flowList.savedFlows')} —</option>
         {flows.map((f) => (
           <option key={f.id} value={f.id}>
             {f.name} ({f.included_sections.length})
@@ -147,7 +149,7 @@ export function FlowList({
         variant="outline" size="sm" className="h-7 px-2"
         disabled={selectedId === ''}
         onClick={handleLoad}
-        title="Load selected"
+        title={t('analyze.flowList.loadSelected')}
       >
         <FolderOpen className="size-3" />
       </Button>
@@ -155,7 +157,7 @@ export function FlowList({
         variant="outline" size="sm" className="h-7 px-2"
         disabled={selectedId === ''}
         onClick={handleDelete}
-        title="Delete selected"
+        title={t('analyze.flowList.deleteSelected')}
       >
         <Trash2 className="size-3" />
       </Button>
@@ -163,27 +165,27 @@ export function FlowList({
         <Button
           variant="outline" size="sm" className="h-7 px-2"
           onClick={handleUpdateCurrent}
-          title={`Update saved flow #${loadedFlowId}`}
+          title={`${t('common.save')} #${loadedFlowId}`}
         >
           <Save className="size-3 mr-1" />
-          Save
+          {t('common.save')}
         </Button>
       )}
       <Button
         variant="outline" size="sm" className="h-7 px-2"
         onClick={() => setShowSave((s) => !s)}
-        title="Save current canvas as new template"
+        title={t('analyze.flowList.saveAsTemplate')}
       >
         <Save className="size-3 mr-1" />
-        Save as…
+        {t('analyze.toolbar.saveAs')}
       </Button>
       <Button
         variant="outline" size="sm" className="h-7 px-2"
         onClick={handleNewBlank}
-        title="Reset to default template"
+        title={t('analyze.flowList.resetToDefault')}
       >
         <FileX className="size-3 mr-1" />
-        New
+        {t('common.new')}
       </Button>
 
       {showSave && (
@@ -191,14 +193,14 @@ export function FlowList({
           <Input
             value={savingName}
             onChange={(e) => setSavingName(e.target.value)}
-            placeholder="Template name"
+            placeholder={t('analyze.flowList.templateName')}
             className="h-7 text-xs w-48"
             onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNew(); }}
             autoFocus
           />
           <Button size="sm" className="h-7" onClick={handleSaveNew}>
             <Plus className="size-3 mr-1" />
-            Create
+            {t('common.create')}
           </Button>
         </div>
       )}

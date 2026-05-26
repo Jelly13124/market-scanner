@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { cn } from '@/lib/utils';
 import { AlertTriangle, Brain, CheckCircle, Download, Play, RefreshCw, Server, Square, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface OllamaStatus {
   installed: boolean;
@@ -39,6 +40,7 @@ export function OllamaSettings() {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useTranslation();
   const [downloadProgress, setDownloadProgress] = useState<Record<string, DownloadProgress>>({});
   const [activeDownloads, setActiveDownloads] = useState<Set<string>>(new Set());
   const [pollIntervals, setPollIntervals] = useState<Set<NodeJS.Timeout>>(new Set());
@@ -613,7 +615,7 @@ export function OllamaSettings() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-lg font-semibold text-primary mb-2">Ollama</h3>
+          <h3 className="text-lg font-semibold text-primary mb-2">{t('settings.ollama.title')}</h3>
           <p className="text-sm text-muted-foreground dark:text-muted-foreground">
             Manage local AI models with Ollama for enhanced privacy and performance.
           </p>
@@ -651,7 +653,7 @@ export function OllamaSettings() {
           <div className="flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-muted-foreground mt-0.5" />
             <div>
-              <h4 className="font-medium text-muted-foreground">Ollama Not Installed</h4>
+              <h4 className="font-medium text-muted-foreground">{t('settings.ollama.notInstalled')}</h4>
               <p className="text-sm text-muted-foreground mt-1">
                 Install Ollama to use local AI models. Visit{' '}
                 <a 
@@ -672,7 +674,7 @@ export function OllamaSettings() {
       {ollamaStatus?.installed && !ollamaStatus.running && (
         <div className="flex items-center justify-between bg-muted rounded-lg p-4">
           <div>
-            <h4 className="font-medium text-primary">Ollama Server</h4>
+            <h4 className="font-medium text-primary">{t('settings.ollama.server')}</h4>
             <p className="text-sm text-primary">
               Ollama is installed but not currently running.
             </p>
@@ -715,7 +717,7 @@ export function OllamaSettings() {
       {ollamaStatus?.running && (
         <div className="space-y-2">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-medium text-primary">Available Models</h3>
+            <h3 className="font-medium text-primary">{t('settings.availableModels')}</h3>
             <span className="text-xs text-muted-foreground">
               {ollamaStatus.available_models.length} downloaded
             </span>
@@ -839,7 +841,7 @@ export function OllamaSettings() {
           ) : (
             <div className="text-center py-8 text-muted-foreground">
               <Brain className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">No models available</p>
+              <p className="text-sm">{t('settings.noModelsAvailable')}</p>
             </div>
           )}
         </div>

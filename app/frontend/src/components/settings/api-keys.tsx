@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { apiKeysService } from '@/services/api-keys-api';
 import { Eye, EyeOff, Key, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ApiKey {
   key: string;
@@ -87,6 +88,7 @@ export function ApiKeysSettings() {
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { t } = useTranslation();
 
   // Load API keys from backend on component mount
   useEffect(() => {
@@ -231,7 +233,7 @@ export function ApiKeysSettings() {
     return (
       <div className="space-y-6">
         <div>
-          <h2 className="text-xl font-semibold text-primary mb-2">API Keys</h2>
+          <h2 className="text-xl font-semibold text-primary mb-2">{t('settings.apiKeysHeader')}</h2>
           <p className="text-sm text-muted-foreground">
             Loading API keys...
           </p>
@@ -250,7 +252,7 @@ export function ApiKeysSettings() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-primary mb-2">API Keys</h2>
+        <h2 className="text-xl font-semibold text-primary mb-2">{t('settings.apiKeysHeader')}</h2>
         <p className="text-sm text-muted-foreground">
           Configure API endpoints and authentication credentials for financial data and language models.
           Changes are automatically saved.
@@ -305,7 +307,7 @@ export function ApiKeysSettings() {
           <div className="flex items-start gap-3">
             <Key className="h-5 w-5 text-amber-500 mt-0.5 flex-shrink-0" />
             <div className="space-y-1">
-              <h4 className="text-sm font-medium text-amber-500">Security Note</h4>
+              <h4 className="text-sm font-medium text-amber-500">{t('settings.securityNote')}</h4>
               <p className="text-xs text-muted-foreground">
                 API keys are stored securely on your local system and changes are automatically saved. 
                 Keep your API keys secure and don't share them with others.

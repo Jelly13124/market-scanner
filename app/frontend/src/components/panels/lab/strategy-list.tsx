@@ -11,6 +11,7 @@ import { strategyService } from '@/services/strategy-service';
 import type { StrategyResponse } from '@/types/strategy';
 import { Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 interface Props {
@@ -23,6 +24,7 @@ export function StrategyList({ selectedId, onSelect }: Props) {
   const [, setLoading] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
+  const { t } = useTranslation();
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -47,7 +49,7 @@ export function StrategyList({ selectedId, onSelect }: Props) {
   }
 
   async function handleDelete(id: number, name: string) {
-    if (!confirm(`Delete strategy "${name}"? This also deletes its chat + backtests.`)) return;
+    if (!confirm(t('lab.deleteConfirm', { name }))) return;
     try {
       await strategyService.delete(id);
       if (selectedId === id) onSelect(null);
@@ -56,17 +58,17 @@ export function StrategyList({ selectedId, onSelect }: Props) {
   }
 
   return (
-    <div className="border-r h-full flex flex-col">
+    <div className="border-r h-full min-h-0 min-w-0 flex flex-col">
       <div className="px-3 py-2 border-b flex items-center justify-between">
-        <span className="text-xs font-medium uppercase">Strategies</span>
+        <span className="text-xs font-medium uppercase">{t('lab.strategies')}</span>
         <Button variant="ghost" size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="size-3" />
         </Button>
       </div>
-      <div className="flex-1 overflow-auto divide-y">
+      <div className="flex-1 min-h-0 overflow-y-auto divide-y">
         {items.length === 0 ? (
           <div className="p-3 text-xs text-muted-foreground">
-            No strategies. Click + to create one.
+            {t('lab.noStrategies')}
           </div>
         ) : (
           items.map((s) => (
@@ -94,15 +96,15 @@ export function StrategyList({ selectedId, onSelect }: Props) {
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>New strategy</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t('lab.newStrategy')}</DialogTitle></DialogHeader>
           <Input
             value={newName} onChange={(e) => setNewName(e.target.value)}
-            placeholder="Strategy name"
+            placeholder={t('lab.strategyName')}
             onKeyDown={(e) => { if (e.key === 'Enter') handleCreate(); }}
           />
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate}>Create</Button>
+            <Button variant="ghost" onClick={() => setCreateOpen(false)}>{t('common.cancel')}</Button>
+            <Button onClick={handleCreate}>{t('common.create')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -57,6 +57,11 @@ node_modules
 outputs/
 /scratchpad/
 
+# Local backtest CSV outputs at repo root (not the universe CSVs under
+# v2/scanner/universes/ which we DO track)
+/backtest_*.csv
+/*.csv
+
 # Database files (users will have their own local databases)
 *.db
 *.db-journal

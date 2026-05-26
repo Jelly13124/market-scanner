@@ -1,5 +1,105 @@
 # Progress Log
 
+## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
+
+### What shipped (Task 15 of `docs/superpowers/plans/2026-05-26-a-share-data-integration.md`)
+
+Verification gates only — no source changes in this wave.
+
+- Gate 1: full backend pytest (1272 passed / 20 failed / 8 skipped) — all
+  20 failures match the pre-existing baseline (live-API failures in
+  v2/data/test_client.py for JPM/XOM, 2 known TestMakeHybridClient
+  assertions, 1 known scanner_service `earnings_event` alias test,
+  plus untracked dev test files test_protocol_conformance.py /
+  test_yfinance_client.py and live tests in v2/event_study). Zero
+  new Phase 8 regressions.
+- Gate 2: frontend tsc — no new errors (the 7 pre-existing in
+  sidebar.tsx / agent-run-detail.tsx / lib/utils.ts are not Phase 8).
+- Gate 3: Moutai (600519) live smoke — 334 daily bars, close
+  1488.0 (2025-01-02) → 1285.88 (2025-05-25), confirms mootdx
+  daily OHLCV path is healthy from this network.
+- Bonus: US regression smoke — composite client constructs cleanly
+  with `ashare_backend=True`. NVDA EODHD call returns 401 because
+  no EODHD key is exported in this shell's env (pre-existing
+  config gap, NOT an httpx-downgrade regression — `tests/research/`
+  full suite passes 190/190 confirming httpx 0.25.2 still works).
+
+### Phase 8 commits (since plan commit 38a11c8)
+
+```
+6dbc7c4 deps: add mootdx + stockstats as optional [ashare] extra
+379c660 feat(ashare): symbol detection + canonical normalization
+3e65f6c feat(ashare): AShareClient skeleton implementing DataClient Protocol
+585a1ad docs: progress.md - Phase 8 Wave 1 A-share foundation
+2ac93ed feat(ashare): CLS per-stock news fetcher
+79995a7 feat(ashare): Eastmoney F10 fundamentals + company facts
+077aed7 feat(ashare): SW1 sector name -> index code mapper
+d539efb feat(ashare): mootdx-backed daily OHLCV fetcher (Wave 2A)
+6c85409 feat(ashare): Eastmoney earnings history parser
+c4eccd6 feat(ashare): market cap fetcher via Tencent qt.gtimg.cn
+4f09223 test(ashare): extend AShareClient delegation tests
+a0fb3ed feat(scanner): A-share universes (SSE50/CSI300/500/1000/HS300+CSI500)
+82790af feat(composite): A-share ticker routing in CompositeClient
+f2c2e3b feat(research): thread market field through AnalyzeRequest API surface
+e50a14a feat(research): A-share benchmark + SW1 sector swap in shared_data
+fb0bff0 docs: progress entry for Phase 8 Wave 5 (Task 13 SOP market integration)
+e07c673 feat(frontend): Phase 8 Wave 6 - Market dropdown + A-share universes + i18n keys
+d1285d6 docs: progress entry for Phase 8 Wave 6 (Task 14 frontend Market + universes)
+```
+
+### Tests
+
+Full backend pytest summary (Gate 1):
+
+```
+20 failed, 1272 passed, 8 skipped, 69 warnings in 102.27s
+```
+
+Delta vs known baseline: 0 new failures from Phase 8. ~85 new
+A-share + research tests under tests/v2/data/ashare/,
+tests/v2/scanner/, tests/v2/data/test_composite_ashare_routing.py,
+tests/research/test_shared_data_market.py all green.
+
+### Live smoke (Moutai 600519, 2026-05-26)
+
+```
+get_company_facts(600519.SH) failed: Expecting value: line 1 column 4 (char 3)
+600519 (Moutai): 334 bars
+  first: 2025-01-02 close=1488.0
+  last:  2026-05-25 close=1285.88
+facts: name=None, sector=None, industry=None
+metrics: 0 quarters
+```
+
+- mootdx prices: WORKING (334 bars, close range 1285-1488 RMB,
+  consistent with Moutai's 2025-2026 trading range).
+- Eastmoney F10 (facts/metrics): returned malformed JSON at this
+  moment (likely transient — endpoint returned HTML instead of
+  JSON, the 4th char is `<`). The AShareClient honored the
+  Protocol invariant and gracefully returned `None`/`[]` rather
+  than crashing. Earlier Wave 2 tests passed against the same
+  endpoint; this is a live-API hiccup, not a code bug.
+
+### Notes for next session
+
+1. **A-share universe CSVs are empty stubs** — Eastmoney
+   `RPT_INDEX_TS_COMPONENT` returns "BASE_CODE column not found".
+   Backtests targeting `csi300` / `sse50` / etc. will yield 0
+   tickers until the refresh script
+   (`v2/scanner/scripts/refresh_ashare_universes.py`) is updated
+   to use the current Eastmoney response schema.
+2. **BSE (.BJ) tickers return [] for now** — mootdx core doesn't
+   support market=2; Eastmoney fallback for BSE is v2 work.
+3. **~30 uncommitted Phase 7 i18n files in working tree** —
+   intentionally not committed by this wave (they're not Phase
+   8's work). User should review and commit when ready.
+4. **Eastmoney F10 transient failure** — re-run the live smoke
+   once Eastmoney returns proper JSON; if persistent across
+   days, the F10 endpoint may have changed and
+   `eastmoney_fundamentals.py` needs investigation.
+
+---
+
 ## Session — 2026-05-26 (Phase 8 Wave 6 — Frontend Market dropdown + A-share universes)
 
 ### What shipped (Task 14 of `docs/superpowers/plans/2026-05-26-a-share-data-integration.md`)

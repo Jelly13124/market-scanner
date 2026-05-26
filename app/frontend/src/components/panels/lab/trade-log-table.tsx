@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface Trade {
   ticker: string;
@@ -21,6 +22,7 @@ interface Props {
 
 export function TradeLogTable({ trades }: Props) {
   const [open, setOpen] = useState(false);
+  const { t } = useTranslation();
 
   return (
     <div className="border rounded">
@@ -35,20 +37,20 @@ export function TradeLogTable({ trades }: Props) {
         ) : (
           <ChevronRight className="size-3 mr-1" />
         )}
-        Trade log ({trades.length} trades)
+        {t('lab.backtest.tradeLog', { count: trades.length })}
       </Button>
       {open && (
         <div className="max-h-64 overflow-auto border-t">
           <table className="w-full text-xs">
             <thead className="bg-muted/30">
               <tr>
-                <th className="px-2 py-1 text-left">Ticker</th>
-                <th className="px-2 py-1 text-left">Entry</th>
-                <th className="px-2 py-1 text-left">Exit</th>
-                <th className="px-2 py-1 text-right">$ in</th>
-                <th className="px-2 py-1 text-right">$ out</th>
-                <th className="px-2 py-1 text-right">PnL</th>
-                <th className="px-2 py-1 text-left">Reason</th>
+                <th className="px-2 py-1 text-left">{t('lab.backtest.ticker')}</th>
+                <th className="px-2 py-1 text-left">{t('lab.backtest.entry')}</th>
+                <th className="px-2 py-1 text-left">{t('lab.backtest.exit')}</th>
+                <th className="px-2 py-1 text-right">{t('lab.backtest.in')}</th>
+                <th className="px-2 py-1 text-right">{t('lab.backtest.out')}</th>
+                <th className="px-2 py-1 text-right">{t('lab.backtest.pnl')}</th>
+                <th className="px-2 py-1 text-left">{t('lab.backtest.reason')}</th>
               </tr>
             </thead>
             <tbody>

@@ -37,9 +37,12 @@ import {
 import { SECTION_LABELS, SECTION_ORDER, SECTION_PERSONAS } from '@/types/analyze';
 import type { AnalyzeFlowResponse } from '@/types/analyze-flow';
 
-import { getDefaultTemplate, INPUT_NODE_ID_CONST } from './default-template';
+import {
+  getDefaultTemplate, INPUT_NODE_ID_CONST, OUTPUT_BACKEND_SECTIONS,
+} from './default-template';
 import { FlowCanvasContext, type FlowCanvasContextValue } from './flow-canvas-context';
 import { DEFAULT_INPUT_NODE_DATA, InputNode, type InputNodeData } from './input-node';
+import { OutputNode, type OutputNodeData } from './output-node';
 import { SectionNode, type SectionNodeData } from './section-node';
 
 /** Effective config the orchestrator needs (mirror of AnalyzeFlowCreate
@@ -71,7 +74,7 @@ export interface FlowCanvasHandle {
   hasInputNode: () => boolean;
 }
 
-const nodeTypes = { section: SectionNode, input: InputNode };
+const nodeTypes = { section: SectionNode, input: InputNode, output: OutputNode };
 
 function _sectionNodeId(sectionName: string): string {
   return `section:${sectionName}`;
@@ -223,22 +226,31 @@ const InnerCanvas = forwardRef<FlowCanvasHandle, InnerCanvasProps>(
           onChange?.();
         },
         getConfig: () => {
-          const included: string[] = [];
+          const included = new Set<string>();
           const overrides: Record<string, string> = {};
           for (const n of nodes) {
+            // The Output node is a visual aggregator — when enabled it
+            // expands to the 4 backend SECTION_ORDER entries it represents.
+            if (n.type === 'output') {
+              const od = n.data as unknown as OutputNodeData;
+              if (od.enabled !== false) {
+                for (const s of OUTPUT_BACKEND_SECTIONS) included.add(s);
+              }
+              continue;
+            }
             if (n.type !== 'section') continue;
             const d = n.data as unknown as SectionNodeData;
             if (!d.enabled) continue;
-            // Only canonical SECTION_ORDER names go to the backend;
-            // visual-only nodes (manager_check) are silently skipped.
+            // Only canonical SECTION_ORDER names go to the backend; any
+            // visual-only nodes are silently skipped.
             if (!SECTION_ORDER.includes(d.name)) continue;
-            included.push(d.name);
+            included.add(d.name);
             if (d.persona) overrides[d.name] = d.persona;
           }
-          included.sort(
+          const sortedIncluded = Array.from(included).sort(
             (a, b) => SECTION_ORDER.indexOf(a) - SECTION_ORDER.indexOf(b),
           );
-          return { included_sections: included, persona_overrides: overrides };
+          return { included_sections: sortedIncluded, persona_overrides: overrides };
         },
         getInputData: () => {
           const input = nodes.find((n) => n.id === INPUT_NODE_ID_CONST);
@@ -271,6 +283,11 @@ const InnerCanvas = forwardRef<FlowCanvasHandle, InnerCanvasProps>(
         getPresentSections: () => {
           const present = new Set<string>();
           for (const n of nodes) {
+            // Output node is present if its 4 backend sections are present.
+            if (n.type === 'output') {
+              for (const s of OUTPUT_BACKEND_SECTIONS) present.add(s);
+              continue;
+            }
             if (n.type !== 'section') continue;
             const d = n.data as unknown as SectionNodeData;
             present.add(d.name);

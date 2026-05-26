@@ -28,6 +28,15 @@ def test_oos_loses_money_rejects():
     assert "out-of-sample" in v.text.lower() or "oos" in v.text.lower()
 
 
+def test_is_loses_money_rejects():
+    # User-reported case: IS -3.3% CAGR, OOS +2.0%. Previously mis-labeled
+    # as 'overfit' because degradation was clamped to 0.0 and fell into the
+    # degradation < 0.4 branch. No in-sample edge => reject.
+    v = make_verdict(_m(cagr=-0.033), _m(cagr=0.020), benchmark_cagr=0.10)
+    assert v.label == "reject"
+    assert "in-sample" in v.text.lower()
+
+
 def test_heavy_degradation_overfit():
     # IS +20% CAGR, OOS +5% → ratio 0.25 < 0.4
     v = make_verdict(_m(cagr=0.20), _m(cagr=0.05), benchmark_cagr=0.10)

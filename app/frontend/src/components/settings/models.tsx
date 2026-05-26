@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils';
 import { Cloud, Server } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CloudModels } from './models/cloud';
 import { OllamaSettings } from './models/ollama';
 
@@ -18,6 +19,7 @@ interface ModelSection {
 
 export function Models({ className }: ModelsProps) {
   const [selectedSection, setSelectedSection] = useState('cloud');
+  const { t } = useTranslation();
 
   const modelSections: ModelSection[] = [
     {
@@ -47,7 +49,7 @@ export function Models({ className }: ModelsProps) {
   return (
     <div className={cn("space-y-6", className)}>
       <div>
-        <h2 className="text-xl font-semibold text-primary mb-2">Models</h2>
+        <h2 className="text-xl font-semibold text-primary mb-2">{t('settings.modelsHeader')}</h2>
         <p className="text-sm text-muted-foreground">
           Manage your AI models from local and cloud providers.
         </p>

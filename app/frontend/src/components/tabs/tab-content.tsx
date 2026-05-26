@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { TabService } from '@/services/tab-service';
 import { FileText, FolderOpen } from 'lucide-react';
 import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface TabContentProps {
   className?: string;
@@ -10,6 +11,7 @@ interface TabContentProps {
 
 export function TabContent({ className }: TabContentProps) {
   const { tabs, activeTabId, openTab } = useTabsContext();
+  const { t } = useTranslation();
 
   const activeTab = tabs.find(tab => tab.id === activeTabId);
 
@@ -46,14 +48,13 @@ export function TabContent({ className }: TabContentProps) {
         <div className="text-center space-y-4">
           <FolderOpen size={48} className="mx-auto text-muted-foreground/50" />
           <div>
-            <div className="text-xl font-medium mb-2">Welcome to the AI Hedge Fund</div>
+            <div className="text-xl font-medium mb-2">{t('tabBar.welcome')}</div>
             <div className="text-sm max-w-md">
-              Create a flow from the left sidebar (⌘B) to open it in a tab, or open settings (⌘,) to configure your preferences.
+              {t('tabBar.welcomeHint')}
             </div>
           </div>
           <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground/70">
             <FileText size={14} />
-            <span>Flows now open in tabs</span>
           </div>
         </div>
       </div>
@@ -68,7 +69,7 @@ export function TabContent({ className }: TabContentProps) {
         className
       )}>
         <div className="text-center">
-          <div className="text-lg font-medium mb-2">Loading {activeTab.title}...</div>
+          <div className="text-lg font-medium mb-2">{t('common.loading')}</div>
         </div>
       </div>
     );

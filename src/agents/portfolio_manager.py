@@ -53,13 +53,19 @@ def portfolio_management_agent(state: AgentState, agent_id: str = "portfolio_man
         else:
             max_shares[ticker] = 0
 
-        # Compress analyst signals to {sig, conf}
+        # Compress analyst signals to {sig, conf}.
+        # ``abstain`` is the explicit "this persona's framework doesn't
+        # apply to this ticker" vote — per project-scanner-design-intent
+        # follow-up, the PM should NOT count abstain as a neutral vote
+        # (would dilute the weight of the personas that actually opined).
+        # Skip the entry entirely so prompt aggregation sees a smaller
+        # but more conviction-laden roster.
         ticker_signals = {}
         for agent, signals in analyst_signals.items():
             if not agent.startswith("risk_management_agent") and ticker in signals:
                 sig = signals[ticker].get("signal")
                 conf = signals[ticker].get("confidence")
-                if sig is not None and conf is not None:
+                if sig is not None and conf is not None and str(sig).lower() != "abstain":
                     ticker_signals[agent] = {"sig": sig, "conf": conf}
         signals_by_ticker[ticker] = ticker_signals
 

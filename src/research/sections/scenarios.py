@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from src.research.llm import call_research_llm
+from src.research.llm import call_research_llm, language_instruction
 from src.research.models import SectionPayload
 from src.research.sections import SECTION_REGISTRY
 from src.research.sections.base import Section, SectionContext
@@ -52,7 +52,8 @@ class ScenariosSection(Section):
 
     def run(self, ctx: SectionContext) -> SectionPayload:
         prompt = (
-            _TASK_INSTRUCTION
+            language_instruction(ctx.request.report_language)
+            + _TASK_INSTRUCTION
             + f"\n\nTicker: {ctx.request.ticker}\n\n"
             + "--- VALUATION CONTEXT ---\n"
             + _valuation_context(ctx)

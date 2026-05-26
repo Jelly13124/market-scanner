@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { ChatMessage as ChatMessageType } from '@/types/chat';
 import { Check, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 interface Props {
   message: ChatMessageType;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export function ChatMessage({ message, onApply, onReject }: Props) {
+  const { t } = useTranslation();
   const isUser = message.role === 'user';
   const isManual = message.role === 'user_manual_edit';
   const isPatch = message.role === 'assistant' && message.spec_patch_json != null;
@@ -29,19 +31,19 @@ export function ChatMessage({ message, onApply, onReject }: Props) {
         <div className="text-[10px] uppercase text-muted-foreground mb-1">
           {message.role}
         </div>
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</div>
         {isPatch && !isApplied && onApply && onReject && (
           <div className="flex gap-2 mt-2">
             <Button size="sm" onClick={onApply}>
-              <Check className="size-3 mr-1" /> Apply patch
+              <Check className="size-3 mr-1" /> {t('lab.chat.applyPatch')}
             </Button>
             <Button size="sm" variant="ghost" onClick={onReject}>
-              <X className="size-3 mr-1" /> Reject
+              <X className="size-3 mr-1" /> {t('lab.chat.reject')}
             </Button>
           </div>
         )}
         {isPatch && isApplied && (
-          <div className="mt-2 text-[10px] text-green-700">Applied</div>
+          <div className="mt-2 text-[10px] text-green-700">{t('lab.chat.applied')}</div>
         )}
       </div>
     </div>

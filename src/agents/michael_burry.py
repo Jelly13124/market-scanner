@@ -22,9 +22,12 @@ from src.utils.api_key import get_api_key_from_state
 
 
 class MichaelBurrySignal(BaseModel):
+    # 'abstain' = ticker doesn't fit Burry's deep-value framework
+    # (FCF yield clearly < 15% AND no contrarian setup, OR it's a growth/
+    # momentum story he won't touch). PM aggregator skips abstain votes.
     """Schema returned by the LLM."""
 
-    signal: Literal["bullish", "bearish", "neutral"]
+    signal: Literal["bullish", "bearish", "neutral", "abstain"]
     confidence: float  # 0–100
     reasoning: str
 
@@ -332,6 +335,15 @@ def _generate_burry_output(
                 - Look for hard catalysts such as insider buying, buybacks, or asset sales
                 - Communicate in Burry's terse, data‑driven style
 
+                REFUSE TO OPINE (signal=abstain, confidence=0) when:
+                - FCF yield is unavailable OR clearly < 8% AND no contrarian
+                  catalyst is documented. I don't chase growth narratives.
+                - It's a momentum / disruptive-tech story with rich multiples
+                  and no balance-sheet margin of safety.
+                - Insider data is missing AND fundamentals data is too sparse
+                  to apply the framework.
+                Better to pass than to fake a contrarian setup that isn't there.
+
                 When providing your reasoning, be thorough and specific by:
                 1. Start with the key metric(s) that drove your decision
                 2. Cite concrete numbers (e.g. "FCF yield 14.7%", "EV/EBIT 5.3")
@@ -352,8 +364,8 @@ def _generate_burry_output(
 
                 Return the trading signal in the following JSON format exactly:
                 {{
-                  "signal": "bullish" | "bearish" | "neutral",
-                  "confidence": float between 0 and 100,
+                  "signal": "bullish" | "bearish" | "neutral" | "abstain",
+                  "confidence": float between 0 and 100 (0 when abstain),
                   "reasoning": "string"
                 }}
                 """,
@@ -361,7 +373,10 @@ def _generate_burry_output(
         ]
     )
 
-    prompt = template.invoke({"analysis_data": json.dumps(analysis_data, indent=2), "ticker": ticker})
+    prompt = template.invoke({
+        "analysis_data": json.dumps(analysis_data, indent=2),
+        "ticker": ticker,
+    })
 
     # Default fallback signal in case parsing fails
     def create_default_michael_burry_signal():

@@ -4,6 +4,7 @@ import { backtestService } from '@/services/backtest-service';
 import { cn } from '@/lib/utils';
 import type { BacktestResponse } from '@/types/backtest';
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 interface Props {
@@ -18,6 +19,7 @@ export function BacktestHistory({
   onSelectBacktest,
 }: Props) {
   const [items, setItems] = useState<BacktestResponse[]>([]);
+  const { t } = useTranslation();
 
   const reload = useCallback(() => {
     backtestService
@@ -35,7 +37,7 @@ export function BacktestHistory({
   return (
     <div className="border-t p-3">
       <div className="text-xs font-medium uppercase mb-2">
-        Backtest history ({items.length})
+        {t('lab.backtest.history', { count: items.length })}
       </div>
       <div className="space-y-1">
         {items.map((b) => (

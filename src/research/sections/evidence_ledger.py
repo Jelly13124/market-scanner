@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.research.llm import call_research_llm
+from src.research.llm import call_research_llm, language_instruction
 from src.research.models import SectionPayload
 from src.research.sections import SECTION_REGISTRY
 from src.research.sections.base import Section, SectionContext, load_prompt
@@ -65,7 +65,8 @@ class EvidenceLedgerSection(Section):
 
     def run(self, ctx: SectionContext) -> SectionPayload:
         prompt = (
-            _TASK_INSTRUCTION
+            language_instruction(ctx.request.report_language)
+            + _TASK_INSTRUCTION
             + f"\n\nTicker: {ctx.request.ticker}\n"
             + f"Objective: {ctx.request.objective}\n\n"
             + "--- PRIOR SECTION CONTENT ---\n"

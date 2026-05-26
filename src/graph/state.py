@@ -1,4 +1,4 @@
-from typing_extensions import Annotated, Sequence, TypedDict
+from typing_extensions import Annotated, Literal, Sequence, TypedDict
 
 import operator
 from langchain_core.messages import BaseMessage
@@ -16,6 +16,21 @@ class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     data: Annotated[dict[str, any], merge_dicts]
     metadata: Annotated[dict[str, any], merge_dicts]
+
+
+# Documentation-only TypedDict for the v2 scanner→agent bridge. Lives in
+# state['data']['scanner_context'] as a dict[ticker, ScannerContext] when
+# the pipeline orchestrator (or any caller passing scanner_context= to
+# run_hedge_fund) populates it. AgentState['data'] is an open dict — this
+# TypedDict is for IDE/readability only, no runtime enforcement.
+class ScannerContext(TypedDict, total=False):
+    scan_date: str
+    rank: int
+    composite_score: float
+    direction: Literal["bullish", "bearish", "neutral"]
+    event_severity: float
+    triggered_detectors: list[str]
+    triggered_components: dict[str, dict[str, float]]
 
 
 def show_agent_reasoning(output, agent_name):

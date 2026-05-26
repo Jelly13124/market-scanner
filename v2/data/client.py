@@ -108,12 +108,19 @@ class FDClient:
         ticker: str,
         end_date: str,
         start_date: str | None = None,
-        limit: int = 1000,
+        limit: int = 10,
     ) -> list[CompanyNews]:
-        """Fetch company news."""
-        params: dict = {"ticker": ticker, "end_date": end_date, "limit": limit}
+        """Fetch company news.
+
+        FD's /news endpoint uses ``_lte``/``_gte`` date suffixes (mirrors the
+        insider-trades convention) and **caps ``limit`` at 10 per request**.
+        We silently clip larger requests rather than 400 — callers asking for
+        more should add pagination logic.
+        """
+        capped = max(1, min(int(limit), 10))
+        params: dict = {"ticker": ticker, "end_date_lte": end_date, "limit": capped}
         if start_date is not None:
-            params["start_date"] = start_date
+            params["start_date_gte"] = start_date
         data = self._get("/news/", params, response_key="news")
         return [CompanyNews(**row) for row in data] if data else []
 

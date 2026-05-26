@@ -29,6 +29,25 @@ _DEFAULT_MODEL = "deepseek-chat"
 _DEFAULT_PROVIDER = "DeepSeek"
 
 
+def language_instruction(lang: str) -> str:
+    """Phase 7 i18n — produce a system-prompt fragment instructing the LLM
+    to respond in the given language. Empty string for 'en' (no-op default).
+
+    Placed LAST in the prompt chain (after persona prepends) so it's the
+    most recent instruction the LLM sees — empirically the strongest
+    compliance lever for DeepSeek/OpenAI.
+    """
+    if lang == "zh":
+        return (
+            "IMPORTANT: Respond entirely in 中文 (Simplified Chinese). "
+            "Section headings, narrative prose, table contents, and bullet "
+            "points must all be in 中文. Keep ticker symbols (NVDA), "
+            "currency symbols ($), percentages (%), and other numeric/"
+            "symbolic content as-is.\n\n"
+        )
+    return ""
+
+
 def _schema_hint(pydantic_model: type[BaseModel]) -> str:
     """Produce a one-liner-per-field schema hint for the LLM."""
     schema = pydantic_model.model_json_schema()

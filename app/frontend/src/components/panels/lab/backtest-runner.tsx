@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { backtestService } from '@/services/backtest-service';
 import { Loader2, Play } from 'lucide-react';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 interface Props {
@@ -14,6 +15,7 @@ interface Props {
 export function BacktestRunner({ strategyId, onComplete }: Props) {
   const [running, setRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
+  const { t } = useTranslation();
 
   async function handleRun() {
     setRunning(true);
@@ -26,7 +28,7 @@ export function BacktestRunner({ strategyId, onComplete }: Props) {
     try {
       const result = await backtestService.run(strategyId);
       onComplete(result.id);
-      toast.success(`Backtest done (${result.verdict_label})`);
+      toast.success(t('lab.backtest.done', { label: result.verdict_label }));
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -44,16 +46,16 @@ export function BacktestRunner({ strategyId, onComplete }: Props) {
         {running ? (
           <>
             <Loader2 className="size-3 mr-1 animate-spin" />
-            Running... {mm}:{ss}
+            {t('lab.backtest.running')} {mm}:{ss}
           </>
         ) : (
           <>
-            <Play className="size-3 mr-1" /> Run Backtest
+            <Play className="size-3 mr-1" /> {t('lab.backtest.run')}
           </>
         )}
       </Button>
       <span className="text-xs text-muted-foreground">
-        Expected 30s-5min depending on universe size
+        {t('lab.backtest.expectedDuration')}
       </span>
     </div>
   );

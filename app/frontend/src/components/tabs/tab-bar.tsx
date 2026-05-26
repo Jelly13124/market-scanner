@@ -3,6 +3,7 @@ import { useTabsContext } from '@/contexts/tabs-context';
 import { cn } from '@/lib/utils';
 import { Layout, Settings, X } from 'lucide-react';
 import { ReactNode, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface TabBarProps {
   className?: string;
@@ -20,8 +21,17 @@ const getTabIcon = (type: string): ReactNode => {
 
 export function TabBar({ className }: TabBarProps) {
   const { tabs, activeTabId, setActiveTab, closeTab, reorderTabs } = useTabsContext();
+  const { t, i18n } = useTranslation();
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Phase 7 i18n: tab titles are stored as English strings in TabService
+  // factories, but we re-translate at render time keyed by tab.type so
+  // they switch live with the language toggle.
+  const displayTitle = (tab: { type: string; title: string }) => {
+    const key = `tabs.${tab.type}`;
+    return i18n.exists(key) ? t(key) : tab.title;
+  };
 
   if (tabs.length === 0) {
     return null;
@@ -128,7 +138,7 @@ export function TabBar({ className }: TabBarProps) {
             <span className={cn(
               "text-[13px] font-normal truncate min-w-0 transition-colors duration-150"
             )}>
-              {tab.title}
+              {displayTitle(tab)}
             </span>
 
             {/* Close Button */}
@@ -153,7 +163,7 @@ export function TabBar({ className }: TabBarProps) {
                 closeTab(tab.id);
               }}
               onMouseDown={(e) => e.stopPropagation()} // Prevent drag when clicking close button
-              title="Close tab"
+              title={t('tabBar.closeTab')}
             >
               <X size={11} className="transition-transform duration-150 hover:scale-110" />
             </Button>

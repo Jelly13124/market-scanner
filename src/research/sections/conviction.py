@@ -12,7 +12,7 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from src.research.llm import call_research_llm
+from src.research.llm import call_research_llm, language_instruction
 from src.research.models import SectionPayload
 from src.research.sections import SECTION_REGISTRY
 from src.research.sections.base import Section, SectionContext
@@ -82,7 +82,8 @@ class ConvictionSection(Section):
     def run(self, ctx: SectionContext) -> SectionPayload:
         weights = _WEIGHTS.get(ctx.request.risk_tolerance, _WEIGHTS["balanced"])
         prompt = (
-            _TASK_INSTRUCTION
+            language_instruction(ctx.request.report_language)
+            + _TASK_INSTRUCTION
             + f"\n\nTicker: {ctx.request.ticker}\n"
             + f"Risk profile (for weight column): {ctx.request.risk_tolerance}\n\n"
             + "--- PRIOR SECTION SUMMARIES ---\n"

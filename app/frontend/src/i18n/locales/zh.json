@@ -30,7 +30,7 @@
   },
   "tabBar": {
     "closeTab": "关闭标签页",
-    "welcome": "欢迎使用 AI 对冲基金",
+    "welcome": "欢迎使用 Quant Lab",
     "welcomeHint": "从左侧栏 (⌘B) 打开一个面板，或打开设置 (⌘,) 配置偏好。"
   },
   "tabs": {
@@ -58,7 +58,12 @@
     "analyzeTooltip": "打开单股 SOP 分析器",
     "scannerTooltip": "运行全市场筛选",
     "labTooltip": "AI 策略实验室 — 对话式设计、回测、迭代",
-    "searchTickerPlaceholder": "搜索股票代码..."
+    "searchTickerPlaceholder": "搜索股票代码...",
+    "apiKeys": "API 密钥",
+    "apiKeysHint": "密钥保存到后端 .env。点 + 去注册。",
+    "apiKeysGetKey": "注册 / 获取密钥",
+    "apiKeysShow": "显示密钥",
+    "apiKeysHide": "隐藏密钥"
   },
   "topBar": {
     "toggleLeft": "切换左侧栏",
@@ -258,6 +263,10 @@
   },
   "scanner": {
     "title": "每日市场扫描器",
+    "tierPaid": "付费版 · EODHD",
+    "tierFree": "免费版 · Finnhub",
+    "tierPaidHint": "已检测到 EODHD key — 使用完整历史价格 + 情感新闻",
+    "tierFreeHint": "未设 EODHD key — 降级到 Finnhub（免费版：~12 个月价格、~7 天新闻）。想用完整数据请在侧边栏 API Keys 里填 EODHD key。",
     "newConfig": "+ 新配置",
     "deleteConfig": "删除配置 \"{{name}}\"？",
     "deleteThisConfig": "删除此配置",

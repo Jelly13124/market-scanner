@@ -1,99 +1,170 @@
-import datetime
-import logging
-import os
-import pandas as pd
-import requests
-import time
+"""V1 ``src/tools/api.py`` — adapter on top of the v2 hybrid data client.
 
-logger = logging.getLogger(__name__)
+What changed (2026-05-18, plan §Phase B):
+    Originally this module called the Financial Datasets API directly. After
+    the FD paid tier started returning 402 on most endpoints, the v2 scanner
+    moved to a hybrid composite client (EODHD prices+news, Finnhub
+    insider+market-cap, yfinance earnings+analyst). The v1 agents kept calling
+    FD though — which silently produced empty results, making every persona
+    output "insufficient data".
+
+    This rewrite keeps every public function's signature + return type
+    identical (callers in ``src/agents/*.py`` and their tests are not
+    touched), but internally:
+
+      * Fetches via ``v2.data.composite_client.make_hybrid_client()`` —
+        same source-of-truth the scanner uses.
+      * Converts v2 model instances → v1 model instances (small adapter
+        helpers ``_v1_*``); the field shapes are ~95% identical so this is
+        mostly just constructor remapping.
+      * ``search_line_items`` is delegated to a separate module that pulls
+        from yfinance financial statements (the v2 client doesn't expose
+        raw line items).
+      * The existing ``_cache`` layer is preserved verbatim — agents still
+        benefit from in-process caching across multiple LLM round-trips.
+      * The ``api_key`` parameter is accepted but ignored — v2 clients read
+        their own keys from .env.
+"""
+
+from __future__ import annotations
+
+import logging
+import threading
+from typing import Any
+
+import pandas as pd
 
 from src.data.cache import get_cache
 from src.data.models import (
     CompanyNews,
-    CompanyNewsResponse,
+    CompanyNewsResponse,  # re-exported for tests that import it
+    CompanyFactsResponse,  # re-exported for tests that import it
     FinancialMetrics,
-    FinancialMetricsResponse,
-    Price,
-    PriceResponse,
-    LineItem,
-    LineItemResponse,
+    FinancialMetricsResponse,  # re-exported for tests that import it
     InsiderTrade,
-    InsiderTradeResponse,
-    CompanyFactsResponse,
+    InsiderTradeResponse,  # re-exported for tests that import it
+    LineItem,
+    LineItemResponse,  # re-exported for tests that import it
+    Price,
+    PriceResponse,  # re-exported for tests that import it
 )
+from src.tools.line_items import search_line_items as _search_line_items_impl
 
-# Global cache instance
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# In-process cache + v2 client singleton
+# ---------------------------------------------------------------------------
+
+# The cache layer is unchanged — agents call get_financial_metrics multiple
+# times within a workflow and rely on hits across LLM round-trips. Keying
+# semantics are identical to the pre-rewrite implementation.
 _cache = get_cache()
 
-
-def _make_api_request(url: str, headers: dict, method: str = "GET", json_data: dict = None, max_retries: int = 3) -> requests.Response:
-    """
-    Make an API request with rate limiting handling and moderate backoff.
-    
-    Args:
-        url: The URL to request
-        headers: Headers to include in the request
-        method: HTTP method (GET or POST)
-        json_data: JSON data for POST requests
-        max_retries: Maximum number of retries (default: 3)
-    
-    Returns:
-        requests.Response: The response object
-    
-    Raises:
-        Exception: If the request fails with a non-429 error
-    """
-    for attempt in range(max_retries + 1):  # +1 for initial attempt
-        if method.upper() == "POST":
-            response = requests.post(url, headers=headers, json=json_data)
-        else:
-            response = requests.get(url, headers=headers)
-        
-        if response.status_code == 429 and attempt < max_retries:
-            # Linear backoff: 60s, 90s, 120s, 150s...
-            delay = 60 + (30 * attempt)
-            print(f"Rate limited (429). Attempt {attempt + 1}/{max_retries + 1}. Waiting {delay}s before retrying...")
-            time.sleep(delay)
-            continue
-        
-        # Return the response (whether success, other errors, or final 429)
-        return response
+# The v2 hybrid client owns thread pools, HTTP sessions and provider clients;
+# constructing it is non-trivial. Build once per process, behind a lock so
+# concurrent agent threads don't race the lazy init.
+_v2_lock = threading.Lock()
+_v2_client_cache: Any = None  # type: v2.data.composite_client.CompositeClient | None
 
 
-def get_prices(ticker: str, start_date: str, end_date: str, api_key: str = None) -> list[Price]:
-    """Fetch price data from cache or API."""
-    # Create a cache key that includes all parameters to ensure exact matches
+def _get_v2_client():
+    """Lazy thread-safe singleton for the v2 hybrid client."""
+    global _v2_client_cache
+    if _v2_client_cache is not None:
+        return _v2_client_cache
+    with _v2_lock:
+        if _v2_client_cache is None:
+            from v2.data.composite_client import make_hybrid_client
+            _v2_client_cache = make_hybrid_client()
+    return _v2_client_cache
+
+
+# ---------------------------------------------------------------------------
+# v2 → v1 model adapters
+# ---------------------------------------------------------------------------
+
+def _v1_price(v2: Any) -> Price:
+    """v2.Price has an extra ``adjusted_close`` — v1 just drops it."""
+    return Price(
+        open=v2.open, close=v2.close, high=v2.high, low=v2.low,
+        volume=v2.volume, time=v2.time,
+    )
+
+
+def _v1_financial_metrics(v2: Any) -> FinancialMetrics:
+    """Field-by-field copy. v1 requires ``currency: str``; v2 sometimes
+    omits it — default to USD when missing."""
+    data = v2.model_dump()
+    data.setdefault("currency", "USD")
+    if data.get("currency") is None:
+        data["currency"] = "USD"
+    return FinancialMetrics(**data)
+
+
+def _v1_insider_trade(v2: Any) -> InsiderTrade:
+    """v1 has every field nullable except ``filing_date`` (which v2 also
+    requires) — straight copy works."""
+    return InsiderTrade(
+        ticker=v2.ticker,
+        issuer=v2.issuer,
+        name=v2.name,
+        title=v2.title,
+        is_board_director=v2.is_board_director,
+        transaction_date=v2.transaction_date,
+        transaction_shares=v2.transaction_shares,
+        transaction_price_per_share=v2.transaction_price_per_share,
+        transaction_value=v2.transaction_value,
+        shares_owned_before_transaction=v2.shares_owned_before_transaction,
+        shares_owned_after_transaction=v2.shares_owned_after_transaction,
+        security_title=v2.security_title,
+        filing_date=v2.filing_date,
+    )
+
+
+def _v1_company_news(v2: Any) -> CompanyNews:
+    """v1 requires ``source/date/url`` as ``str``; v2 has them nullable.
+    Fall back to empty string so v1 model construction doesn't blow up."""
+    return CompanyNews(
+        ticker=v2.ticker,
+        title=v2.title,
+        author=None,  # v2 doesn't expose author
+        source=v2.source or "",
+        date=v2.date or "",
+        url=v2.url or "",
+        sentiment=v2.sentiment,  # str | None — same as v1
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API — v1 signatures preserved exactly
+# ---------------------------------------------------------------------------
+
+
+def get_prices(
+    ticker: str,
+    start_date: str,
+    end_date: str,
+    api_key: str = None,  # accepted for signature compat; ignored
+) -> list[Price]:
+    """Fetch price bars for the window. Adjusted-close is dropped to match v1."""
     cache_key = f"{ticker}_{start_date}_{end_date}"
-    
-    # Check cache first - simple exact match
-    if cached_data := _cache.get_prices(cache_key):
-        return [Price(**price) for price in cached_data]
+    if cached := _cache.get_prices(cache_key):
+        return [Price(**p) for p in cached]
 
-    # If not in cache, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
-
-    url = f"https://api.financialdatasets.ai/prices/?ticker={ticker}&interval=day&interval_multiplier=1&start_date={start_date}&end_date={end_date}"
-    response = _make_api_request(url, headers)
-    if response.status_code != 200:
-        return []
-
-    # Parse response with Pydantic model
     try:
-        price_response = PriceResponse(**response.json())
-        prices = price_response.prices
+        client = _get_v2_client()
+        v2_prices = client.get_prices(ticker, start_date, end_date)
     except Exception as e:
-        logger.warning("Failed to parse price response for %s: %s", ticker, e)
+        logger.warning("v2 get_prices failed for %s: %s", ticker, e)
+        return []
+    if not v2_prices:
         return []
 
-    if not prices:
-        return []
-
-    # Cache the results using the comprehensive cache key
-    _cache.set_prices(cache_key, [p.model_dump() for p in prices])
-    return prices
+    out = [_v1_price(p) for p in v2_prices]
+    _cache.set_prices(cache_key, [p.model_dump() for p in out])
+    return out
 
 
 def get_financial_metrics(
@@ -103,39 +174,30 @@ def get_financial_metrics(
     limit: int = 10,
     api_key: str = None,
 ) -> list[FinancialMetrics]:
-    """Fetch financial metrics from cache or API."""
-    # Create a cache key that includes all parameters to ensure exact matches
+    """Trailing financial-ratio snapshots."""
     cache_key = f"{ticker}_{period}_{end_date}_{limit}"
-    
-    # Check cache first - simple exact match
-    if cached_data := _cache.get_financial_metrics(cache_key):
-        return [FinancialMetrics(**metric) for metric in cached_data]
+    if cached := _cache.get_financial_metrics(cache_key):
+        return [FinancialMetrics(**m) for m in cached]
 
-    # If not in cache, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
-
-    url = f"https://api.financialdatasets.ai/financial-metrics/?ticker={ticker}&report_period_lte={end_date}&limit={limit}&period={period}"
-    response = _make_api_request(url, headers)
-    if response.status_code != 200:
-        return []
-
-    # Parse response with Pydantic model
     try:
-        metrics_response = FinancialMetricsResponse(**response.json())
-        financial_metrics = metrics_response.financial_metrics
+        client = _get_v2_client()
+        v2_metrics = client.get_financial_metrics(ticker, end_date, period=period, limit=limit)
     except Exception as e:
-        logger.warning("Failed to parse financial metrics response for %s: %s", ticker, e)
+        logger.warning("v2 get_financial_metrics failed for %s: %s", ticker, e)
+        return []
+    if not v2_metrics:
         return []
 
-    if not financial_metrics:
+    out = []
+    for m in v2_metrics:
+        try:
+            out.append(_v1_financial_metrics(m))
+        except Exception as e:
+            logger.debug("Skipping malformed metric for %s: %s", ticker, e)
+    if not out:
         return []
-
-    # Cache the results as dicts using the comprehensive cache key
-    _cache.set_financial_metrics(cache_key, [m.model_dump() for m in financial_metrics])
-    return financial_metrics
+    _cache.set_financial_metrics(cache_key, [m.model_dump() for m in out])
+    return out
 
 
 def search_line_items(
@@ -146,38 +208,17 @@ def search_line_items(
     limit: int = 10,
     api_key: str = None,
 ) -> list[LineItem]:
-    """Fetch line items from API."""
-    # If not in cache or insufficient data, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
+    """Raw income/balance/cashflow line items per fiscal period.
 
-    url = "https://api.financialdatasets.ai/financials/search/line-items"
-
-    body = {
-        "tickers": [ticker],
-        "line_items": line_items,
-        "end_date": end_date,
-        "period": period,
-        "limit": limit,
-    }
-    response = _make_api_request(url, headers, method="POST", json_data=body)
-    if response.status_code != 200:
-        return []
-    
-    try:
-        data = response.json()
-        response_model = LineItemResponse(**data)
-        search_results = response_model.search_results
-    except Exception as e:
-        logger.warning("Failed to parse line items response for %s: %s", ticker, e)
-        return []
-    if not search_results:
-        return []
-
-    # Cache the results
-    return search_results[:limit]
+    Backed by yfinance financial statements (see ``src/tools/line_items.py``);
+    cherry-picks the requested fields per fiscal period, returning a list of
+    v1 ``LineItem`` instances (one per period, with the requested fields
+    populated as extra attributes).
+    """
+    return _search_line_items_impl(
+        ticker=ticker, line_items=line_items, end_date=end_date,
+        period=period, limit=limit, cache=_cache,
+    )
 
 
 def get_insider_trades(
@@ -187,63 +228,32 @@ def get_insider_trades(
     limit: int = 1000,
     api_key: str = None,
 ) -> list[InsiderTrade]:
-    """Fetch insider trades from cache or API."""
-    # Create a cache key that includes all parameters to ensure exact matches
+    """Insider transactions filed on or before ``end_date``."""
     cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
-    
-    # Check cache first - simple exact match
-    if cached_data := _cache.get_insider_trades(cache_key):
-        return [InsiderTrade(**trade) for trade in cached_data]
+    if cached := _cache.get_insider_trades(cache_key):
+        return [InsiderTrade(**t) for t in cached]
 
-    # If not in cache, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
-
-    all_trades = []
-    current_end_date = end_date
-
-    while True:
-        url = f"https://api.financialdatasets.ai/insider-trades/?ticker={ticker}&filing_date_lte={current_end_date}"
-        if start_date:
-            url += f"&filing_date_gte={start_date}"
-        url += f"&limit={limit}"
-
-        response = _make_api_request(url, headers)
-        if response.status_code != 200:
-            break
-
-        try:
-            data = response.json()
-            response_model = InsiderTradeResponse(**data)
-            insider_trades = response_model.insider_trades
-        except Exception as e:
-            logger.warning("Failed to parse insider trades response for %s: %s", ticker, e)
-            break
-
-        if not insider_trades:
-            break
-
-        all_trades.extend(insider_trades)
-
-        # Only continue pagination if we have a start_date and got a full page
-        if not start_date or len(insider_trades) < limit:
-            break
-
-        # Update end_date to the oldest filing date from current batch for next iteration
-        current_end_date = min(trade.filing_date for trade in insider_trades).split("T")[0]
-
-        # If we've reached or passed the start_date, we can stop
-        if current_end_date <= start_date:
-            break
-
-    if not all_trades:
+    try:
+        client = _get_v2_client()
+        v2_trades = client.get_insider_trades(
+            ticker, end_date, start_date=start_date, limit=limit,
+        )
+    except Exception as e:
+        logger.warning("v2 get_insider_trades failed for %s: %s", ticker, e)
+        return []
+    if not v2_trades:
         return []
 
-    # Cache the results using the comprehensive cache key
-    _cache.set_insider_trades(cache_key, [trade.model_dump() for trade in all_trades])
-    return all_trades
+    out = []
+    for t in v2_trades:
+        try:
+            out.append(_v1_insider_trade(t))
+        except Exception as e:
+            logger.debug("Skipping malformed insider trade for %s: %s", ticker, e)
+    if not out:
+        return []
+    _cache.set_insider_trades(cache_key, [t.model_dump() for t in out])
+    return out
 
 
 def get_company_news(
@@ -253,63 +263,30 @@ def get_company_news(
     limit: int = 1000,
     api_key: str = None,
 ) -> list[CompanyNews]:
-    """Fetch company news from cache or API."""
-    # Create a cache key that includes all parameters to ensure exact matches
+    """News articles on or before ``end_date``."""
     cache_key = f"{ticker}_{start_date or 'none'}_{end_date}_{limit}"
-    
-    # Check cache first - simple exact match
-    if cached_data := _cache.get_company_news(cache_key):
-        return [CompanyNews(**news) for news in cached_data]
+    if cached := _cache.get_company_news(cache_key):
+        return [CompanyNews(**n) for n in cached]
 
-    # If not in cache, fetch from API
-    headers = {}
-    financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-    if financial_api_key:
-        headers["X-API-KEY"] = financial_api_key
-
-    all_news = []
-    current_end_date = end_date
-
-    while True:
-        url = f"https://api.financialdatasets.ai/news/?ticker={ticker}&end_date={current_end_date}"
-        if start_date:
-            url += f"&start_date={start_date}"
-        url += f"&limit={limit}"
-
-        response = _make_api_request(url, headers)
-        if response.status_code != 200:
-            break
-
-        try:
-            data = response.json()
-            response_model = CompanyNewsResponse(**data)
-            company_news = response_model.news
-        except Exception as e:
-            logger.warning("Failed to parse company news response for %s: %s", ticker, e)
-            break
-
-        if not company_news:
-            break
-
-        all_news.extend(company_news)
-
-        # Only continue pagination if we have a start_date and got a full page
-        if not start_date or len(company_news) < limit:
-            break
-
-        # Update end_date to the oldest date from current batch for next iteration
-        current_end_date = min(news.date for news in company_news).split("T")[0]
-
-        # If we've reached or passed the start_date, we can stop
-        if current_end_date <= start_date:
-            break
-
-    if not all_news:
+    try:
+        client = _get_v2_client()
+        v2_news = client.get_news(ticker, end_date, start_date=start_date, limit=limit)
+    except Exception as e:
+        logger.warning("v2 get_news failed for %s: %s", ticker, e)
+        return []
+    if not v2_news:
         return []
 
-    # Cache the results using the comprehensive cache key
-    _cache.set_company_news(cache_key, [news.model_dump() for news in all_news])
-    return all_news
+    out = []
+    for n in v2_news:
+        try:
+            out.append(_v1_company_news(n))
+        except Exception as e:
+            logger.debug("Skipping malformed news article for %s: %s", ticker, e)
+    if not out:
+        return []
+    _cache.set_company_news(cache_key, [n.model_dump() for n in out])
+    return out
 
 
 def get_market_cap(
@@ -317,50 +294,29 @@ def get_market_cap(
     end_date: str,
     api_key: str = None,
 ) -> float | None:
-    """Fetch market cap from the API."""
-    # Check if end_date is today
-    if end_date == datetime.datetime.now().strftime("%Y-%m-%d"):
-        # Get the market cap from company facts API
-        headers = {}
-        financial_api_key = api_key or os.environ.get("FINANCIAL_DATASETS_API_KEY")
-        if financial_api_key:
-            headers["X-API-KEY"] = financial_api_key
-
-        url = f"https://api.financialdatasets.ai/company/facts/?ticker={ticker}"
-        response = _make_api_request(url, headers)
-        if response.status_code != 200:
-            print(f"Error fetching company facts: {ticker} - {response.status_code}")
-            return None
-
-        data = response.json()
-        response_model = CompanyFactsResponse(**data)
-        return response_model.company_facts.market_cap
-
-    financial_metrics = get_financial_metrics(ticker, end_date, api_key=api_key)
-    if not financial_metrics:
+    """Market cap. v2 has a dedicated endpoint that does the same date logic
+    (today vs historical) we used to do here."""
+    try:
+        client = _get_v2_client()
+        return client.get_market_cap(ticker, end_date)
+    except Exception as e:
+        logger.warning("v2 get_market_cap failed for %s: %s", ticker, e)
         return None
-
-    market_cap = financial_metrics[0].market_cap
-
-    if not market_cap:
-        return None
-
-    return market_cap
 
 
 def prices_to_df(prices: list[Price]) -> pd.DataFrame:
-    """Convert prices to a DataFrame."""
+    """Convert prices to a DataFrame. Pure utility — no API call."""
+    if not prices:
+        return pd.DataFrame()
     df = pd.DataFrame([p.model_dump() for p in prices])
     df["Date"] = pd.to_datetime(df["time"])
     df.set_index("Date", inplace=True)
-    numeric_cols = ["open", "close", "high", "low", "volume"]
-    for col in numeric_cols:
+    for col in ("open", "close", "high", "low", "volume"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df.sort_index(inplace=True)
     return df
 
 
-# Update the get_price_data function to use the new functions
 def get_price_data(ticker: str, start_date: str, end_date: str, api_key: str = None) -> pd.DataFrame:
     prices = get_prices(ticker, start_date, end_date, api_key=api_key)
     return prices_to_df(prices)

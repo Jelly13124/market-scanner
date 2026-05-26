@@ -2,6 +2,7 @@ import { useResizable } from '@/hooks/use-resizable';
 import { cn } from '@/lib/utils';
 import { ReactNode, useEffect } from 'react';
 import { AnalyzeAction } from './analyze-action';
+import { ApiKeysSection } from './api-keys-section';
 import { LabAction } from './lab-action';
 import { ScannerAction } from './scanner-action';
 import { WatchlistSection } from './watchlist-section';
@@ -42,6 +43,8 @@ export function LeftSidebar({
         width: `${width}px`
       }}
     >
+      <ApiKeysSection />
+
       <WatchlistSection />
 
       <ScannerAction />

@@ -26,6 +26,7 @@ import {
 } from '@/types/scanner';
 import { UserWatchlist } from '@/types/watchlist';
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface ScannerConfigDialogProps {
   open: boolean;
@@ -51,6 +52,7 @@ export function ScannerConfigDialog({
 }: ScannerConfigDialogProps) {
   const [form, setForm] = useState<ScannerConfigCreateRequest>(DEFAULT_FORM);
   const [customTickersText, setCustomTickersText] = useState('');
+  const { t } = useTranslation();
   const [cronPreset, setCronPreset] = useState<string>('0 21 * * 1-5');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -281,7 +283,7 @@ export function ScannerConfigDialog({
 
           {/* Universe */}
           <div className="space-y-1.5">
-            <label htmlFor="cfg-universe" className="text-sm font-medium">Universe</label>
+            <label htmlFor="cfg-universe" className="text-sm font-medium">{t('scanner.config.universe')}</label>
             <select
               id="cfg-universe"
               value={form.universe_kind}
@@ -301,7 +303,7 @@ export function ScannerConfigDialog({
           {/* Custom tickers (only when kind=custom) */}
           {form.universe_kind === 'custom' && (
             <div className="space-y-1.5">
-              <label htmlFor="cfg-tickers" className="text-sm font-medium">Tickers (comma- or space-separated)</label>
+              <label htmlFor="cfg-tickers" className="text-sm font-medium">{t('scanner.config.customTickers')}</label>
               <textarea
                 id="cfg-tickers"
                 rows={3}
@@ -316,7 +318,7 @@ export function ScannerConfigDialog({
           {/* User watchlist picker (Phase 5C — only when kind=watchlist) */}
           {form.universe_kind === 'watchlist' && (
             <div className="space-y-1.5">
-              <label htmlFor="cfg-watchlist" className="text-sm font-medium">User watchlist</label>
+              <label htmlFor="cfg-watchlist" className="text-sm font-medium">{t('scanner.config.userWatchlist')}</label>
               {userWatchlists === null ? (
                 <div className="text-sm text-muted-foreground">Loading watchlists…</div>
               ) : userWatchlists.length === 0 ? (
@@ -386,7 +388,7 @@ export function ScannerConfigDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <label htmlFor="cfg-enabled" className="text-sm font-medium">Enabled</label>
+              <label htmlFor="cfg-enabled" className="text-sm font-medium">{t('scanner.config.enabled')}</label>
               <div className="flex items-center h-9 gap-2">
                 <Checkbox
                   id="cfg-enabled"

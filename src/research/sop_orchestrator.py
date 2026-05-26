@@ -21,7 +21,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 from src.research.backtest_signal import run_signal_backtest
-from src.research.charts.render import render_equity_curve_b64
+from src.research.charts.render import (
+    png_to_b64_uri,
+    render_daily_kline_png,
+    render_equity_curve_b64,
+    render_weekly_kline_png,
+)
 from src.research.models import (
     AnalyzeReport,
     AnalyzeRequest,
@@ -249,7 +254,11 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
         # not installed, empty prices), structured stays None and the
         # rendered HTML simply omits the inline image — the K-line endpoint
         # will still serve PNGs on demand.
+        # Phase 10: render 3 inline charts (daily K + weekly K + equity
+        # curve). Each is best-effort — any failure logs but doesn't abort.
         chart_b64: str | None = None
+        chart_daily_b64: str | None = None
+        chart_weekly_b64: str | None = None
         try:
             from src.research.backtest_signal import _closes
             closes = _closes(shared)
@@ -258,15 +267,35 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
         except Exception as e:
             logger.exception("equity-curve chart render failed: %s", e)
 
+        prices = getattr(shared, "prices", None) or []
+        if prices:
+            try:
+                chart_daily_b64 = png_to_b64_uri(
+                    render_daily_kline_png(prices, title=f"{request.ticker} Daily")
+                )
+            except Exception as e:
+                logger.exception("daily K-line render failed: %s", e)
+            try:
+                chart_weekly_b64 = png_to_b64_uri(
+                    render_weekly_kline_png(prices, title=f"{request.ticker} Weekly")
+                )
+            except Exception as e:
+                logger.exception("weekly K-line render failed: %s", e)
+
         new_structured: dict | None
         if isinstance(tech.structured, dict):
             new_structured = dict(tech.structured)
         elif tech.structured is None:
-            new_structured = {} if chart_b64 else None
+            new_structured = {} if (chart_b64 or chart_daily_b64 or chart_weekly_b64) else None
         else:
             new_structured = tech.structured  # keep non-dict structured as-is
-        if chart_b64 and isinstance(new_structured, dict):
-            new_structured["chart_equity_curve_b64"] = chart_b64
+        if isinstance(new_structured, dict):
+            if chart_b64:
+                new_structured["chart_equity_curve_b64"] = chart_b64
+            if chart_daily_b64:
+                new_structured["chart_kline_daily_b64"] = chart_daily_b64
+            if chart_weekly_b64:
+                new_structured["chart_kline_weekly_b64"] = chart_weekly_b64
 
         sections["technical"] = SectionPayload(
             name="technical",

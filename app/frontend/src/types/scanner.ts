@@ -9,7 +9,13 @@ export type UniverseKind =
   | 'russell3000'
   | 'all_us'
   | 'custom'
-  | 'watchlist';
+  | 'watchlist'
+  // Phase 8 A-share universes
+  | 'sse50'
+  | 'csi300'
+  | 'csi500'
+  | 'csi1000'
+  | 'hs300_ext';
 
 export const UNIVERSE_KIND_OPTIONS: { value: UniverseKind; label: string; description: string }[] = [
   {
@@ -23,6 +29,12 @@ export const UNIVERSE_KIND_OPTIONS: { value: UniverseKind; label: string; descri
   { value: 'all_us', label: 'All US Listed', description: '~6000-8000 NYSE + NASDAQ + AMEX' },
   { value: 'custom', label: 'Custom Watchlist', description: 'Provide your own ticker list' },
   { value: 'watchlist', label: 'User watchlist', description: 'Pick a saved watchlist from the sidebar' },
+  // Phase 8 A-share universes (sourced via mootdx)
+  { value: 'sse50', label: 'SSE 50 / 上证 50', description: '~50 Shanghai blue-chips' },
+  { value: 'csi300', label: 'CSI 300 / 沪深 300', description: '~300 A-share large-caps (SSE + SZSE)' },
+  { value: 'csi500', label: 'CSI 500 / 中证 500', description: '~500 A-share mid-caps' },
+  { value: 'csi1000', label: 'CSI 1000 / 中证 1000', description: '~1000 A-share small-caps' },
+  { value: 'hs300_ext', label: 'HS300 + CSI500', description: '~800-ticker union of CSI 300 and CSI 500' },
 ];
 
 export type ScanStatus = 'PENDING' | 'RUNNING' | 'COMPLETE' | 'ERROR';

@@ -1,0 +1,359 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "apply": "Apply",
+    "run": "Run",
+    "loading": "Loading...",
+    "close": "Close",
+    "edit": "Edit",
+    "add": "Add",
+    "remove": "Remove",
+    "back": "Back",
+    "confirm": "Confirm",
+    "create": "Create",
+    "new": "New",
+    "search": "Search",
+    "yes": "Yes",
+    "no": "No",
+    "english": "English",
+    "chinese": "简体中文",
+    "or": "or",
+    "refresh": "Refresh",
+    "rename": "Rename",
+    "required": "required",
+    "name": "Name",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "test": "Test"
+  },
+  "tabBar": {
+    "closeTab": "Close tab",
+    "welcome": "Welcome to the AI Hedge Fund",
+    "welcomeHint": "Open a panel from the left sidebar (⌘B) or open settings (⌘,) to configure your preferences."
+  },
+  "tabs": {
+    "analyze": "Analyze",
+    "scanner": "Scanner",
+    "lab": "Lab",
+    "settings": "Settings"
+  },
+  "sidebar": {
+    "watchlists": "Watchlists",
+    "analyze": "Analyze",
+    "scanner": "Scanner",
+    "lab": "Lab",
+    "addTicker": "Add ticker",
+    "addWatchlist": "Add watchlist",
+    "newWatchlist": "New watchlist",
+    "watchlistName": "Watchlist name",
+    "watchlistNamePlaceholder": "e.g. AI watch",
+    "deleteWatchlist": "Delete watchlist \"{{name}}\"?",
+    "renameWatchlist": "Rename",
+    "noTickers": "No tickers. Click + to add.",
+    "noWatchlists": "No watchlists. Click + to create one.",
+    "tickerCount_one": "{{count}} ticker",
+    "tickerCount_other": "{{count}} tickers",
+    "analyzeTooltip": "Open per-stock SOP analyzer",
+    "scannerTooltip": "Run universe-wide screening",
+    "labTooltip": "AI strategy lab — chat to design, backtest, iterate",
+    "searchTickerPlaceholder": "Search ticker..."
+  },
+  "topBar": {
+    "toggleLeft": "Toggle Left Side Bar",
+    "toggleRight": "Toggle Right Side Bar",
+    "toggleBottom": "Toggle Bottom Panel",
+    "openSettings": "Open Settings",
+    "language": "Language"
+  },
+  "sections": {
+    "data_health": "Data Health",
+    "executive_summary": "Executive Summary",
+    "evidence_ledger": "Evidence Ledger",
+    "macro": "Macro Regime",
+    "sector": "Sector & Peer",
+    "company_fundamentals": "Company Fundamentals",
+    "financial_statements": "Financial Statements",
+    "valuation": "Valuation",
+    "technical": "Technical Analysis (incl. Backtest)",
+    "risk_position": "Risk & Position",
+    "scenarios": "Bear/Base/Bull Scenarios",
+    "conviction": "Conviction Score",
+    "event_risk": "Event Risk",
+    "debate": "Debate (personas only)",
+    "final_strategy": "Final Strategy",
+    "missing_data": "Missing Data"
+  },
+  "analyze": {
+    "title": "Analyze",
+    "toolbar": {
+      "run": "Run SOP analysis",
+      "running": "Running",
+      "newBlank": "New blank",
+      "resetToDefault": "Reset to default",
+      "save": "Save flow",
+      "saveAs": "Save as...",
+      "load": "Load",
+      "addInput": "+ Input",
+      "addSection": "+ Add",
+      "savedFlow": "Saved flow",
+      "newFlow": "New",
+      "elapsed": "elapsed",
+      "sectionsCount_one": "{{count}} section",
+      "sectionsCount_other": "{{count}} sections"
+    },
+    "input": {
+      "label": "Run Input",
+      "ticker": "Ticker",
+      "market": "Market",
+      "objective": "Objective",
+      "budget": "Budget (USD)",
+      "risk": "Risk tolerance",
+      "holds": "I already hold this",
+      "costBasis": "Cost basis ($/share)",
+      "reportLanguage": "Report language",
+      "reportLanguageHint": "Language of the generated report",
+      "deleteNode": "Delete Input node"
+    },
+    "objectives": {
+      "general_research": "General research",
+      "target_price": "Target price",
+      "short_term": "Short-term trade",
+      "medium_term": "Medium-term",
+      "long_term": "Long-term invest",
+      "earnings_review": "Earnings review"
+    },
+    "risks": {
+      "conservative": "Conservative",
+      "balanced": "Balanced",
+      "aggressive": "Aggressive"
+    },
+    "markets": {
+      "us": "US",
+      "cn": "A股"
+    },
+    "section": {
+      "persona": "Persona",
+      "objective_persona": "objective",
+      "rounds": "Rounds",
+      "roundsHint": "(max 5, recommended 3)",
+      "usePersonas": "Use investor personas",
+      "deleteNode": "Delete node"
+    },
+    "output": {
+      "title": "Output",
+      "description": "Final HTML report — composed of 4 backend sections",
+      "deleteNode": "Delete Output node"
+    },
+    "palette": {
+      "title": "Sections",
+      "alreadyOnCanvas": "Already on canvas",
+      "runInput": "Run Input",
+      "managerCheck": "Manager Check"
+    },
+    "flowList": {
+      "savedFlows": "Saved flows",
+      "noSaved": "No saved flows yet",
+      "savePromptName": "Name for this flow",
+      "saveSuccess": "Flow saved",
+      "deleted": "Flow deleted",
+      "savedTemplates": "Saved AnalyzeFlow templates",
+      "loadSelected": "Load selected",
+      "deleteSelected": "Delete selected",
+      "saveAsTemplate": "Save current canvas as new template",
+      "resetToDefault": "Reset to default template",
+      "templateName": "Template name"
+    },
+    "status": {
+      "title": "Section status",
+      "completed": "Completed",
+      "skipped": "Skipped",
+      "failed": "Failed",
+      "personaAssignments": "Persona assignments",
+      "personas": "Personas"
+    },
+    "reports": {
+      "title": "Recent reports",
+      "titleFor": "Recent reports for {{ticker}}",
+      "reportN": "Report #{{id}}",
+      "openInNewTab": "Open in new tab",
+      "noReports": "No reports yet"
+    },
+    "errors": {
+      "noInput": "Add an Input node to the canvas first.",
+      "noTicker": "Enter a ticker in the Input node."
+    },
+    "toasts": {
+      "complete": "Analyze complete: {{ticker}} (id {{id}})",
+      "flowSaved": "Flow saved",
+      "flowLoaded": "Flow loaded",
+      "canvasReset": "Canvas reset to default template"
+    }
+  },
+  "lab": {
+    "title": "Strategy Lab",
+    "strategies": "Strategies",
+    "newStrategy": "New strategy",
+    "strategyName": "Strategy name",
+    "deleteConfirm": "Delete strategy \"{{name}}\"? This also deletes its chat + backtests.",
+    "noStrategies": "No strategies. Click + to create one.",
+    "selectPrompt": "Select or create a strategy on the left.",
+    "version": "v{{version}}",
+    "chat": {
+      "placeholder": "Describe a change or ask a question...",
+      "applyPatch": "Apply patch",
+      "reject": "Reject",
+      "applied": "Applied",
+      "patchProposed": "AI proposed a spec change — review and Apply",
+      "patchApplied": "Patch applied"
+    },
+    "spec": {
+      "title": "Spec",
+      "editJson": "Edit JSON",
+      "noStrategy": "No strategy selected",
+      "universe": "Universe",
+      "entry": "Entry ({{combiner}})",
+      "exit": "Exit (any triggers)",
+      "filters": "Filters (all must pass)",
+      "sizing": "Sizing",
+      "backtestConfig": "Backtest Config",
+      "starting": "Starting",
+      "costs": "Costs",
+      "maxPositions": "Max positions",
+      "isOosSplit": "IS/OOS split",
+      "benchmark": "Benchmark"
+    },
+    "specJson": {
+      "title": "Edit Spec JSON",
+      "description": "Bypass the AI — edit the raw spec directly. Backend will validate.",
+      "saving": "Saving..."
+    },
+    "backtest": {
+      "run": "Run Backtest",
+      "running": "Running...",
+      "expectedDuration": "Expected 30s-5min depending on universe size",
+      "verdict": "Verdict: {{label}}",
+      "degradation": "Degradation ratio (OOS/IS CAGR): {{value}}",
+      "tradeLog": "Trade log ({{count}} trades)",
+      "history": "Backtest history ({{count}})",
+      "done": "Backtest done ({{label}})",
+      "specUpdated": "Spec updated",
+      "ticker": "Ticker",
+      "entry": "Entry",
+      "exit": "Exit",
+      "pnl": "PnL",
+      "reason": "Reason",
+      "cagr": "CAGR",
+      "sharpe": "Sharpe",
+      "sortino": "Sortino",
+      "maxDd": "Max DD",
+      "winRate": "Win rate",
+      "profitFactor": "Profit factor",
+      "trades": "Trades",
+      "in": "$ in",
+      "out": "$ out",
+      "noBacktest": "No backtest run yet"
+    }
+  },
+  "scanner": {
+    "title": "Daily Market Scanner",
+    "newConfig": "+ New config",
+    "deleteConfig": "Delete config \"{{name}}\"?",
+    "deleteThisConfig": "Delete this config",
+    "reloadConfigs": "Reload configs",
+    "runNow": "Run now",
+    "running": "Running...",
+    "lastRun": "Last run",
+    "noConfigs": "No configs yet",
+    "configs": "Configs",
+    "runs": "Runs",
+    "watchlist": "Watchlist",
+    "details": "Details",
+    "config": {
+      "title": "Scanner config",
+      "name": "Name",
+      "universe": "Universe",
+      "schedule": "Schedule",
+      "topN": "Top N",
+      "detectors": "Detectors",
+      "autoSop": "Auto SOP analysis",
+      "autoSopHint": "After scan, auto-run SOP analyze on top N tickers",
+      "customTickers": "Custom tickers",
+      "customTickersPlaceholder": "AAPL, MSFT, NVDA, GOOGL, TSLA",
+      "userWatchlist": "User watchlist",
+      "enabled": "Enabled"
+    },
+    "agentRuns": {
+      "title": "Recent agent runs"
+    },
+    "analyze": {
+      "dialogTitle": "Analyze with agents",
+      "template": "Template"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "addSub": "Add subscription",
+      "addDialog": "Add notification subscription",
+      "channel": "Channel",
+      "sendTest": "Send test",
+      "headerValueHint": "Full header value (e.g. Bearer xxxxx)."
+    },
+    "research": {
+      "ticker": "Ticker",
+      "usePersonas": "Use personas",
+      "recent": "Recent research reports",
+      "personaAssignments": "Persona assignments"
+    },
+    "watchlistTable": {
+      "rank": "#",
+      "ticker": "Ticker",
+      "score": "Score",
+      "price": "Price",
+      "today": "Today",
+      "dir": "Dir",
+      "triggers": "Triggers",
+      "noEntries": "No watchlist entries — no tickers met any detector's threshold for this run."
+    },
+    "universe": {
+      "watchlist": "Watchlist",
+      "sp500": "S&P 500",
+      "nasdaq100": "NASDAQ 100",
+      "russell3000": "Russell 3000",
+      "all_us": "All US",
+      "custom": "Custom",
+      "sse50": "SSE 50 / 上证 50",
+      "csi300": "CSI 300 / 沪深 300",
+      "csi500": "CSI 500 / 中证 500",
+      "csi1000": "CSI 1000 / 中证 1000",
+      "hs300_ext": "HS300 + CSI500"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "apiKeys": "API Keys",
+    "apiKeysDesc": "API endpoints and authentication",
+    "apiKeysHeader": "API Keys",
+    "securityNote": "Security Note",
+    "models": "Models",
+    "modelsDesc": "Local and cloud AI models",
+    "modelsHeader": "Models",
+    "availableModels": "Available Models",
+    "noModelsAvailable": "No models available",
+    "appearance": "Appearance",
+    "appearanceDesc": "Theme and display preferences",
+    "language": "Language",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System",
+    "ollama": {
+      "title": "Ollama",
+      "notInstalled": "Ollama Not Installed",
+      "server": "Ollama Server"
+    }
+  },
+  "sidebarDialogs": {
+    "watchlistNamePlaceholder": "My Mega-caps"
+  }
+}

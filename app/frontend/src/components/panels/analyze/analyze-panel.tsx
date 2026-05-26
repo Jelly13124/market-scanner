@@ -19,6 +19,7 @@ import { analyzeService } from '@/services/analyze-service';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
 import { ExternalLink } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { AnalyzeToolbar } from './analyze-toolbar';
@@ -31,6 +32,7 @@ import {
 
 export function AnalyzePanel() {
   const canvasRef = useRef<FlowCanvasHandle | null>(null);
+  const { t } = useTranslation();
 
   // Trigger re-render so the palette knows when '+' buttons should be disabled.
   const [canvasTick, setCanvasTick] = useState(0);
@@ -55,12 +57,12 @@ export function AnalyzePanel() {
     const cfg = getConfig();
     const input = canvasRef.current?.getInputData();
     if (!input) {
-      toast.error('Add an Input node to the canvas first.');
+      toast.error(t('analyze.errors.noInput'));
       return;
     }
     const ticker = input.ticker.trim().toUpperCase();
     if (!ticker) {
-      toast.error('Enter a ticker in the Input node.');
+      toast.error(t('analyze.errors.noTicker'));
       return;
     }
     // Debate settings now live on the Debate node, not the Input node.
@@ -83,6 +85,11 @@ export function AnalyzePanel() {
       persona_overrides: Object.keys(cfg.persona_overrides).length
         ? cfg.persona_overrides
         : null,
+      // Phase 7 i18n — defaults to 'en' if user hasn't picked anything
+      // on the Input node (fallback covers older saved canvases).
+      report_language: input.report_language ?? 'en',
+      // Phase 8 — defaults to 'us'. Older saved canvases lack this field.
+      market: input.market ?? 'us',
     };
     setRunning(true);
     try {
@@ -90,7 +97,7 @@ export function AnalyzePanel() {
       setCurrentReportId(detail.id);
       setCurrentDetail(detail);
       setTickerFilter(detail.ticker);
-      toast.success(`Analyze complete: ${detail.ticker} (id ${detail.id})`);
+      toast.success(t('analyze.toasts.complete', { ticker: detail.ticker, id: detail.id }));
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -154,7 +161,7 @@ export function AnalyzePanel() {
           {showLiveDetail && currentDetail && (
             <AccordionItem value="status">
               <AccordionTrigger className="py-2 text-xs uppercase font-medium">
-                Section status
+                {t('analyze.status.title')}
               </AccordionTrigger>
               <AccordionContent className="space-y-2 pb-3">
                 <SectionStatusPanel detail={currentDetail} />
@@ -166,7 +173,7 @@ export function AnalyzePanel() {
           {iframeSrc && (
             <AccordionItem value="report">
               <AccordionTrigger className="py-2 text-xs uppercase font-medium">
-                Report #{currentReportId}
+                {t('analyze.reports.reportN', { id: currentReportId })}
               </AccordionTrigger>
               <AccordionContent className="pb-3">
                 <div className="flex items-center justify-end mb-1">
@@ -177,7 +184,7 @@ export function AnalyzePanel() {
                     onClick={() => window.open(iframeSrc, '_blank', 'noopener')}
                   >
                     <ExternalLink className="size-3 mr-1" />
-                    Open in new tab
+                    {t('analyze.reports.openInNewTab')}
                   </Button>
                 </div>
                 <div className="border rounded overflow-hidden">
@@ -195,7 +202,7 @@ export function AnalyzePanel() {
 
           <AccordionItem value="history">
             <AccordionTrigger className="py-2 text-xs uppercase font-medium">
-              Recent reports{tickerFilter ? ` for ${tickerFilter}` : ''}
+              {tickerFilter ? t('analyze.reports.titleFor', { ticker: tickerFilter }) : t('analyze.reports.title')}
             </AccordionTrigger>
             <AccordionContent className="pb-3">
               <ReportList

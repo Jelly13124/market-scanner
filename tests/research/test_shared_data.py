@@ -32,7 +32,7 @@ class TestSharedDataCache:
 
     @patch("src.research.shared_data._fetch_raw")
     def test_different_date_different_fetch(self, mock_fetch):
-        mock_fetch.side_effect = lambda t, d: SharedData(
+        mock_fetch.side_effect = lambda t, d, market="us": SharedData(
             ticker=t, scan_date=d,
             prices=[], financials=[], insider_trades=[],
             news=[], analyst_actions=[], analyst_targets=None,

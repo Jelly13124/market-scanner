@@ -42,7 +42,7 @@ class SharedData:
     spy_prices: list                      # benchmark for macro module
 
 
-_CACHE: dict[tuple[str, str], SharedData] = {}
+_CACHE: dict[tuple[str, str, str], SharedData] = {}
 _LOCK = threading.Lock()
 
 
@@ -65,9 +65,13 @@ _SECTOR_ETF = {
 }
 
 
-def _fetch_raw(ticker: str, scan_date: str) -> SharedData:
+def _fetch_raw(ticker: str, scan_date: str, market: str = "us") -> SharedData:
     """Hit the v2 data layer for every field. Best-effort: each subfetch
     is wrapped so a single source failing doesn't kill the whole bundle.
+
+    ``market`` selects the benchmark + sector-ETF table:
+      - "us" (default): SPY + _SECTOR_ETF (SPDR sector ETFs).
+      - "cn": 000300.SH (沪深300) + SW1 (申万一级) index lookup.
     """
     from v2.data.factory import get_provider_factory
 
@@ -127,19 +131,31 @@ def _fetch_raw(ticker: str, scan_date: str) -> SharedData:
     except Exception as e:
         logger.warning("shared_data: company_facts(%s) failed: %s", ticker, e)
 
-    # Benchmarks
+    # Benchmarks — swap based on market. CompositeClient routes A-share
+    # tickers (e.g. 000300.SH, 801120.SH) to AShareClient transparently.
     sector = (bundle.company_facts.get("sector") or
               bundle.company_facts.get("industry") or "")
-    etf = _SECTOR_ETF.get(sector)
+    if market == "cn":
+        try:
+            from v2.data.ashare.sw_sector_map import sw1_index_code
+            etf = sw1_index_code(sector) if sector else None
+        except Exception as e:
+            logger.warning("shared_data: sw1_index_code import failed: %s", e)
+            etf = None
+        benchmark_ticker = "000300.SH"
+    else:
+        etf = _SECTOR_ETF.get(sector)
+        benchmark_ticker = "SPY"
+
     if etf:
         try:
             bundle.sector_etf_prices = client.get_prices(etf, start_dt, scan_date)
         except Exception as e:
             logger.warning("shared_data: sector_etf(%s)=%s failed: %s", ticker, etf, e)
     try:
-        bundle.spy_prices = client.get_prices("SPY", start_dt, scan_date)
+        bundle.spy_prices = client.get_prices(benchmark_ticker, start_dt, scan_date)
     except Exception as e:
-        logger.warning("shared_data: spy_prices failed: %s", e)
+        logger.warning("shared_data: benchmark(%s) failed: %s", benchmark_ticker, e)
 
     close = getattr(client, "close", None)
     if callable(close):
@@ -150,16 +166,23 @@ def _fetch_raw(ticker: str, scan_date: str) -> SharedData:
     return bundle
 
 
-def fetch_shared_data(ticker: str, scan_date: str) -> SharedData:
+def fetch_shared_data(
+    ticker: str, scan_date: str, market: str = "us",
+) -> SharedData:
     """Cached fetch — returns the same SharedData instance for repeated
-    calls with the same (ticker, scan_date) within a single process.
+    calls with the same (ticker, scan_date, market) within a single
+    process.
+
+    ``market`` selects the benchmark + sector-ETF table; see ``_fetch_raw``.
+    Cache key includes ``market`` so the same A-share ticker analyzed as
+    both "us" and "cn" (hypothetically) doesn't collide.
     """
-    key = (ticker, scan_date)
+    key = (ticker, scan_date, market)
     with _LOCK:
         hit = _CACHE.get(key)
     if hit is not None:
         return hit
-    bundle = _fetch_raw(ticker, scan_date)
+    bundle = _fetch_raw(ticker, scan_date, market=market)
     with _LOCK:
         _CACHE[key] = bundle
     return bundle

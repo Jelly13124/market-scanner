@@ -178,6 +178,8 @@ def _to_analyze_request(req: AnalyzeRunRequest) -> AnalyzeRequest:
         ),
         persona_overrides=req.persona_overrides,
         debate_rounds=req.debate_rounds,
+        report_language=req.report_language,
+        market=req.market,
     )
 
 

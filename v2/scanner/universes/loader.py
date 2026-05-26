@@ -7,13 +7,24 @@ Universe kinds:
                        recommended default for new scanner configs
     russell3000      — Russell 3000 constituents (~3000)
     all_us           — NYSE + NASDAQ + AMEX active common stock (~6000-8000)
+    sse50            — SSE 50 / 上证 50 mega-caps (~50)
+    csi300           — CSI 300 / 沪深 300 large-caps (~300)
+    csi500           — CSI 500 / 中证 500 mid-caps (~500)
+    csi1000          — CSI 1000 / 中证 1000 small-caps (~1000)
+    hs300_ext        — HS300 + CSI500 union (~800 A-share universe)
     custom           — caller-supplied ticker list (no CSV lookup)
 
 The CSVs are simple ``ticker,name,sector`` files. Only the first column is
 read; the rest is metadata for humans browsing the file.
 
 Bundled CSVs are seed snapshots. Refresh quarterly via
-``v2/scanner/universes/refresh_universes.py``.
+``v2/scanner/universes/refresh_universes.py`` (US) or
+``v2/scanner/universes/refresh_ashare_universes.py`` (A-share).
+
+Empty CSVs (header-only) are tolerated and return ``[]`` -- this is the
+"fetch failed, ship stubs" fallback for A-share when Eastmoney's
+constituent endpoint is unreachable. Callers must handle empty universes
+gracefully.
 """
 
 from __future__ import annotations
@@ -24,13 +35,26 @@ from functools import cache
 from pathlib import Path
 
 _DIR = Path(__file__).parent
+_ASHARE_DIR = _DIR / "data"
 
 _FILES = {
     "sp500": _DIR / "sp500.csv",
     "nasdaq100": _DIR / "nasdaq100.csv",
     "russell3000": _DIR / "russell3000.csv",
     "all_us": _DIR / "nyse_nasdaq_all.csv",
+    # A-share universes -- snapshots live under data/ subdirectory.
+    "sse50": _ASHARE_DIR / "sse50.csv",
+    "csi300": _ASHARE_DIR / "csi300.csv",
+    "csi500": _ASHARE_DIR / "csi500.csv",
+    "csi1000": _ASHARE_DIR / "csi1000.csv",
+    "hs300_ext": _ASHARE_DIR / "hs300_ext.csv",
 }
+
+# A-share tickers (e.g. "600519.SH") must NOT be uppercased blindly --
+# the existing ``.upper()`` in _load_csv is safe for digits + SH/SZ/BJ
+# anyway, but track which kinds are A-share to skip the upper() if a
+# future kind ever has lowercase-sensitive content.
+_ASHARE_KINDS = frozenset({"sse50", "csi300", "csi500", "csi1000", "hs300_ext"})
 
 # Composite universes are deterministic unions of the above. Each value is a
 # tuple of source kinds; the loader returns the deduped concatenation in the

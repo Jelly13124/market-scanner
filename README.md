@@ -1,4 +1,4 @@
-# AI Hedge Fund
+# Quant Lab
 
 This is a proof of concept for an AI-powered hedge fund.  The goal of this project is to explore the use of AI to make trading decisions.  This project is for **educational** purposes only and is not intended for real trading or investment.
 
@@ -24,8 +24,6 @@ This system employs several agents working together:
 18. Risk Manager - Calculates risk metrics and sets position limits
 19. Portfolio Manager - Makes final trading decisions and generates orders
 
-<img width="1042" alt="Screenshot 2025-03-22 at 6 19 07 PM" src="https://github.com/user-attachments/assets/cbae3dcf-b571-490d-b0ad-3f0f035ac0d4" />
-
 Note: the system does not actually make any trades.
 
 ## Disclaimer
@@ -50,13 +48,13 @@ By using this software, you agree to use it solely for learning purposes.
 
 ## How to Install
 
-Before you can run the AI Hedge Fund, you'll need to install it and set up your API keys. These steps are common to both the full-stack web application and command line interface.
+Before you can run Quant Lab, you'll need to install it and set up your API keys. These steps are common to both the full-stack web application and command line interface.
 
 ### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/Jelly13124/market-scanner.git
-cd ai-hedge-fund
+cd market-scanner
 ```
 
 ### 2. Set up API keys
@@ -82,9 +80,7 @@ FINANCIAL_DATASETS_API_KEY=your-financial-datasets-api-key
 
 ### ⌨️ Command Line Interface
 
-You can run the AI Hedge Fund directly via terminal. This approach offers more granular control and is useful for automation, scripting, and integration purposes.
-
-<img width="992" alt="Screenshot 2025-01-06 at 5 50 17 PM" src="https://github.com/user-attachments/assets/e8ca04bf-9989-4a7d-a8b4-34e04666663b" />
+You can run Quant Lab directly via terminal. This approach offers more granular control and is useful for automation, scripting, and integration purposes.
 
 #### Quick Start
 
@@ -98,7 +94,7 @@ curl -sSL https://install.python-poetry.org | python3 -
 poetry install
 ```
 
-#### Run the AI Hedge Fund
+#### Run Quant Lab
 ```bash
 poetry run python src/main.py --ticker AAPL,MSFT,NVDA
 ```
@@ -120,19 +116,14 @@ poetry run python src/main.py --ticker AAPL,MSFT,NVDA --start-date 2024-01-01 --
 poetry run python src/backtester.py --ticker AAPL,MSFT,NVDA
 ```
 
-**Example Output:**
-<img width="941" alt="Screenshot 2025-01-06 at 5 47 52 PM" src="https://github.com/user-attachments/assets/00e794ea-8628-44e6-9a84-8f8a31ad3b47" />
-
-
 Note: The `--ollama`, `--start-date`, and `--end-date` flags work for the backtester, as well!
 
 ### 🖥️ Web Application
 
-The new way to run the AI Hedge Fund is through our web application that provides a user-friendly interface. This is recommended for users who prefer visual interfaces over command line tools.
+The recommended way to run Quant Lab is through the web application that provides a user-friendly interface (Analyze / Scanner / Lab tabs, multi-language UI, A-share + US support).
 
 Please see detailed instructions on how to install and run the web application [here](https://github.com/Jelly13124/market-scanner/tree/main/app).
 
-<img width="1721" alt="Screenshot 2025-06-28 at 6 41 03 PM" src="https://github.com/user-attachments/assets/b95ab696-c9f4-416c-9ad1-51feb1f5374b" />
 
 
 ## Feature Requests

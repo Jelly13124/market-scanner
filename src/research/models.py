@@ -179,6 +179,15 @@ class AnalyzeRequest:
     included_sections: set[str] = field(default_factory=lambda: set(SECTION_ORDER))
     persona_overrides: dict[str, str] | None = None
     debate_rounds: int = 3
+    # Phase 7 i18n: output language for the generated report. "en" (default)
+    # keeps Phase 4-6 behavior; "zh" prepends a "respond in 中文" instruction
+    # to every section's LLM prompt + switches HEADING_MAP to Chinese.
+    report_language: str = "en"
+    # Phase 8 A-share routing: which market the ticker belongs to. "us"
+    # (default) preserves Phase 4-7 behavior (SPY benchmark + SPDR sector
+    # ETFs). "cn" swaps the benchmark to 000300.SH (沪深300) and resolves
+    # sector ETFs via SW1 (申万一级) index codes.
+    market: str = "us"
 
     def __post_init__(self) -> None:
         # Clamp to a sane window — guards against the API schema being

@@ -139,6 +139,22 @@ class AnalyzeRunRequest(BaseModel):
             "from the dict fall through to the router or objective mode."
         ),
     )
+    report_language: Literal["en", "zh"] = Field(
+        default="en",
+        description=(
+            "Phase 7 i18n — output language for the generated report. "
+            "'en' (default) keeps Phase 4-6 English behavior; 'zh' prepends "
+            "a respond-in-中文 instruction to every section LLM prompt."
+        ),
+    )
+    market: Literal["us", "cn"] = Field(
+        default="us",
+        description=(
+            "Phase 8 — which market the ticker belongs to. 'us' (default) "
+            "uses SPY + SPDR sector ETFs as benchmarks. 'cn' swaps to "
+            "000300.SH (沪深300) + SW1 (申万一级) sector indices."
+        ),
+    )
 
     @field_validator("ticker")
     @classmethod

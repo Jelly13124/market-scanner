@@ -1,5 +1,58 @@
 # Progress Log
 
+## Session — 2026-05-26 (Phase 8 Wave 6 — Frontend Market dropdown + A-share universes)
+
+### What shipped (Task 14 of `docs/superpowers/plans/2026-05-26-a-share-data-integration.md`)
+
+- **app/frontend/src/types/analyze.ts** — new `Market = 'us' | 'cn'`
+  type + optional `market` field on `AnalyzeRunRequest` (mirrors
+  Wave 5's backend schema change).
+- **app/frontend/src/types/scanner.ts** — extended `UniverseKind`
+  union and `UNIVERSE_KIND_OPTIONS` array with the 5 A-share
+  universes (sse50/csi300/csi500/csi1000/hs300_ext). Mirrors the
+  backend universe wave already on main.
+- **app/frontend/src/types/strategy.ts** — same 5 values appended
+  to `UniverseSpec.kind` so Strategy Lab specs can target A-share
+  universes.
+- **app/frontend/src/components/panels/analyze/input-node.tsx** —
+  Market `<select>` rendered ABOVE the Ticker field so the user
+  picks market first (CN tickers are 6-digit codes, not
+  US-convention symbols). `InputNodeData.market` defaults to `'us'`.
+- **app/frontend/src/components/panels/analyze/analyze-panel.tsx** —
+  `handleRun` forwards `market: input.market ?? 'us'` on the
+  outgoing `AnalyzeRunRequest`.
+- **app/frontend/src/i18n/locales/en.json** + **zh.json** — new
+  keys: `analyze.input.market`, `analyze.markets.{us,cn}`,
+  `scanner.universe.{sse50,csi300,csi500,csi1000,hs300_ext}`.
+
+### Plan-code adaptations
+
+- Plan asserted "Phase 7 i18n infrastructure ... fully wired" on
+  main, but `git log -- app/frontend/src/components/panels/analyze/analyze-panel.tsx`
+  shows the last commit is `a0afdf1` (no i18n). All Phase 7 work was
+  sitting uncommitted in the working tree. Bundled the Phase 7
+  hunks in `analyze-panel.tsx` and `input-node.tsx` into this commit
+  because the `useTranslation` import is a compile-time prerequisite
+  for the new Market dropdown.
+- Plan suggested `scanner.universe.*` already existed in the locale
+  files; both `en.json` and `zh.json` were untracked entirely. This
+  commit creates them with both the existing Phase 7 namespace and
+  the new Phase 8 keys.
+- `UNIVERSE_KIND_OPTIONS` entries are rendered directly via
+  `opt.label` (not via i18n) in `scanner-config-dialog.tsx:295`, so
+  the `label` strings include both English and Chinese (e.g.
+  "SSE 50 / 上证 50") rather than being routed through the
+  `scanner.universe.*` namespace. The i18n keys were still added
+  per spec for any future caller that wants them.
+
+### Verification
+
+- `npx tsc --noEmit` — 0 new errors. Pre-existing errors in
+  `sidebar.tsx`, `agent-run-detail.tsx`, `lib/utils.ts` remain (out
+  of Phase 8 scope per CLAUDE.md).
+- `node -e "JSON.parse(...)"` on both locale files — valid.
+- Commit: `e07c673`.
+
 ## Session — 2026-05-26 (Phase 8 Wave 5 — SOP pipeline market integration)
 
 ### What shipped (Task 13 of `docs/superpowers/plans/2026-05-26-a-share-data-integration.md`)

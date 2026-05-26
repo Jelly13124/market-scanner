@@ -222,32 +222,67 @@ def _inject_section_body(html: str, h2_text: str, body_html: str) -> str:
 
 
 def _technical_chart_imgs(payload, *, report_id: int | None) -> str:
-    """Build the trailing <img> block appended to the Technical section.
+    """Build the trailing <figure> block appended to the Technical section.
 
-    Two charts:
-      1. Equity curve (always, if available) — inline base64 so it
-         renders in email + web without server access.
-      2. Daily K-line (web only) — points at the per-report chart
-         endpoint. Skipped when ``report_id`` is None (CLI path) since
-         there's no backend to serve it.
+    Phase 10: matches reference report style — 3 inline <figure> tags,
+    each with a <figcaption>. All charts are inline base64 (no backend
+    URL dependency) so email + offline viewing both work.
+
+      1. Daily K-line (candlestick + SMA + volume + RSI) — chart_kline_daily_b64
+      2. Weekly K-line                                   — chart_kline_weekly_b64
+      3. Equity curve (backtest result)                  — chart_equity_curve_b64
+
+    Backwards-compat: if structured only has chart_equity_curve_b64
+    (Phase 4-9 reports persisted before this rewrite), we still render
+    just that one and skip the K-lines.
     """
     parts: list[str] = []
     structured = payload.structured if payload is not None else None
-    chart_b64 = None
-    if isinstance(structured, dict):
-        chart_b64 = structured.get("chart_equity_curve_b64")
+    if not isinstance(structured, dict):
+        return ""
 
-    if chart_b64:
-        parts.append(
-            f'\n<p><img src="{chart_b64}" alt="Equity curve" '
-            f'style="max-width:100%;height:auto;"></p>'
+    daily = structured.get("chart_kline_daily_b64")
+    weekly = structured.get("chart_kline_weekly_b64")
+    equity = structured.get("chart_equity_curve_b64")
+
+    def _fig(src: str, alt: str, caption: str) -> str:
+        return (
+            f'\n<figure style="margin:1rem 0;">'
+            f'<img src="{src}" alt="{alt}" style="max-width:100%;height:auto;">'
+            f'<figcaption style="font-size:.85rem;color:var(--muted);margin-top:.3rem;">'
+            f'{caption}</figcaption></figure>'
         )
 
-    if report_id is not None:
-        parts.append(
-            f'\n<p><img src="/research/reports/{report_id}/chart/kline-daily.png" '
-            f'alt="Daily K-line" style="max-width:100%;height:auto;"></p>'
-        )
+    if daily:
+        parts.append(_fig(
+            daily,
+            "Daily K-line",
+            "Daily candlestick with SMA20/50/200 + volume + RSI(14). "
+            "Dashed horizontal lines = auto-detected 52-week / 60-day "
+            "support and resistance.",
+        ))
+    if weekly:
+        parts.append(_fig(
+            weekly,
+            "Weekly K-line",
+            "Weekly candlestick (resampled to W-FRI) with SMA20/50/200 "
+            "and longer-term support/resistance.",
+        ))
+    if equity:
+        parts.append(_fig(
+            equity,
+            "Equity curve",
+            "Backtest equity curve — $1 start, compounded by the forward "
+            "return at each signal trigger (20-day horizon).",
+        ))
+
+    # Backwards compat: old reports persisted with kline-daily.png URL only
+    if not (daily or weekly) and report_id is not None:
+        parts.append(_fig(
+            f"/research/reports/{report_id}/chart/kline-daily.png",
+            "Daily K-line",
+            "Daily K-line (legacy URL — re-run analyze for inline candlestick).",
+        ))
 
     return "".join(parts)
 

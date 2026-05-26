@@ -1,5 +1,61 @@
 # Progress Log
 
+## Session — 2026-05-26 (Phase 8 Wave 1 — A-share foundation)
+
+### What shipped (Tasks 1-3 of `docs/superpowers/plans/2026-05-26-a-share-data-integration.md`)
+
+- **deps**: `mootdx` + `stockstats` added to `pyproject.toml` as the
+  optional `[ashare]` extra; installed against anaconda Python 3.13.
+  Plan called for `mootdx ^2.1.6` (doesn't exist on PyPI) - corrected
+  to `^0.11.7` (current latest). Heads-up: mootdx pinned
+  `httpx 0.25.2` and `tenacity 8.5.0`, downgrading from our locked
+  `httpx ^0.27.0` / `tenacity 9.0.0`. chromadb/mcp/ollama now report
+  version conflicts; verify those callers still work or relax the
+  upstream pin before merging.
+- **v2/data/ashare/symbol.py** — `is_ashare`, `normalize`,
+  `infer_exchange` with the 6-digit + suffix + prefix forms.
+  33-case parametrized test suite green.
+- **v2/data/ashare/client.py** — `AShareClient` skeleton that satisfies
+  the `DataClient` Protocol. All 6 v1 methods route by `is_ashare()`,
+  lazy-import the (still missing) Wave 2 helper modules inside
+  `try/except`, and degrade to `[]` / `None` on any failure. Optional
+  protocol methods (`get_insider_trades`, `get_earnings`,
+  `get_earnings_calendar`) return empty per spec - v1 has no insider /
+  earnings-calendar coverage for A-shares.
+
+### Commits
+
+- `6dbc7c4` deps: add mootdx + stockstats as optional [ashare] extra
+- `379c660` feat(ashare): symbol detection + canonical normalization
+- `3e65f6c` feat(ashare): AShareClient skeleton implementing DataClient Protocol
+
+### Verification
+
+- `pytest tests/v2/data/ashare/` -> 35/35 passed (33 symbol + 2 protocol)
+- `python -c "import mootdx; import stockstats; print('ok')"` -> ok
+  (mootdx 0.11.7, stockstats 0.6.5)
+
+### Plan deviations
+
+1. `mootdx` version pin changed from `^2.1.6` (nonexistent) to `^0.11.7`.
+2. Moved lazy `from v2.data.ashare.<helper> import ...` statements
+   inside the `try` block of each `AShareClient` method (plan had them
+   between `if not is_ashare` and `try`). Wave 2 modules don't exist
+   yet, so an outside-try import would raise at first call and bypass
+   the protocol's never-raise guarantee.
+3. `AShareClient.get_earnings_calendar` signature corrected to
+   `(*, start_date, end_date)` to match the Protocol's keyword-only
+   contract (plan had positional args).
+
+### Wave 1 done, Wave 2 unblocked
+
+Wave 2A/2B/2C can now run in parallel. Each fills in one of the
+lazy-imported helpers (`mootdx_prices`, `eastmoney_*`, `cls_news`,
+`sw_sector_map`). The client skeleton already calls them with the
+exact signatures the plan specifies, so Wave 2 contributors must match.
+
+---
+
 ## Session — 2026-05-25 (Phase 6 landed — AI Strategy Lab)
 
 ### What shipped

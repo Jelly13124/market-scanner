@@ -16,6 +16,8 @@ Technical-signal backtest (Task 14) runs once and is appended as a
 from __future__ import annotations
 
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 from src.research.backtest_signal import run_signal_backtest
@@ -33,6 +35,19 @@ from src.research.sections.base import SectionContext
 from src.research.shared_data import fetch_shared_data
 
 logger = logging.getLogger(__name__)
+
+# Per the canvas redesign (2026-05-25), these 10 sections are
+# semantically independent — each consumes (shared, data_health) only.
+# Dispatched concurrently via ThreadPoolExecutor; they're LLM-bound so
+# threading buys near-linear speedup until the provider rate-limits.
+_PARALLEL_SECTIONS = {
+    "macro", "sector", "company_fundamentals", "financial_statements",
+    "valuation", "technical", "risk_position", "scenarios", "conviction",
+    "event_risk",
+}
+
+# Tunable via env so we can throttle if DeepSeek / OpenAI starts 429-ing.
+_MAX_PARALLEL = int(os.environ.get("SOP_MAX_PARALLEL", "10"))
 
 
 def _persona_for(assignments: dict | None, section_name: str) -> str | None:
@@ -64,7 +79,7 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
     persona assignments (when use_personas), backtest verdict, and
     rendered_html=None (Task 16's render_sop populates that)."""
     scan_date = date.today().isoformat()
-    shared = fetch_shared_data(request.ticker, scan_date)
+    shared = fetch_shared_data(request.ticker, scan_date, market=request.market)
 
     # Router: only when persona-mode is on
     persona_assignments: dict | None = None
@@ -105,47 +120,48 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
             persona_used=None,
         )
 
-    # Iterate SECTION_ORDER (only the canonical names — the magic key
-    # stays in sections dict but is not dispatched)
-    for name in SECTION_ORDER:
-        if name not in request.included_sections:
-            sections[name] = SectionPayload(
-                name=name,
-                markdown=f"## {name}\n\n_n/a -- user excluded_\n",
-                structured=None,
-                skipped=True,
-                persona_used=None,
-                skip_reason="user excluded this section",
-            )
-            continue
-        runner = SECTION_REGISTRY.get(name)
-        if runner is None:
-            sections[name] = SectionPayload(
-                name=name,
-                markdown=f"## {name}\n\n_section not yet implemented_\n",
-                structured=None,
-                skipped=True,
-                persona_used=None,
-                skip_reason="no runner registered",
-            )
-            continue
-        # Resolve persona: router-assigned, then overridden by request
-        # if Phase 5D persona_overrides pins this section.
-        persona_for_section = _persona_for(persona_assignments, name)
+    def _make_excluded(name: str) -> SectionPayload:
+        return SectionPayload(
+            name=name,
+            markdown=f"## {name}\n\n_n/a -- user excluded_\n",
+            structured=None,
+            skipped=True,
+            persona_used=None,
+            skip_reason="user excluded this section",
+        )
+
+    def _make_unregistered(name: str) -> SectionPayload:
+        return SectionPayload(
+            name=name,
+            markdown=f"## {name}\n\n_section not yet implemented_\n",
+            structured=None,
+            skipped=True,
+            persona_used=None,
+            skip_reason="no runner registered",
+        )
+
+    def _persona_for_request(name: str) -> str | None:
+        p = _persona_for(persona_assignments, name)
         overrides = getattr(request, "persona_overrides", None)
         if overrides and name in overrides:
-            persona_for_section = overrides[name]
+            p = overrides[name]
+        return p
+
+    def _run_one(name: str, prior_snapshot: dict[str, SectionPayload]) -> SectionPayload:
+        runner = SECTION_REGISTRY.get(name)
+        if runner is None:
+            return _make_unregistered(name)
         ctx = SectionContext(
             request=request,
             shared=shared,
-            persona=persona_for_section,
-            prior=dict(sections),  # snapshot — section sees everything before it
+            persona=_persona_for_request(name),
+            prior=prior_snapshot,
         )
         try:
-            payload = runner.run(ctx)
+            return runner.run(ctx)
         except Exception as e:
             logger.exception("section %s raised: %s", name, e)
-            payload = SectionPayload(
+            return SectionPayload(
                 name=name,
                 markdown=f"## {name}\n\n_unavailable: {e}_\n",
                 structured=None,
@@ -153,7 +169,71 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
                 persona_used=None,
                 skip_reason=f"unhandled exception: {e}",
             )
-        sections[name] = payload
+
+    # Walk SECTION_ORDER, but dispatch the 10 _PARALLEL_SECTIONS as a
+    # single concurrent batch (LLM I/O bound). Sequential phases:
+    #   1. pre-parallel sections (e.g. data_health) run one-by-one
+    #   2. parallel batch fires all included _PARALLEL_SECTIONS together,
+    #      each seeing the same prior snapshot (pre-parallel results only)
+    #   3. post-parallel sections (debate, final_strategy, exec_summary,
+    #      evidence_ledger, missing_data) run one-by-one and see the
+    #      full prior dict including all parallel outputs
+    pending_parallel: list[str] = []
+    for name in SECTION_ORDER:
+        if name in _PARALLEL_SECTIONS:
+            pending_parallel.append(name)
+            continue
+
+        # Flush the parallel batch before any later sequential section so
+        # debate / output / etc. see all 10 analyses in their `prior`.
+        if pending_parallel:
+            included_parallel = [n for n in pending_parallel if n in request.included_sections]
+            excluded_parallel = [n for n in pending_parallel if n not in request.included_sections]
+            for n in excluded_parallel:
+                sections[n] = _make_excluded(n)
+            if included_parallel:
+                snapshot = dict(sections)
+                workers = min(len(included_parallel), max(1, _MAX_PARALLEL))
+                logger.info("dispatching %d parallel sections (workers=%d): %s",
+                             len(included_parallel), workers, included_parallel)
+                with ThreadPoolExecutor(
+                    max_workers=workers, thread_name_prefix="sop-section",
+                ) as ex:
+                    futures = {
+                        ex.submit(_run_one, n, snapshot): n
+                        for n in included_parallel
+                    }
+                    for fut in futures:
+                        n = futures[fut]
+                        sections[n] = fut.result()
+            pending_parallel = []
+
+        # Now dispatch this sequential section.
+        if name not in request.included_sections:
+            sections[name] = _make_excluded(name)
+            continue
+        sections[name] = _run_one(name, dict(sections))
+
+    # Flush trailing parallel batch (if SECTION_ORDER ends with parallel
+    # sections — currently doesn't, but defensive).
+    if pending_parallel:
+        included_parallel = [n for n in pending_parallel if n in request.included_sections]
+        excluded_parallel = [n for n in pending_parallel if n not in request.included_sections]
+        for n in excluded_parallel:
+            sections[n] = _make_excluded(n)
+        if included_parallel:
+            snapshot = dict(sections)
+            workers = min(len(included_parallel), max(1, _MAX_PARALLEL))
+            with ThreadPoolExecutor(
+                max_workers=workers, thread_name_prefix="sop-section",
+            ) as ex:
+                futures = {
+                    ex.submit(_run_one, n, snapshot): n
+                    for n in included_parallel
+                }
+                for fut in futures:
+                    n = futures[fut]
+                    sections[n] = fut.result()
 
     # Append Backtest Validation to Technical's markdown + embed equity-curve PNG
     if (

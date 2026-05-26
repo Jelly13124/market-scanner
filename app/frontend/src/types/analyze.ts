@@ -5,6 +5,11 @@ export type Objective =
   | 'target_price' | 'short_term' | 'medium_term'
   | 'long_term' | 'earnings_review' | 'general_research';
 export type RiskBand = 'conservative' | 'balanced' | 'aggressive';
+export type ReportLanguage = 'en' | 'zh';
+// Phase 8 — selects which data source / ticker convention the run targets.
+// 'us' = US equities (Financial Datasets, Finnhub, etc.).
+// 'cn' = A-shares (mootdx / a-stock-data toolkit).
+export type Market = 'us' | 'cn';
 
 export interface AnalyzeRunRequest {
   ticker: string;
@@ -21,6 +26,12 @@ export interface AnalyzeRunRequest {
   included_sections?: string[] | null;
   // Phase 5D — pin specific personas per section (canvas overrides).
   persona_overrides?: Record<string, string> | null;
+  // Phase 7 i18n — output language for the generated report. Defaults to
+  // 'en'. Sourced from the Input node on the canvas.
+  report_language?: ReportLanguage;
+  // Phase 8 A-share data integration — defaults to 'us'. Sourced from the
+  // Input node on the canvas.
+  market?: Market;
 }
 
 export interface SectionPayloadAPI {
@@ -80,7 +91,7 @@ export const SECTION_LABELS: Record<string, string> = {
   company_fundamentals: 'Company Fundamentals',
   financial_statements: 'Financial Statements',
   valuation:            'Valuation',
-  technical:            'Technical (incl. backtest)',
+  technical:            'Technical Analysis (含 Backtest)',
   risk_position:        'Risk & Position',
   scenarios:            'Bear/Base/Bull Scenarios',
   conviction:           'Conviction Score',

@@ -2,7 +2,16 @@
 // validation for blocks (frontend treats them as Record<string, unknown>).
 
 export interface UniverseSpec {
-  kind: 'watchlist' | 'sp500' | 'nasdaq100';
+  kind:
+    | 'watchlist'
+    | 'sp500'
+    | 'nasdaq100'
+    // Phase 8 A-share universes
+    | 'sse50'
+    | 'csi300'
+    | 'csi500'
+    | 'csi1000'
+    | 'hs300_ext';
   watchlist_id?: number | null;
 }
 

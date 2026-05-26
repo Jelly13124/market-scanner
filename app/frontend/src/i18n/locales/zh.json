@@ -1,0 +1,359 @@
+{
+  "common": {
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "apply": "应用",
+    "run": "运行",
+    "loading": "加载中...",
+    "close": "关闭",
+    "edit": "编辑",
+    "add": "添加",
+    "remove": "移除",
+    "back": "返回",
+    "confirm": "确认",
+    "create": "创建",
+    "new": "新建",
+    "search": "搜索",
+    "yes": "是",
+    "no": "否",
+    "english": "English",
+    "chinese": "简体中文",
+    "or": "或",
+    "refresh": "刷新",
+    "rename": "重命名",
+    "required": "必选",
+    "name": "名称",
+    "enabled": "已启用",
+    "disabled": "已禁用",
+    "test": "测试"
+  },
+  "tabBar": {
+    "closeTab": "关闭标签页",
+    "welcome": "欢迎使用 AI 对冲基金",
+    "welcomeHint": "从左侧栏 (⌘B) 打开一个面板，或打开设置 (⌘,) 配置偏好。"
+  },
+  "tabs": {
+    "analyze": "分析",
+    "scanner": "扫描器",
+    "lab": "策略实验室",
+    "settings": "设置"
+  },
+  "sidebar": {
+    "watchlists": "自选清单",
+    "analyze": "分析",
+    "scanner": "扫描器",
+    "lab": "策略实验室",
+    "addTicker": "添加股票",
+    "addWatchlist": "添加清单",
+    "newWatchlist": "新建自选清单",
+    "watchlistName": "清单名称",
+    "watchlistNamePlaceholder": "例如：AI 追踪",
+    "deleteWatchlist": "删除清单 \"{{name}}\"？",
+    "renameWatchlist": "重命名",
+    "noTickers": "暂无股票。点 + 添加。",
+    "noWatchlists": "暂无清单。点 + 创建。",
+    "tickerCount_one": "{{count}} 只",
+    "tickerCount_other": "{{count}} 只",
+    "analyzeTooltip": "打开单股 SOP 分析器",
+    "scannerTooltip": "运行全市场筛选",
+    "labTooltip": "AI 策略实验室 — 对话式设计、回测、迭代",
+    "searchTickerPlaceholder": "搜索股票代码..."
+  },
+  "topBar": {
+    "toggleLeft": "切换左侧栏",
+    "toggleRight": "切换右侧栏",
+    "toggleBottom": "切换底部面板",
+    "openSettings": "打开设置",
+    "language": "语言"
+  },
+  "sections": {
+    "data_health": "数据健康度",
+    "executive_summary": "执行摘要",
+    "evidence_ledger": "证据账本",
+    "macro": "宏观环境",
+    "sector": "行业与同业",
+    "company_fundamentals": "公司基本面",
+    "financial_statements": "财务报表",
+    "valuation": "估值分析",
+    "technical": "技术分析（含 Backtest）",
+    "risk_position": "风险与仓位",
+    "scenarios": "熊 / 基准 / 牛 情景",
+    "conviction": "信念评分",
+    "event_risk": "事件风险",
+    "debate": "辩论",
+    "final_strategy": "最终策略",
+    "missing_data": "缺失数据"
+  },
+  "analyze": {
+    "title": "分析",
+    "toolbar": {
+      "run": "运行 SOP 分析",
+      "running": "运行中",
+      "newBlank": "新建空白",
+      "resetToDefault": "重置为默认",
+      "save": "保存流程",
+      "saveAs": "另存为...",
+      "load": "加载",
+      "addInput": "+ 输入",
+      "addSection": "+ 添加",
+      "savedFlow": "已保存流程",
+      "newFlow": "新建",
+      "elapsed": "已用",
+      "sectionsCount_one": "{{count}} 个 section",
+      "sectionsCount_other": "{{count}} 个 section"
+    },
+    "input": {
+      "label": "运行参数",
+      "ticker": "股票代码",
+      "market": "市场",
+      "objective": "目标",
+      "budget": "预算 (USD)",
+      "risk": "风险偏好",
+      "holds": "我已持有",
+      "costBasis": "成本基础 ($/股)",
+      "reportLanguage": "报告语言",
+      "reportLanguageHint": "生成报告的语言",
+      "deleteNode": "删除 Input 节点"
+    },
+    "objectives": {
+      "general_research": "一般研究",
+      "target_price": "目标价",
+      "short_term": "短线交易",
+      "medium_term": "中线",
+      "long_term": "长线投资",
+      "earnings_review": "财报回顾"
+    },
+    "risks": {
+      "conservative": "保守",
+      "balanced": "均衡",
+      "aggressive": "激进"
+    },
+    "markets": {
+      "us": "美股",
+      "cn": "A股"
+    },
+    "section": {
+      "persona": "人格",
+      "objective_persona": "客观",
+      "rounds": "辩论轮数",
+      "roundsHint": "(最多 5, 推荐 3)",
+      "usePersonas": "使用投资者人格",
+      "deleteNode": "删除节点"
+    },
+    "output": {
+      "title": "输出",
+      "description": "最终 HTML 报告 — 由 4 个后端 section 组成",
+      "deleteNode": "删除 Output 节点"
+    },
+    "palette": {
+      "title": "Section 列表",
+      "alreadyOnCanvas": "已在画布上",
+      "runInput": "运行参数",
+      "managerCheck": "Manager 检查"
+    },
+    "flowList": {
+      "savedFlows": "已保存流程",
+      "noSaved": "暂无已保存流程",
+      "savePromptName": "为此流程命名",
+      "saveSuccess": "流程已保存",
+      "deleted": "流程已删除",
+      "savedTemplates": "已保存的 AnalyzeFlow 模板",
+      "loadSelected": "加载所选",
+      "deleteSelected": "删除所选",
+      "saveAsTemplate": "将当前画布另存为模板",
+      "resetToDefault": "重置为默认模板",
+      "templateName": "模板名称"
+    },
+    "status": {
+      "title": "Section 状态",
+      "completed": "完成",
+      "skipped": "已跳过",
+      "failed": "失败",
+      "personaAssignments": "人格分配",
+      "personas": "人格"
+    },
+    "reports": {
+      "title": "近期报告",
+      "titleFor": "{{ticker}} 的近期报告",
+      "reportN": "报告 #{{id}}",
+      "openInNewTab": "在新标签页打开",
+      "noReports": "暂无报告"
+    },
+    "errors": {
+      "noInput": "请先在画布添加一个 Input 节点。",
+      "noTicker": "请在 Input 节点输入股票代码。"
+    },
+    "toasts": {
+      "complete": "分析完成: {{ticker}} (id {{id}})",
+      "flowSaved": "流程已保存",
+      "flowLoaded": "流程已加载",
+      "canvasReset": "画布已重置为默认模板"
+    }
+  },
+  "lab": {
+    "title": "策略实验室",
+    "strategies": "策略列表",
+    "newStrategy": "新建策略",
+    "strategyName": "策略名称",
+    "deleteConfirm": "删除策略 \"{{name}}\"？同时会删除聊天记录和回测。",
+    "noStrategies": "暂无策略。点 + 新建。",
+    "selectPrompt": "在左侧选择或新建一个策略。",
+    "version": "v{{version}}",
+    "chat": {
+      "placeholder": "描述你想要的修改，或问 AI 一个问题...",
+      "applyPatch": "应用 patch",
+      "reject": "拒绝",
+      "applied": "已应用",
+      "patchProposed": "AI 提议了 spec 修改 — 请审核后应用",
+      "patchApplied": "Patch 已应用"
+    },
+    "spec": {
+      "title": "策略 Spec",
+      "editJson": "编辑 JSON",
+      "noStrategy": "未选择策略",
+      "universe": "股票池",
+      "entry": "入场 ({{combiner}})",
+      "exit": "出场 (任一触发)",
+      "filters": "过滤器 (全部通过)",
+      "sizing": "仓位",
+      "backtestConfig": "回测配置",
+      "starting": "初始资金",
+      "costs": "成本",
+      "maxPositions": "最大持仓",
+      "isOosSplit": "样本内/外 切分",
+      "benchmark": "基准"
+    },
+    "specJson": {
+      "title": "编辑 Spec JSON",
+      "description": "绕过 AI — 直接编辑 spec。后端会校验。",
+      "saving": "保存中..."
+    },
+    "backtest": {
+      "run": "运行回测",
+      "running": "回测中...",
+      "expectedDuration": "预计 30秒-5分钟，取决于股票池大小",
+      "verdict": "评判: {{label}}",
+      "degradation": "退化比 (OOS/IS CAGR): {{value}}",
+      "tradeLog": "交易日志 ({{count}} 笔)",
+      "history": "回测历史 ({{count}})",
+      "done": "回测完成 ({{label}})",
+      "specUpdated": "Spec 已更新",
+      "ticker": "代码",
+      "entry": "入场",
+      "exit": "出场",
+      "pnl": "盈亏",
+      "reason": "原因",
+      "cagr": "年化收益",
+      "sharpe": "夏普",
+      "sortino": "索提诺",
+      "maxDd": "最大回撤",
+      "winRate": "胜率",
+      "profitFactor": "盈亏比",
+      "trades": "交易数",
+      "in": "买入 $",
+      "out": "卖出 $",
+      "noBacktest": "暂无回测"
+    }
+  },
+  "scanner": {
+    "title": "每日市场扫描器",
+    "newConfig": "+ 新配置",
+    "deleteConfig": "删除配置 \"{{name}}\"？",
+    "deleteThisConfig": "删除此配置",
+    "reloadConfigs": "重新加载配置",
+    "runNow": "立即运行",
+    "running": "运行中...",
+    "lastRun": "上次运行",
+    "noConfigs": "暂无配置",
+    "configs": "配置",
+    "runs": "运行记录",
+    "watchlist": "结果清单",
+    "details": "详情",
+    "config": {
+      "title": "扫描器配置",
+      "name": "名称",
+      "universe": "股票池",
+      "schedule": "调度",
+      "topN": "Top N",
+      "detectors": "检测器",
+      "autoSop": "自动 SOP 分析",
+      "autoSopHint": "扫描后自动对 Top N 只股票运行 SOP 分析",
+      "customTickers": "自定义股票",
+      "customTickersPlaceholder": "AAPL, MSFT, NVDA, GOOGL, TSLA",
+      "userWatchlist": "用户自选清单",
+      "enabled": "启用"
+    },
+    "agentRuns": {
+      "title": "最近 agent 运行"
+    },
+    "analyze": {
+      "dialogTitle": "使用 agent 分析",
+      "template": "模板"
+    },
+    "notifications": {
+      "title": "通知",
+      "addSub": "添加订阅",
+      "addDialog": "添加通知订阅",
+      "channel": "渠道",
+      "sendTest": "发送测试",
+      "headerValueHint": "完整 header 值 (例如 Bearer xxxxx)。"
+    },
+    "research": {
+      "ticker": "股票代码",
+      "usePersonas": "使用人格",
+      "recent": "最近研究报告",
+      "personaAssignments": "人格分配"
+    },
+    "watchlistTable": {
+      "rank": "#",
+      "ticker": "代码",
+      "score": "分数",
+      "price": "价格",
+      "today": "今日",
+      "dir": "方向",
+      "triggers": "触发器",
+      "noEntries": "暂无清单条目 — 本次扫描没有股票达到任何检测器的阈值。"
+    },
+    "universe": {
+      "watchlist": "自选清单",
+      "sp500": "标普 500",
+      "nasdaq100": "纳斯达克 100",
+      "russell3000": "罗素 3000",
+      "all_us": "全美股",
+      "custom": "自定义",
+      "sse50": "上证 50",
+      "csi300": "沪深 300",
+      "csi500": "中证 500",
+      "csi1000": "中证 1000",
+      "hs300_ext": "沪深300 + 中证500"
+    }
+  },
+  "settings": {
+    "title": "设置",
+    "apiKeys": "API 密钥",
+    "apiKeysDesc": "API 端点与认证",
+    "apiKeysHeader": "API 密钥",
+    "securityNote": "安全说明",
+    "models": "模型",
+    "modelsDesc": "本地和云端 AI 模型",
+    "modelsHeader": "模型",
+    "availableModels": "可用模型",
+    "noModelsAvailable": "暂无可用模型",
+    "appearance": "外观",
+    "appearanceDesc": "主题和显示偏好",
+    "language": "语言",
+    "theme": "主题",
+    "themeLight": "浅色",
+    "themeDark": "深色",
+    "themeSystem": "系统",
+    "ollama": {
+      "title": "Ollama",
+      "notInstalled": "Ollama 未安装",
+      "server": "Ollama 服务器"
+    }
+  },
+  "sidebarDialogs": {
+    "watchlistNamePlaceholder": "例如：科技股龙头"
+  }
+}

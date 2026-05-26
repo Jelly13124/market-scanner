@@ -1,5 +1,97 @@
 # Progress Log
 
+## Session — 2026-05-26 (Phase 8 Wave 5 — SOP pipeline market integration)
+
+### What shipped (Task 13 of `docs/superpowers/plans/2026-05-26-a-share-data-integration.md`)
+
+- **src/research/models.py** — added `market: str = "us"` field to
+  `AnalyzeRequest` dataclass (alongside `report_language`). Default
+  preserves Phase 4-7 US behavior.
+- **app/backend/models/research_schemas.py** — mirror on
+  `AnalyzeRunRequest` as `market: Literal["us", "cn"] = Field(default="us")`.
+- **app/backend/routes/research.py** — `_to_analyze_request()` now
+  passes `market=req.market` through to the internal dataclass.
+- **src/research/shared_data.py** — `_fetch_raw` + `fetch_shared_data`
+  both accept `market: str = "us"`. When `market == "cn"`:
+  - benchmark = `000300.SH` (沪深300) instead of `SPY`
+  - sector ETF lookup uses
+    `v2.data.ashare.sw_sector_map.sw1_index_code(sector)` (e.g.
+    "食品饮料" → 801120.SH). Falls back to no sector data when the
+    mapper returns None.
+  CompositeClient's `ashare_backend` routing (Wave 4) means
+  `client.get_prices("000300.SH", ...)` transparently dispatches to
+  `AShareClient` — no special-casing needed at this layer.
+- **Cache-key includes market** so the same ticker+date doesn't
+  collide across markets.
+- **src/research/sop_orchestrator.py** — passes `request.market`
+  through to `fetch_shared_data`.
+- **tests/research/test_shared_data_market.py** (NEW, 4 tests) —
+  covers US default (SPY + SPDR XLK), CN benchmark+SW1 swap
+  (000300.SH + 801120.SH for "食品饮料"), CN unknown-sector fallback,
+  and cache-key isolation between markets.
+- **tests/research/test_shared_data.py** — fixed lambda signature
+  on `test_different_date_different_fetch` to accept the new `market`
+  kwarg.
+
+### Plan-code adaptations
+
+- Plan suggested patching `src.research.shared_data._client`. Actual
+  shape: `_fetch_raw` does `from v2.data.factory import
+  get_provider_factory` inside the function body. Test patches
+  `v2.data.factory.get_provider_factory` instead.
+- `src/research/pipeline.py` (ResearchRequest path) does NOT thread
+  market — `ResearchRequest` has no market field, so it gets the "us"
+  default. Only the AnalyzeRequest/SOP path is wired for now.
+
+### Verification
+
+- `pytest tests/research/test_shared_data_market.py -v` → 4/4 pass
+- `pytest tests/research/` → 190/190 pass (full regression)
+- `pytest tests/test_research_chart_route.py` → 4/4 pass
+- `pytest tests/test_analyze_routes.py` → 6/6 pass
+
+### Commits
+
+- `f2c2e3b` feat(research): thread market field through AnalyzeRequest API surface
+- `e50a14a` feat(research): A-share benchmark + SW1 sector swap in shared_data
+
+---
+
+## Session — 2026-05-26 (Phase 8 Wave 4 — CompositeClient A-share routing)
+
+### What shipped (Task 12 of `docs/superpowers/plans/2026-05-26-a-share-data-integration.md`)
+
+- **v2/data/composite_client.py** — added optional `ashare_backend` slot
+  to `CompositeClient.__init__`. Each ticker-keyed Protocol method
+  (`get_prices`, `get_news`, `get_insider_trades`, `get_earnings`,
+  `get_earnings_history`, `get_company_facts`, `get_market_cap`,
+  `get_financial_metrics`) now checks `is_ashare(ticker)` first and
+  dispatches to the A-share backend when matched; US tickers route
+  unchanged. `close()` now deduplicates the ashare backend too.
+- **make_hybrid_client** gained `include_ashare: bool = True` kwarg —
+  when True, wires `AShareClient()` into the new slot; when False or
+  ImportError on optional deps, leaves `_ashare = None`. Pre-existing
+  callers see no behavior change (default-on, US tickers unaffected).
+- **tests/v2/data/test_composite_ashare_routing.py** — 20 tests
+  covering: a-share routing for all 8 ticker-keyed methods, US
+  fall-through, bare/canonical/prefixed ticker forms, ChiNext + STAR
+  prefixes, non-ticker `get_earnings_calendar` left alone,
+  back-compat when `ashare_backend=None`, `include_ashare` kwarg
+  semantics. All 20 pass.
+- **Regression check**: pre-existing `v2/data/test_composite_client.py`
+  still 13/15 passing — the 2 failures are pre-existing stale
+  assertions vs. yfinance refactor (`_earnings` is YFinanceClient, not
+  FinnhubClient), not introduced by this commit.
+- **Plan-code adaptation**: plan said extend `v2/data/factory.py`, but
+  `make_hybrid_client` actually lives in `composite_client.py`
+  (factory just imports + calls it). Extended at the real definition
+  site; factory.py untouched since its no-arg call works fine with the
+  new default-True kwarg.
+
+Commit: `82790af`
+
+---
+
 ## Session — 2026-05-26 (Phase 8 Wave 1 — A-share foundation)
 
 ### What shipped (Tasks 1-3 of `docs/superpowers/plans/2026-05-26-a-share-data-integration.md`)

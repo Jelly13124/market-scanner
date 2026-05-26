@@ -38,6 +38,16 @@ alembic = "^1.12.0"
 langchain-gigachat = "^0.3.12"
 langchain-xai = "^0.2.5"
 scipy = "^1.11.0"
+# Scanner cron scheduling (M4)
+apscheduler = "^3.10"
+# Analyst data backend for the scanner (M8)
+yfinance = "^0.2.66"
+# Phase 8 — A-share data integration (optional [ashare] extra)
+mootdx = { version = "^0.11.7", optional = true }
+stockstats = { version = "^0.6.2", optional = true }
+
+[tool.poetry.extras]
+ashare = ["mootdx", "stockstats"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

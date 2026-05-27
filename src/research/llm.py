@@ -29,6 +29,50 @@ _DEFAULT_MODEL = "deepseek-chat"
 _DEFAULT_PROVIDER = "DeepSeek"
 
 
+# Phase 10.5 fix: bilingual H2 heading map. Used by sections to localize
+# their hardcoded English markdown heading when report_language=='zh'.
+SECTION_HEADING_ZH: dict[str, str] = {
+    "## Macro Regime":                     "## 宏观环境",
+    "## Sector and Peer Comparison":       "## 行业与同业比较",
+    "## Company Fundamentals":             "## 公司基本面",
+    "## Financial Statement Review":       "## 财务报表回顾",
+    "## Valuation Analysis":               "## 估值分析",
+    "## Technical Analysis":               "## 技术分析",
+    "## Risk and Position Sizing":         "## 风险与仓位管理",
+    "## Event Risk Check":                 "## 事件风险检查",
+    "## Final Conditional Strategy":       "## 最终条件性策略",
+    "## Executive Summary":                "## 执行摘要",
+    "## Evidence Ledger":                  "## 证据账本",
+    "## Conviction Score":                 "## 信念 / 配置质量评分",
+    "## Conviction / Setup Quality Score": "## 信念 / 配置质量评分",
+    "## Bear / Base / Bull Scenarios":     "## 熊 / 基准 / 牛 情景",
+    "## Bear/Base/Bull Scenarios":         "## 熊 / 基准 / 牛 情景",
+    "## Debate Summary":                   "## 辩论纪要",
+    "## Data Health":                      "## 数据健康度",
+    "## Missing Data":                     "## 缺失数据 / 低置信领域",
+}
+
+
+def localized_heading(heading: str, lang: str) -> str:
+    """Swap a hardcoded English '## Foo' heading to Chinese when lang=='zh'."""
+    if lang == "zh":
+        return SECTION_HEADING_ZH.get(heading, heading)
+    return heading
+
+
+def today_context(scan_date: str | None) -> str:
+    """Phase 10.5 fix: tell the LLM today's date so it doesn't lean on its
+    training cutoff. Returns '' when scan_date is missing/falsy."""
+    if not scan_date:
+        return ""
+    return (
+        f"CONTEXT: Today is {scan_date}. All analysis MUST reflect "
+        f"current information as of this date. Do NOT default to older "
+        f"data from your training cutoff -- when in doubt about recent "
+        f"events, say so explicitly rather than invent stale facts.\n\n"
+    )
+
+
 def language_instruction(lang: str) -> str:
     """Phase 7 i18n — produce a system-prompt fragment instructing the LLM
     to respond in the given language. Empty string for 'en' (no-op default).

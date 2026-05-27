@@ -7,7 +7,9 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from src.research.llm import call_research_llm, language_instruction
+from src.research.llm import (
+    call_research_llm, language_instruction, localized_heading, today_context,
+)
 from src.research.models import SectionPayload
 from src.research.personas import PERSONA_REGISTRY
 from src.research.sections.base import SectionContext
@@ -31,11 +33,19 @@ def run_llm_section(
                 + prompt
             )
             persona_used = ctx.persona
+    # Phase 10.5: prepend today's-date context so the LLM doesn't default
+    # to its training-cutoff baseline.
+    date_prefix = today_context(getattr(ctx.shared, "scan_date", None))
+    if date_prefix:
+        final = date_prefix + final
     # Phase 7 i18n: prepend language instruction LAST (most-recent-wins
     # for compliance). No-op when report_language == "en".
     lang_prefix = language_instruction(ctx.request.report_language)
     if lang_prefix:
         final = lang_prefix + final
+    # Phase 10.5: localize the H2 heading so we don't get half-Chinese
+    # half-English when report is requested in zh.
+    heading = localized_heading(markdown_heading, ctx.request.report_language)
     try:
         r = call_research_llm(
             final, output_model,
@@ -46,7 +56,7 @@ def run_llm_section(
         narrative = getattr(r, "narrative", "") or ""
         return SectionPayload(
             name=section_name,
-            markdown=f"{markdown_heading}\n\n{narrative}\n",
+            markdown=f"{heading}\n\n{narrative}\n",
             structured=r.model_dump(),
             skipped=False, persona_used=persona_used,
         )
@@ -54,7 +64,7 @@ def run_llm_section(
         logger.exception("section %s raised: %s", section_name, e)
         return SectionPayload(
             name=section_name,
-            markdown=f"{markdown_heading}\n\n_section unavailable: {e}_\n",
+            markdown=f"{heading}\n\n_section unavailable: {e}_\n",
             structured=None, skipped=True, persona_used=persona_used,
             skip_reason=str(e),
         )

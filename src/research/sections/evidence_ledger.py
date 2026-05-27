@@ -10,7 +10,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.research.llm import call_research_llm, language_instruction
+from src.research.llm import (
+    call_research_llm, language_instruction, localized_heading, today_context,
+)
 from src.research.models import SectionPayload
 from src.research.sections import SECTION_REGISTRY
 from src.research.sections.base import Section, SectionContext, load_prompt
@@ -64,14 +66,17 @@ class EvidenceLedgerSection(Section):
     supports_personas = []
 
     def run(self, ctx: SectionContext) -> SectionPayload:
+        lang = ctx.request.report_language
         prompt = (
-            language_instruction(ctx.request.report_language)
+            today_context(getattr(ctx.shared, "scan_date", None))
+            + language_instruction(lang)
             + _TASK_INSTRUCTION
             + f"\n\nTicker: {ctx.request.ticker}\n"
             + f"Objective: {ctx.request.objective}\n\n"
             + "--- PRIOR SECTION CONTENT ---\n"
             + _prior_summary(ctx)
         )
+        heading = localized_heading("## Evidence Ledger", lang)
         try:
             out = call_research_llm(
                 prompt, _LedgerOut,
@@ -81,20 +86,26 @@ class EvidenceLedgerSection(Section):
             logger.exception("evidence_ledger raised: %s", e)
             return SectionPayload(
                 name=self.name,
-                markdown="## Evidence Ledger\n\n_unavailable_\n",
+                markdown=f"{heading}\n\n_unavailable_\n",
                 structured=None, skipped=True, persona_used=None,
                 skip_reason=str(e),
             )
-        rows = [
-            "| Claim | Evidence | Source | Date | Direction | Confidence |",
-            "|---|---|---|---|---|---|",
-        ]
+        if lang == "zh":
+            rows = [
+                "| 主张 | 证据 | 来源 | 日期 | 方向 | 置信 |",
+                "|---|---|---|---|---|---|",
+            ]
+        else:
+            rows = [
+                "| Claim | Evidence | Source | Date | Direction | Confidence |",
+                "|---|---|---|---|---|---|",
+            ]
         for it in out.items:
             rows.append(
                 f"| {it.claim} | {it.evidence} | {it.source} | "
                 f"{it.date} | {it.direction} | {it.confidence} |"
             )
-        md = "## Evidence Ledger\n\n" + "\n".join(rows) + "\n"
+        md = f"{heading}\n\n" + "\n".join(rows) + "\n"
         return SectionPayload(
             name=self.name, markdown=md,
             structured=[i.model_dump() for i in out.items],

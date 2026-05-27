@@ -9,7 +9,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from src.research.llm import call_research_llm, language_instruction
+from src.research.llm import (
+    call_research_llm, language_instruction, localized_heading, today_context,
+)
 from src.research.models import SectionPayload
 from src.research.sections import SECTION_REGISTRY
 from src.research.sections.base import Section, SectionContext
@@ -57,14 +59,17 @@ class ExecutiveSummarySection(Section):
     supports_personas = []
 
     def run(self, ctx: SectionContext) -> SectionPayload:
+        lang = ctx.request.report_language
         prompt = (
-            language_instruction(ctx.request.report_language)
+            today_context(getattr(ctx.shared, "scan_date", None))
+            + language_instruction(lang)
             + _TASK_INSTRUCTION
             + f"\n\nTicker: {ctx.request.ticker}\n"
             + f"Objective: {ctx.request.objective}\n\n"
             + "--- PRIOR ---\n"
             + _prior_brief(ctx)
         )
+        heading = localized_heading("## Executive Summary", lang)
         try:
             out = call_research_llm(
                 prompt, _ExecOut,
@@ -79,23 +84,33 @@ class ExecutiveSummarySection(Section):
             logger.exception("executive_summary raised: %s", e)
             return SectionPayload(
                 name=self.name,
-                markdown="## Executive Summary\n\n_unavailable_\n",
+                markdown=f"{heading}\n\n_unavailable_\n",
                 structured=None, skipped=True, persona_used=None,
                 skip_reason=str(e),
             )
 
         score = _conviction_score(ctx)
-        score_line = f"- **Score:** {score}/100\n" if score is not None else ""
+        L = {
+            "overall":    "总体观点"        if lang == "zh" else "Overall view",
+            "bullish":    "主要看多论点"    if lang == "zh" else "Main bullish argument",
+            "bearish":    "主要看空风险"    if lang == "zh" else "Main bearish risk",
+            "target":     "熊/基准/牛 目标区间" if lang == "zh" else "Bear/base/bull target range",
+            "strategy":   "策略类型"        if lang == "zh" else "Strategy type",
+            "confidence": "置信度"          if lang == "zh" else "Confidence",
+            "invalidate": "关键证伪条件"    if lang == "zh" else "Key invalidation",
+            "score":      "信念评分"        if lang == "zh" else "Score",
+        }
+        score_line = f"- **{L['score']}:** {score}/100\n" if score is not None else ""
 
         md = (
-            "## Executive Summary\n\n"
-            f"- **Overall view:** {out.overall_view}\n"
-            f"- **Main bullish argument:** {out.main_bullish}\n"
-            f"- **Main bearish risk:** {out.main_bearish}\n"
-            f"- **Bear/base/bull target range:** {out.target_range}\n"
-            f"- **Strategy type:** {out.strategy_type}\n"
-            f"- **Confidence:** {out.confidence_qualitative}\n"
-            f"- **Key invalidation:** {out.key_invalidation}\n"
+            f"{heading}\n\n"
+            f"- **{L['overall']}:** {out.overall_view}\n"
+            f"- **{L['bullish']}:** {out.main_bullish}\n"
+            f"- **{L['bearish']}:** {out.main_bearish}\n"
+            f"- **{L['target']}:** {out.target_range}\n"
+            f"- **{L['strategy']}:** {out.strategy_type}\n"
+            f"- **{L['confidence']}:** {out.confidence_qualitative}\n"
+            f"- **{L['invalidate']}:** {out.key_invalidation}\n"
             f"{score_line}"
         )
         return SectionPayload(

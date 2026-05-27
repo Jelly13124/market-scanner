@@ -12,7 +12,9 @@ import logging
 
 from pydantic import BaseModel, Field
 
-from src.research.llm import call_research_llm, language_instruction
+from src.research.llm import (
+    call_research_llm, language_instruction, localized_heading, today_context,
+)
 from src.research.models import SectionPayload
 from src.research.sections import SECTION_REGISTRY
 from src.research.sections.base import Section, SectionContext
@@ -80,15 +82,18 @@ class ConvictionSection(Section):
     supports_personas = []
 
     def run(self, ctx: SectionContext) -> SectionPayload:
+        lang = ctx.request.report_language
         weights = _WEIGHTS.get(ctx.request.risk_tolerance, _WEIGHTS["balanced"])
         prompt = (
-            language_instruction(ctx.request.report_language)
+            today_context(getattr(ctx.shared, "scan_date", None))
+            + language_instruction(lang)
             + _TASK_INSTRUCTION
             + f"\n\nTicker: {ctx.request.ticker}\n"
             + f"Risk profile (for weight column): {ctx.request.risk_tolerance}\n\n"
             + "--- PRIOR SECTION SUMMARIES ---\n"
             + _prior_summary(ctx)
         )
+        heading = localized_heading("## Conviction / Setup Quality Score", lang)
         try:
             out = call_research_llm(
                 prompt, _ConvictionOut,
@@ -101,7 +106,7 @@ class ConvictionSection(Section):
             logger.exception("conviction raised: %s", e)
             return SectionPayload(
                 name=self.name,
-                markdown="## Conviction / Setup Quality Score\n\n_unavailable_\n",
+                markdown=f"{heading}\n\n_unavailable_\n",
                 structured=None, skipped=True, persona_used=None,
                 skip_reason=str(e),
             )
@@ -122,18 +127,30 @@ class ConvictionSection(Section):
         total_score = sum(w * c.score / 100 for w, c in zip(weights, ordered))
         total_score = int(round(total_score))
 
-        rows = [
-            "| Category | Weight | Score 0-100 | Rationale |",
-            "|---|---:|---:|---|",
-        ]
+        if lang == "zh":
+            rows = [
+                "| 类别 | 权重 | 得分 0-100 | 理由 |",
+                "|---|---:|---:|---|",
+            ]
+            total_label, note = "合计", "（加权）"
+            risk_intro = f"采用风险偏好画像：**{ctx.request.risk_tolerance}**"
+            score_line = f"**总分: {total_score}/100**"
+        else:
+            rows = [
+                "| Category | Weight | Score 0-100 | Rationale |",
+                "|---|---:|---:|---|",
+            ]
+            total_label, note = "Total", "(weighted)"
+            risk_intro = f"Risk-tolerance profile applied: **{ctx.request.risk_tolerance}**"
+            score_line = f"**Score: {total_score}/100**"
         for w, c in zip(weights, ordered):
             rows.append(f"| {c.name} | {w} | {c.score} | {c.rationale} |")
-        rows.append(f"| **Total** | **100** | **{total_score}** | (weighted) |")
+        rows.append(f"| **{total_label}** | **100** | **{total_score}** | {note} |")
         md = (
-            "## Conviction / Setup Quality Score\n\n"
-            + f"Risk-tolerance profile applied: **{ctx.request.risk_tolerance}**\n\n"
+            f"{heading}\n\n"
+            + risk_intro + "\n\n"
             + "\n".join(rows)
-            + f"\n\n**Score: {total_score}/100**\n"
+            + f"\n\n{score_line}\n"
         )
         return SectionPayload(
             name=self.name, markdown=md,

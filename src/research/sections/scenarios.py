@@ -9,7 +9,9 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from src.research.llm import call_research_llm, language_instruction
+from src.research.llm import (
+    call_research_llm, language_instruction, localized_heading, today_context,
+)
 from src.research.models import SectionPayload
 from src.research.sections import SECTION_REGISTRY
 from src.research.sections.base import Section, SectionContext
@@ -51,13 +53,16 @@ class ScenariosSection(Section):
     supports_personas = []
 
     def run(self, ctx: SectionContext) -> SectionPayload:
+        lang = ctx.request.report_language
         prompt = (
-            language_instruction(ctx.request.report_language)
+            today_context(getattr(ctx.shared, "scan_date", None))
+            + language_instruction(lang)
             + _TASK_INSTRUCTION
             + f"\n\nTicker: {ctx.request.ticker}\n\n"
             + "--- VALUATION CONTEXT ---\n"
             + _valuation_context(ctx)
         )
+        heading = localized_heading("## Bear/Base/Bull Scenarios", lang)
         try:
             out = call_research_llm(
                 prompt, _ScenariosOut,
@@ -77,21 +82,29 @@ class ScenariosSection(Section):
             logger.exception("scenarios raised: %s", e)
             return SectionPayload(
                 name=self.name,
-                markdown="## Bear/Base/Bull Scenarios\n\n_unavailable_\n",
+                markdown=f"{heading}\n\n_unavailable_\n",
                 structured=None, skipped=True, persona_used=None,
                 skip_reason=str(e),
             )
 
-        rows = [
-            "| Scenario | Target Range | Time Horizon | Key Assumptions | Confidence | Invalidation |",
-            "|---|---|---|---|---|---|",
-        ]
-        for label, sc in (("Bear", out.bear), ("Base", out.base), ("Bull", out.bull)):
+        if lang == "zh":
+            rows = [
+                "| 情景 | 目标区间 | 时间周期 | 关键假设 | 置信 | 证伪 |",
+                "|---|---|---|---|---|---|",
+            ]
+            labels = (("熊", out.bear), ("基准", out.base), ("牛", out.bull))
+        else:
+            rows = [
+                "| Scenario | Target Range | Time Horizon | Key Assumptions | Confidence | Invalidation |",
+                "|---|---|---|---|---|---|",
+            ]
+            labels = (("Bear", out.bear), ("Base", out.base), ("Bull", out.bull))
+        for label, sc in labels:
             rows.append(
                 f"| {label} | {sc.target_range} | {sc.time_horizon} | "
                 f"{sc.key_assumptions} | {sc.confidence} | {sc.invalidation} |"
             )
-        md = "## Bear/Base/Bull Scenarios\n\n" + "\n".join(rows) + "\n"
+        md = f"{heading}\n\n" + "\n".join(rows) + "\n"
         return SectionPayload(
             name=self.name, markdown=md,
             structured={

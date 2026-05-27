@@ -478,7 +478,7 @@ class TickerSnapshot(Base):
 
     __tablename__ = "ticker_snapshots"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     ticker = Column(String(20), nullable=False)
     market = Column(String(8), nullable=False)
     snapshot_date = Column(Date, nullable=False)
@@ -539,7 +539,7 @@ class TickerSnapshot(Base):
 
     # Meta
     data_source = Column(String(16))
-    last_updated = Column(DateTime(timezone=True), server_default=func.now())
+    last_updated = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (
         UniqueConstraint("ticker", "snapshot_date", name="uq_snapshot_ticker_date"),

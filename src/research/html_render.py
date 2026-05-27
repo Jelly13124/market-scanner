@@ -190,6 +190,42 @@ _APPENDIX_SECTIONS = {
     "missing_data":    "Missing Data / Low Confidence",
 }
 
+# Phase 11.1 fix: the report.html template itself ships English <h2> tags
+# (e.g. '<h2>Executive Summary</h2>'). When request.report_language=='zh'
+# we do a final pass over the rendered HTML and swap each template H2 to
+# its Chinese equivalent — otherwise the body would be Chinese but the
+# heading above it would stay English.
+_HEADING_ZH_MAP = {
+    "Data Health":                          "数据健康度",
+    "Executive Summary":                    "执行摘要",
+    "Macro Regime":                         "宏观环境",
+    "Sector and Peer Comparison":           "行业与同业比较",
+    "Company Fundamentals":                 "公司基本面",
+    "Financial Statement Review":           "财务报表回顾",
+    "Valuation Analysis":                   "估值分析",
+    "Technical Analysis":                   "技术分析",
+    "Risk and Position Sizing":             "风险与仓位管理",
+    "Bear / Base / Bull Scenarios":         "熊 / 基准 / 牛 情景",
+    "Conviction / Setup Quality Score":     "信念 / 配置质量评分",
+    "Event Risk Check":                     "事件风险检查",
+    "Final Conditional Strategy":           "最终条件性策略",
+    "Evidence Ledger":                      "证据账本",
+    "Debate Summary":                       "辩论纪要",
+    "Missing Data / Low Confidence":        "缺失数据 / 低置信领域",
+}
+
+
+def _localize_template_headings(html: str, lang: str) -> str:
+    """Phase 11.1: when lang=='zh', rewrite every English <h2>X</h2> in the
+    rendered HTML to its Chinese equivalent so headings match body."""
+    if lang != "zh":
+        return html
+    for en, zh in _HEADING_ZH_MAP.items():
+        # Match the exact <h2>EN</h2> form — the template doesn't use
+        # attributes on these h2 tags, so a literal replace is safe.
+        html = html.replace(f"<h2>{en}</h2>", f"<h2>{zh}</h2>")
+    return html
+
 
 def _inject_section_body(html: str, h2_text: str, body_html: str) -> str:
     """Find <h2>...h2_text...</h2> in ``html`` and replace the skeleton
@@ -375,6 +411,10 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
             continue
         body_html = _markdown_to_html(payload.markdown or "", skip_h2=True)
         html = _inject_section_body(html, h2_text, body_html)
+
+    # Phase 11.1 fix: localize the template's hardcoded English <h2>
+    # headings to Chinese when report_language=='zh'.
+    html = _localize_template_headings(html, getattr(req, "report_language", "en"))
 
     return html
 

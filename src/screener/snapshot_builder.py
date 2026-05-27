@@ -219,6 +219,57 @@ class SnapshotBuilder:
                 on_progress(i, len(tickers))
         return rows
 
-    # CN path injected in Task 4
     def build_for_ticker_cn(self, ticker: str, asof: date) -> SnapshotRow:
-        raise NotImplementedError("CN path lands in Task 4 (ashare_metrics)")
+        """Pull mootdx quote + akshare fundamentals into SnapshotRow."""
+        if self._ashare is None:
+            raise RuntimeError("ashare_metrics required for CN path")
+
+        q = self._ashare.get_quote(ticker)
+        f = self._ashare.get_fundamentals(ticker)
+        p = self._ashare.get_perf_windows(ticker, asof)
+        recent_ed, upcoming_ed = self._ashare.get_earnings_dates(ticker)
+
+        price = _to_decimal(q.get("price"), scale=4)
+        prev = _to_decimal(q.get("prev_close"), scale=4)
+        change_pct = None
+        if price is not None and prev is not None and prev != 0:
+            change_pct = _to_decimal((float(price) - float(prev)) / float(prev), scale=4)
+
+        return SnapshotRow(
+            ticker=ticker,
+            market="CN",
+            snapshot_date=asof,
+            price=price,
+            prev_close=prev,
+            change_pct=change_pct,
+            volume=_to_int(q.get("volume")),
+            avg_volume_10d=_to_int(q.get("avg_volume_10d")),
+            rel_volume=None,
+            market_cap=_to_decimal(f.get("market_cap"), scale=2),
+            pe_ttm=_to_decimal(f.get("pe_ttm"), scale=3),
+            pe_forward=None,
+            pb=_to_decimal(f.get("pb"), scale=3),
+            ps=_to_decimal(f.get("ps"), scale=3),
+            peg=_to_decimal(f.get("peg"), scale=3),
+            eps_growth_yoy=_to_decimal(f.get("eps_growth_yoy"), scale=4),
+            revenue_growth_yoy=_to_decimal(f.get("revenue_growth_yoy"), scale=4),
+            roe=_to_decimal(f.get("roe"), scale=4),
+            profit_margin=_to_decimal(f.get("profit_margin"), scale=4),
+            dividend_yield_pct=_to_decimal(f.get("dividend_yield_pct"), scale=4),
+            beta=_to_decimal(f.get("beta"), scale=3),
+            sector=f.get("sector"),
+            industry=f.get("industry"),
+            exchange=f.get("exchange"),
+            analyst_rating=None,        # A-share lacks consensus rating
+            analyst_count=None,
+            target_mean_price=None,
+            recent_earnings_date=recent_ed,
+            upcoming_earnings_date=upcoming_ed,
+            perf_1d=_to_decimal(p.get("perf_1d"), scale=4),
+            perf_5d=_to_decimal(p.get("perf_5d"), scale=4),
+            perf_1m=_to_decimal(p.get("perf_1m"), scale=4),
+            perf_3m=_to_decimal(p.get("perf_3m"), scale=4),
+            perf_ytd=_to_decimal(p.get("perf_ytd"), scale=4),
+            perf_1y=_to_decimal(p.get("perf_1y"), scale=4),
+            data_source="mootdx+akshare",
+        )

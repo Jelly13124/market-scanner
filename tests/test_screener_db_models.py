@@ -18,16 +18,12 @@ def session():
     Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
     s = Session()
-    # SQLite + BigInteger autoincrement workaround: seed the row IDs manually
-    s._next_id = 0
     yield s
     s.close()
 
 
 def test_insert_minimal_row(session):
-    session._next_id += 1
     row = TickerSnapshot(
-        id=session._next_id,
         ticker="AAPL",
         market="US",
         snapshot_date=date(2026, 5, 27),
@@ -44,9 +40,7 @@ def test_insert_minimal_row(session):
 
 
 def test_full_field_set(session):
-    session._next_id += 1
     row = TickerSnapshot(
-        id=session._next_id,
         ticker="NVDA", market="US", snapshot_date=date(2026, 5, 27),
         price=Decimal("950.00"), prev_close=Decimal("940.00"),
         change_pct=Decimal("1.0638"), volume=120_000_000,
@@ -75,23 +69,19 @@ def test_full_field_set(session):
 
 
 def test_unique_ticker_date_constraint(session):
-    session._next_id += 1
-    session.add(TickerSnapshot(id=session._next_id, ticker="AAPL", market="US",
+    session.add(TickerSnapshot(ticker="AAPL", market="US",
                                snapshot_date=date(2026, 5, 27), price=Decimal("210")))
     session.commit()
-    session._next_id += 1
-    session.add(TickerSnapshot(id=session._next_id, ticker="AAPL", market="US",
+    session.add(TickerSnapshot(ticker="AAPL", market="US",
                                snapshot_date=date(2026, 5, 27), price=Decimal("220")))
     with pytest.raises(IntegrityError):
         session.commit()
 
 
 def test_different_dates_allowed(session):
-    session._next_id += 1
-    session.add(TickerSnapshot(id=session._next_id, ticker="AAPL", market="US",
+    session.add(TickerSnapshot(ticker="AAPL", market="US",
                                snapshot_date=date(2026, 5, 26), price=Decimal("208")))
-    session._next_id += 1
-    session.add(TickerSnapshot(id=session._next_id, ticker="AAPL", market="US",
+    session.add(TickerSnapshot(ticker="AAPL", market="US",
                                snapshot_date=date(2026, 5, 27), price=Decimal("210")))
     session.commit()
     assert session.query(TickerSnapshot).filter_by(ticker="AAPL").count() == 2

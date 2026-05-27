@@ -478,7 +478,8 @@ class TickerSnapshot(Base):
 
     __tablename__ = "ticker_snapshots"
 
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"),
+                primary_key=True, autoincrement=True)
     ticker = Column(String(20), nullable=False)
     market = Column(String(8), nullable=False)
     snapshot_date = Column(Date, nullable=False)

@@ -12,6 +12,9 @@ from src.research.llm import (
 )
 from src.research.models import SectionPayload
 from src.research.personas import PERSONA_REGISTRY
+from src.research.quant_context import (
+    QUANT_CONTEXT_DIRECTIVE, build_quant_context,
+)
 from src.research.sections.base import SectionContext
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,12 @@ def run_llm_section(
                 + prompt
             )
             persona_used = ctx.persona
+    # Phase 11: inject the comprehensive QUANT CONTEXT block (current
+    # price, indicators, fundamentals, news) followed by the
+    # anti-hallucination directive. Placed before the section's task
+    # prompt so the LLM sees real numbers BEFORE the question.
+    quant_block = build_quant_context(ctx.shared, ctx.request.ticker)
+    final = quant_block + QUANT_CONTEXT_DIRECTIVE + "\n" + final
     # Phase 10.5: prepend today's-date context so the LLM doesn't default
     # to its training-cutoff baseline.
     date_prefix = today_context(getattr(ctx.shared, "scan_date", None))

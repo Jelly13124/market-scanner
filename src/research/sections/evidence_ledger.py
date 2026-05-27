@@ -13,6 +13,9 @@ from pydantic import BaseModel, Field
 from src.research.llm import (
     call_research_llm, language_instruction, localized_heading, today_context,
 )
+from src.research.quant_context import (
+    QUANT_CONTEXT_DIRECTIVE, build_quant_context,
+)
 from src.research.models import SectionPayload
 from src.research.sections import SECTION_REGISTRY
 from src.research.sections.base import Section, SectionContext, load_prompt
@@ -68,7 +71,9 @@ class EvidenceLedgerSection(Section):
     def run(self, ctx: SectionContext) -> SectionPayload:
         lang = ctx.request.report_language
         prompt = (
-            today_context(getattr(ctx.shared, "scan_date", None))
+            build_quant_context(ctx.shared, ctx.request.ticker)
+            + QUANT_CONTEXT_DIRECTIVE
+            + today_context(getattr(ctx.shared, "scan_date", None))
             + language_instruction(lang)
             + _TASK_INSTRUCTION
             + f"\n\nTicker: {ctx.request.ticker}\n"

@@ -1,5 +1,5 @@
 import sqlalchemy as sa
-from sqlalchemy import Column, Integer, Float, String, DateTime, Text, Boolean, JSON, ForeignKey, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, Float, String, DateTime, Text, Boolean, JSON, ForeignKey, Index, UniqueConstraint, BigInteger, Date, Numeric
 from sqlalchemy.sql import func
 from .connection import Base
 
@@ -467,3 +467,83 @@ class Backtest(Base):
 
     duration_seconds = Column(Float, nullable=True)
     error_message = Column(Text, nullable=True)
+
+
+class TickerSnapshot(Base):
+    """Per-ticker per-day snapshot of all filterable Screener metrics.
+
+    Built nightly by SnapshotBuilder; queried by ScreenerRepository.
+    PK on (ticker, snapshot_date) makes daily upserts idempotent.
+    """
+
+    __tablename__ = "ticker_snapshots"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticker = Column(String(20), nullable=False)
+    market = Column(String(8), nullable=False)
+    snapshot_date = Column(Date, nullable=False)
+
+    # Price / volume
+    price = Column(Numeric(12, 4))
+    prev_close = Column(Numeric(12, 4))
+    change_pct = Column(Numeric(8, 4))
+    volume = Column(BigInteger)
+    avg_volume_10d = Column(BigInteger)
+    rel_volume = Column(Numeric(6, 3))
+
+    # Market cap
+    market_cap = Column(Numeric(20, 2))
+
+    # Valuation
+    pe_ttm = Column(Numeric(10, 3))
+    pe_forward = Column(Numeric(10, 3))
+    pb = Column(Numeric(10, 3))
+    ps = Column(Numeric(10, 3))
+    peg = Column(Numeric(10, 3))
+
+    # Growth
+    eps_growth_yoy = Column(Numeric(10, 4))
+    revenue_growth_yoy = Column(Numeric(10, 4))
+
+    # Profitability
+    roe = Column(Numeric(10, 4))
+    profit_margin = Column(Numeric(10, 4))
+
+    # Dividend
+    dividend_yield_pct = Column(Numeric(8, 4))
+
+    # Risk
+    beta = Column(Numeric(8, 3))
+
+    # Classification
+    sector = Column(String(64))
+    industry = Column(String(128))
+    exchange = Column(String(16))
+
+    # Analyst
+    analyst_rating = Column(String(16))
+    analyst_count = Column(Integer)
+    target_mean_price = Column(Numeric(12, 4))
+
+    # Earnings dates
+    recent_earnings_date = Column(Date)
+    upcoming_earnings_date = Column(Date)
+
+    # Performance windows
+    perf_1d = Column(Numeric(8, 4))
+    perf_5d = Column(Numeric(8, 4))
+    perf_1m = Column(Numeric(8, 4))
+    perf_3m = Column(Numeric(8, 4))
+    perf_ytd = Column(Numeric(8, 4))
+    perf_1y = Column(Numeric(8, 4))
+
+    # Meta
+    data_source = Column(String(16))
+    last_updated = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("ticker", "snapshot_date", name="uq_snapshot_ticker_date"),
+        Index("idx_snapshot_date", "snapshot_date"),
+        Index("idx_snapshot_market_date", "market", "snapshot_date"),
+        Index("idx_snapshot_sector", "sector", "snapshot_date"),
+    )

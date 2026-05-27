@@ -62,7 +62,23 @@ def _persona_for(assignments: dict | None, section_name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def _backtest_validation_md(b: BacktestVerdict) -> str:
+def _backtest_validation_md(b: BacktestVerdict, lang: str = "en") -> str:
+    if lang == "zh":
+        md = (
+            "\n\n### 回测验证\n\n"
+            f"测试信号: **{b.signal}**  \n"
+            f"窗口: {b.window_start} -> {b.window_end}  \n"
+            f"事件次数: {b.n_signals}  \n"
+        )
+        if b.win_rate_20d is not None and b.avg_return_20d is not None and b.t_stat is not None:
+            md += (
+                f"胜率 (20日): {b.win_rate_20d * 100:.0f}%  \n"
+                f"平均收益 (20日): {b.avg_return_20d * 100:+.2f}%  \n"
+                f"t 统计量: {b.t_stat:.2f}  \n"
+            )
+        md += f"\n**结论:** {b.verdict}\n"
+        return md
+    # English (default)
     md = (
         "\n\n### Backtest Validation\n\n"
         f"Signal tested: **{b.signal}**  \n"
@@ -299,7 +315,7 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
 
         sections["technical"] = SectionPayload(
             name="technical",
-            markdown=tech.markdown + _backtest_validation_md(backtest),
+            markdown=tech.markdown + _backtest_validation_md(backtest, request.report_language),
             structured=new_structured,
             skipped=False,
             persona_used=tech.persona_used,

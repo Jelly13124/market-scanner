@@ -396,8 +396,9 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
             continue
         body_html = _markdown_to_html(payload.markdown or "", skip_h2=True)
         if section_name == "conviction" and score != "n/a":
+            label = "总分" if getattr(req, "report_language", "en") == "zh" else "Total score"
             body_html += (
-                f'\n<p><strong>Total score:</strong> '
+                f'\n<p><strong>{label}:</strong> '
                 f'<span class="score-badge">{score}/100</span></p>'
             )
         if section_name == "technical":

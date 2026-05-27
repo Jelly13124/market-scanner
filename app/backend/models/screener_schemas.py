@@ -1,0 +1,81 @@
+"""Pydantic schemas for /screener endpoints. Mirrors TickerSnapshot
+fields 1:1 (minus `id` and `last_updated`).
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
+
+class SnapshotRowOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ticker: str
+    market: str
+    snapshot_date: date
+
+    price: Decimal | None = None
+    prev_close: Decimal | None = None
+    change_pct: Decimal | None = None
+    volume: int | None = None
+    avg_volume_10d: int | None = None
+    rel_volume: Decimal | None = None
+
+    market_cap: Decimal | None = None
+
+    pe_ttm: Decimal | None = None
+    pe_forward: Decimal | None = None
+    pb: Decimal | None = None
+    ps: Decimal | None = None
+    peg: Decimal | None = None
+
+    eps_growth_yoy: Decimal | None = None
+    revenue_growth_yoy: Decimal | None = None
+
+    roe: Decimal | None = None
+    profit_margin: Decimal | None = None
+
+    dividend_yield_pct: Decimal | None = None
+    beta: Decimal | None = None
+
+    sector: str | None = None
+    industry: str | None = None
+    exchange: str | None = None
+
+    analyst_rating: str | None = None
+    analyst_count: int | None = None
+    target_mean_price: Decimal | None = None
+
+    recent_earnings_date: date | None = None
+    upcoming_earnings_date: date | None = None
+
+    perf_1d: Decimal | None = None
+    perf_5d: Decimal | None = None
+    perf_1m: Decimal | None = None
+    perf_3m: Decimal | None = None
+    perf_ytd: Decimal | None = None
+    perf_1y: Decimal | None = None
+
+    data_source: str | None = None
+
+
+class ScreenerSnapshotResponse(BaseModel):
+    rows: list[SnapshotRowOut]
+    total_count: int
+    snapshot_date: date
+    last_updated: datetime
+
+
+class ScreenerStatusResponse(BaseModel):
+    snapshot_date: date | None
+    last_updated: datetime | None
+    row_count: int
+    by_market: dict[str, int]
+
+
+class ScreenerColumnMetadata(BaseModel):
+    columns: list[dict[str, Any]]

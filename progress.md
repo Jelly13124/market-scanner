@@ -2643,3 +2643,75 @@ FD code path stays available via explicit `SCANNER_DATA_PROVIDER=fd` but is no l
 - Volume z-score asymmetry (`z_vol >= 2.5` only — misses *low*-volume anomalies). User declined cosmetic display-clip; composite cap at 100 already handles it.
 - Whether to merge `v2/event_study/` retrofit (still FD-only) — deferred indefinitely.
 - M3.7 yfinance adapter for v1 LLM agents — deferred until FD trial expires or v1 work resumes.
+
+---
+
+## 2026-05-27 — Screener Phase 1 (M11)
+
+**Goal:** Add a TradingView-style faceted-filter Screener tab over a
+nightly snapshot of S&P 500 + CSI 300 (~800 tickers).
+
+**Shipped:**
+- New table `ticker_snapshots` (one row per ticker per day, 30-day TTL,
+  PK on `(ticker, snapshot_date)`, 3 supporting indices) — alembic
+  revision `d4e8a2c1b9f6`.
+- `src/screener/snapshot_builder.py` — US path via `yfinance.Ticker.info`
+  + `.history` + `.earnings_dates`; CN path via `src/screener/ashare_metrics.py`
+  (mootdx quote + akshare fundamentals + akshare hist).
+- `app/backend/repositories/screener_repository.py` — filter-dict to SQL
+  WHERE translation, idempotent bulk_upsert, 30-day cleanup, multi-market
+  query.
+- 3 REST endpoints at `/screener/snapshot/{latest,columns,status}`
+  (FastAPI + Pydantic, mounted under the global `api_router`).
+- APScheduler cron `0 22 * * *` ET — builds US then CN, per-market
+  isolated, cleanup after.
+- Frontend: new `Screener` tab in the left sidebar (between Watchlist
+  and Scanner). 16 chips (range / multi-select / date-range) + sortable
+  table + market selector + status bar + empty state. Row click opens
+  Analyze tab. Bilingual labels via `screener.*` i18n keys.
+
+**Tests added:** 46 tests across `tests/test_screener_db_models.py`,
+`tests/test_screener_repository.py`, `tests/screener/test_*.py`. All
+46 new tests green.
+
+**Full suite regression:** 864 passed, 3 failed, 5 skipped. The 3
+failures (`test_enabled_detectors_filters_run_scan_detectors`,
+`test_start_registers_enabled_configs`,
+`test_start_registers_daily_pipeline_even_with_no_scanner_configs`) are
+pre-existing — confirmed by running against HEAD with no working-copy
+changes. Root causes are the `earnings_surprise` → `earnings_event` alias
+rename (Task prior to Phase 1) and the new screener cron adding a 3rd
+`add_job` call that the old scheduler test counts didn't anticipate.
+Zero new regressions from Screener Phase 1.
+
+**Smoke verified:**
+- Alembic at head (`d4e8a2c1b9f6`); `upgrade head` is a no-op (already applied).
+- Backend boots; all 3 endpoints return HTTP 200:
+  - `GET /screener/snapshot/status` → `{"snapshot_date":null,"last_updated":null,"row_count":0,"by_market":{}}`
+  - `GET /screener/snapshot/columns` → 16 chip definitions
+  - `GET /screener/snapshot/latest?market=US&limit=5` → `{"rows":[],"total_count":0,...}`
+- First real snapshot will be built by cron at 22:00 ET tonight.
+
+**Commits (Tasks 1-14, since `b9a8282`):**
+```
+0238fca feat(screener): i18n keys (en + zh) for tab, chips, status
+af91020 feat(screener): wire Screener tab into left sidebar + tabs context
+8439621 feat(screener): tab shell + chip bar + status bar + empty state
+a229f82 feat(screener): sortable snapshot table with bilingual headers
+5775537 feat(screener): range/multi-select/date-range chip components
+cfb1ddf feat(screener): frontend types + REST service client
+669db07 feat(screener): nightly snapshot cron at 22:00 ET
+6ded97b feat(screener): 3 REST endpoints (snapshot/latest, columns, status)
+fc793d6 feat(screener): column metadata + Pydantic schemas
+33f8bba feat(screener): SnapshotBuilder CN path via mootdx + akshare
+ea3dc9e feat(screener): SnapshotBuilder US path (yfinance)
+fd9d67f feat(screener): ScreenerRepository with filter-dict query + idempotent upsert
+8fd932a fix(screener): BigInteger().with_variant(Integer,sqlite) for portable autoincrement
+33aab5d fix(screener): id BigInteger + last_updated nullable=False per spec
+```
+
+**Out of scope (deferred to later phases):**
+- Saved filter presets + cron auto-runs + email push (Phase 2).
+- Stock logos, column-group tabs (Overview/Performance/Valuation),
+  bulk "add to watchlist" (Phase 3).
+- Universe expansion beyond SPX + CSI 300, intraday refresh.

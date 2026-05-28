@@ -5,6 +5,7 @@ import { AnalyzeAction } from './analyze-action';
 import { ApiKeysSection } from './api-keys-section';
 import { LabAction } from './lab-action';
 import { ScannerAction } from './scanner-action';
+import { ScreenerAction } from './screener-action';
 import { WatchlistSection } from './watchlist-section';
 
 interface LeftSidebarProps {
@@ -46,6 +47,8 @@ export function LeftSidebar({
       <ApiKeysSection />
 
       <WatchlistSection />
+
+      <ScreenerAction />
 
       <ScannerAction />
 

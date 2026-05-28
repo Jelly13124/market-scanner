@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -80,12 +80,12 @@ def get_latest_snapshot(
     if rows:
         snapshot_date = rows[0].snapshot_date
         last_updated = max((r.last_updated for r in rows if r.last_updated),
-                           default=datetime.utcnow())
+                           default=datetime.now(timezone.utc))
     else:
         snapshot_date = repo.latest_snapshot_date(
             market=market_list[0] if market_list and len(market_list) == 1 else None,
         ) or date.today()
-        last_updated = datetime.utcnow()
+        last_updated = datetime.now(timezone.utc)
 
     return ScreenerSnapshotResponse(
         rows=[SnapshotRowOut.model_validate(r) for r in rows],

@@ -10,7 +10,7 @@ one bad ticker. This matches the v2/scanner runner invariant.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Callable, Literal
 

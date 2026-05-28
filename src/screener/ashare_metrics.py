@@ -56,12 +56,25 @@ class AshareMetrics:
         except Exception as e:
             logger.debug("mootdx.quotes failed for %s: %s", symbol, e)
             q = None
-        if not q:
+
+        # Real mootdx returns a single-row pandas DataFrame; the test mock
+        # passes a plain dict. Normalize both to one row-dict. (Do NOT use
+        # `if not q` on a DataFrame — that raises "truth value is ambiguous".)
+        if q is None:
+            row: dict[str, Any] = {}
+        elif hasattr(q, "empty"):  # DataFrame
+            row = {} if q.empty else q.iloc[0].to_dict()
+        elif isinstance(q, dict):
+            row = q
+        else:
+            row = {}
+
+        if not row:
             return {"price": None, "prev_close": None,
                     "volume": None, "avg_volume_10d": None}
-        price = q.get("price") or q.get("now")
-        prev = q.get("last_close") or q.get("prev_close")
-        vol_lots = q.get("vol") or q.get("volume") or 0
+        price = row.get("price") or row.get("now")
+        prev = row.get("last_close") or row.get("prev_close")
+        vol_lots = row.get("vol") or row.get("volume") or 0
         return {
             "price": price,
             "prev_close": prev,

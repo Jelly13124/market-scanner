@@ -25,7 +25,12 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.create_table(
         "ticker_snapshots",
-        sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
+        sa.Column(
+            "id",
+            sa.BigInteger().with_variant(sa.Integer(), "sqlite"),
+            primary_key=True,
+            autoincrement=True,
+        ),
         sa.Column("ticker", sa.String(length=20), nullable=False),
         sa.Column("market", sa.String(length=8), nullable=False),
         sa.Column("snapshot_date", sa.Date(), nullable=False),

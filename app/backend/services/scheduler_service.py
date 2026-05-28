@@ -35,6 +35,9 @@ from app.backend.database.models import ScannerConfig
 from app.backend.repositories.pipeline_repository import PipelineRunRepository
 from app.backend.repositories.research_repository import ResearchReportRepository
 from app.backend.repositories.scanner_repository import ScannerConfigRepository
+from app.backend.repositories.screener_repository import ScreenerRepository
+from src.screener.ashare_metrics import AshareMetrics
+from src.screener.snapshot_builder import SnapshotBuilder
 from app.backend.services.scanner_service import ScannerService
 from src.research.html_render import render_html
 from src.research.models import ResearchRequest
@@ -56,6 +59,13 @@ PIPELINE_JOB_ID = "daily-pipeline"
 # the research job can read it without re-scanning.
 RESEARCH_CRON_EXPR = "35 16 * * 1-5"
 RESEARCH_JOB_ID = "research_daily"
+
+# Daily screener-snapshot cron: 22:00 ET every day. Runs after both US
+# close (16:00 ET) and CN close (15:00 CST = 03:00 ET next day → previous
+# session captured by then). Weekend runs are idempotent — they re-pull
+# Friday's close.
+SCREENER_SNAPSHOT_CRON_EXPR = "0 22 * * *"
+SCREENER_SNAPSHOT_JOB_ID = "screener_snapshot"
 
 
 class SchedulerService:
@@ -114,6 +124,13 @@ class SchedulerService:
             self._register_research_job()
         except Exception as e:
             logger.warning("Failed to register daily research job: %s", e)
+
+        # Register the singleton daily screener-snapshot cron — 22:00 ET
+        # every day, after both US and CN markets have closed.
+        try:
+            self._register_snapshot_job()
+        except Exception as e:
+            logger.warning("Failed to register screener snapshot job: %s", e)
 
         logger.info(
             "SchedulerService started (tz=%s); registered %d/%d enabled scanner configs + daily pipeline + daily research",
@@ -251,6 +268,22 @@ class SchedulerService:
         logger.info(
             "Registered research job (cron=%r, tz=%s)",
             RESEARCH_CRON_EXPR, self._tz,
+        )
+
+    def _register_snapshot_job(self) -> None:
+        """Register the singleton daily screener-snapshot cron."""
+        trigger = CronTrigger.from_crontab(SCREENER_SNAPSHOT_CRON_EXPR, timezone=self._tz)
+        self._scheduler.add_job(
+            _run_snapshot_job_body,
+            trigger=trigger,
+            id=SCREENER_SNAPSHOT_JOB_ID,
+            max_instances=1,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
+        logger.info(
+            "Registered cron job %s with expression %s (timezone=%s)",
+            SCREENER_SNAPSHOT_JOB_ID, SCREENER_SNAPSHOT_CRON_EXPR, self._tz,
         )
 
     def _run_pipeline_job(self) -> None:
@@ -428,6 +461,44 @@ def _run_research_job_body() -> None:
             _logger.info(
                 "research cron: persisted report for %s (%.1fs)", ticker, duration
             )
+    finally:
+        db.close()
+
+
+# ----------------------------------------------------------------------
+# Daily screener-snapshot job — module-level function so tests can patch
+# SessionLocal, ScreenerRepository, SnapshotBuilder, and AshareMetrics
+# at this module's namespace.
+# ----------------------------------------------------------------------
+
+
+def _run_snapshot_job_body() -> None:
+    """Build US then CN snapshot; per-market failures log + continue.
+    Cleanup deletes rows older than 30 days. One DB session for the whole job.
+    """
+    from datetime import date as _date
+
+    db = SessionLocal()
+    try:
+        repo = ScreenerRepository(db)
+        try:
+            ashare = AshareMetrics()
+        except Exception as e:
+            logger.warning("AshareMetrics init failed (CN path disabled): %s", e)
+            ashare = None
+        builder = SnapshotBuilder(ashare_metrics=ashare)
+        asof = _date.today()
+
+        for market, kind in (("US", "sp500"), ("CN", "csi300")):
+            try:
+                rows = builder.build_for_universe(market, kind, asof)
+                inserted = repo.bulk_upsert(rows)
+                logger.info("screener snapshot %s: %d rows", market, inserted)
+            except Exception as e:
+                logger.exception("screener snapshot %s failed: %s", market, e)
+
+        deleted = repo.cleanup_old_snapshots(keep_days=30)
+        logger.info("screener snapshot cleanup deleted %d old rows", deleted)
     finally:
         db.close()
 

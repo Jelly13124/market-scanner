@@ -130,3 +130,44 @@ def test_cleanup_old_snapshots(repo):
     assert n == 1
     remaining = {r.ticker for r in repo.db.query(TickerSnapshot).all()}
     assert remaining == {"RECENT", "NEW"}
+
+
+def test_query_recent_earnings_after_filter(repo):
+    """recent_earnings_after keeps only rows with recent_earnings_date >= the cutoff."""
+    repo.bulk_upsert([
+        _row("EARLY", recent_earnings_date=date(2026, 1, 10)),
+        _row("CUTOFF", recent_earnings_date=date(2026, 3, 1)),
+        _row("AFTER", recent_earnings_date=date(2026, 4, 15)),
+        _row("NONE"),  # recent_earnings_date=None — should be excluded
+    ])
+    rows, total = repo.query(filters={"recent_earnings_after": "2026-03-01"})
+    tickers = {r.ticker for r in rows}
+    assert tickers == {"CUTOFF", "AFTER"}
+    assert total == 2
+
+
+def test_query_recent_earnings_before_filter(repo):
+    """recent_earnings_before keeps only rows with recent_earnings_date <= the cutoff."""
+    repo.bulk_upsert([
+        _row("EARLY", recent_earnings_date=date(2026, 1, 10)),
+        _row("CUTOFF", recent_earnings_date=date(2026, 3, 1)),
+        _row("AFTER", recent_earnings_date=date(2026, 4, 15)),
+    ])
+    rows, total = repo.query(filters={"recent_earnings_before": "2026-03-01"})
+    tickers = {r.ticker for r in rows}
+    assert tickers == {"EARLY", "CUTOFF"}
+    assert total == 2
+
+
+def test_query_perf_1y_range_filter(repo):
+    """perf_1y_min keeps only rows with perf_1y >= the threshold."""
+    repo.bulk_upsert([
+        _row("FLAT",  perf_1y=Decimal("0.05")),
+        _row("MID",   perf_1y=Decimal("0.10")),
+        _row("HIGH",  perf_1y=Decimal("0.35")),
+        _row("BELOW", perf_1y=Decimal("0.09")),
+    ])
+    rows, total = repo.query(filters={"perf_1y_min": 0.10})
+    tickers = {r.ticker for r in rows}
+    assert tickers == {"MID", "HIGH"}
+    assert total == 2

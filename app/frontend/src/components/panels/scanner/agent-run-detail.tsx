@@ -2,7 +2,6 @@
 // renders per-ticker scanner badge + grid of agent signals + portfolio_manager
 // decisions.
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,

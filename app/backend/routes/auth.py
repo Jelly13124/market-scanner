@@ -1,9 +1,12 @@
 import os
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.backend.auth.dependencies import get_current_user
+from app.backend.auth.oauth import build_authorize_url, exchange_code, get_provider
 from app.backend.auth.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
 from app.backend.database import get_db
 from app.backend.models.auth_schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
@@ -12,6 +15,8 @@ from app.backend.repositories.user_repository import UserRepository
 router = APIRouter(prefix="/auth")
 
 _COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+_OAUTH_REDIRECT_BASE = os.getenv("OAUTH_REDIRECT_BASE", "http://localhost:8001")
+_FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
 
 def _set_refresh_cookie(response: Response, user_id: int) -> None:
@@ -74,3 +79,33 @@ def logout(response: Response):
 @router.get("/me", response_model=UserOut)
 def me(current_user=Depends(get_current_user)):
     return UserOut.model_validate(current_user)
+
+
+@router.get("/oauth/{provider}")
+def oauth_authorize(provider: str):
+    try:
+        get_provider(provider)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+    state = secrets.token_urlsafe(16)
+    redirect_uri = f"{_OAUTH_REDIRECT_BASE}/auth/oauth/{provider}/callback"
+    resp = RedirectResponse(build_authorize_url(provider, state, redirect_uri), status_code=302)
+    resp.set_cookie(key="oauth_state", value=state, httponly=True, samesite="lax", secure=_COOKIE_SECURE, path="/auth", max_age=600)
+    return resp
+
+
+@router.get("/oauth/{provider}/callback")
+def oauth_callback(provider: str, code: str, state: str, request: Request, db: Session = Depends(get_db)):
+    stored_state = request.cookies.get("oauth_state")
+    if not stored_state or stored_state != state:
+        raise HTTPException(status_code=400, detail="invalid state")
+    redirect_uri = f"{_OAUTH_REDIRECT_BASE}/auth/oauth/{provider}/callback"
+    identity = exchange_code(provider, code, redirect_uri)
+    if not identity["email_verified"] or not identity["email"]:
+        raise HTTPException(status_code=400, detail=f"email not verified by {provider}")
+    user = UserRepository(db).find_or_create_oauth(provider=provider, provider_account_id=identity["provider_account_id"], email=identity["email"], full_name=identity["full_name"])
+    access_token = create_access_token(user.id)
+    resp = RedirectResponse(f"{_FRONTEND_URL}/#access_token={access_token}", status_code=302)
+    resp.set_cookie(key="refresh_token", value=create_refresh_token(user.id), httponly=True, samesite="lax", secure=_COOKIE_SECURE, path="/auth", max_age=14 * 24 * 3600)
+    resp.delete_cookie("oauth_state", path="/auth")
+    return resp

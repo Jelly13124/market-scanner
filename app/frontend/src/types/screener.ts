@@ -64,6 +64,22 @@ export interface ScreenerStatusResponse {
   by_market: Record<string, number>;
 }
 
+export interface SnapshotRefreshState {
+  running: boolean;
+  market: string | null;
+  done: number;
+  total: number;
+  started_at: string | null;
+  finished_at: string | null;
+  inserted: number | null;
+  error: string | null;
+}
+
+export interface SnapshotRefreshResult {
+  started: boolean;
+  state: SnapshotRefreshState;
+}
+
 export type ChipKind = 'range' | 'multi_select' | 'date_range';
 
 export interface ChipOption {

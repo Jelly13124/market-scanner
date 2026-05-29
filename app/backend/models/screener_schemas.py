@@ -79,3 +79,23 @@ class ScreenerStatusResponse(BaseModel):
 
 class ScreenerColumnMetadata(BaseModel):
     columns: list[dict[str, Any]]
+
+
+class SnapshotRefreshStateOut(BaseModel):
+    """Progress/state of an on-demand snapshot rebuild (polled by the UI)."""
+
+    running: bool
+    market: str | None = None
+    done: int = 0
+    total: int = 0
+    started_at: str | None = None
+    finished_at: str | None = None
+    inserted: int | None = None
+    error: str | None = None
+
+
+class SnapshotRefreshOut(BaseModel):
+    """Response to POST /snapshot/refresh. ``started=False`` ⇒ already running."""
+
+    started: bool
+    state: SnapshotRefreshStateOut

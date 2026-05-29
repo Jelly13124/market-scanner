@@ -372,6 +372,14 @@
     "tab": {
       "title": "Screener"
     },
+    "refresh": {
+      "button": "Update data",
+      "running": "Updating",
+      "starting": "Starting…",
+      "tooltip": "Fetch the latest market data for this market (takes a few minutes)",
+      "done": "Data updated",
+      "failed": "Data update failed"
+    },
     "market": {
       "all": "US + CN",
       "us": "US",

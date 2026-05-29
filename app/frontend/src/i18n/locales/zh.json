@@ -372,6 +372,14 @@
     "tab": {
       "title": "选股器"
     },
+    "refresh": {
+      "button": "更新数据",
+      "running": "更新中",
+      "starting": "启动中…",
+      "tooltip": "拉取该市场的最新行情数据 (耗时数分钟)",
+      "done": "数据已更新",
+      "failed": "数据更新失败"
+    },
     "market": {
       "all": "美股 + A股",
       "us": "美股",

@@ -1,14 +1,19 @@
+import { Button } from '@/components/ui/button';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import { useToastManager } from '@/hooks/use-toast-manager';
+import { cn } from '@/lib/utils';
 import {
   getColumnMetadata, getLatestSnapshot, getSnapshotStatus,
+  getSnapshotRefreshState, triggerSnapshotRefresh,
 } from '@/services/screener-service';
 import {
   ChipValues, ColumnMetadata, Market,
   ScreenerPreset, ScreenerSnapshotResponse, ScreenerStatusResponse, SnapshotRow,
 } from '@/types/screener';
-import { useEffect, useMemo, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EmptyState } from './empty-state';
 import { FilterChipBar } from './filter-chip-bar';
@@ -28,6 +33,12 @@ export function ScreenerTab() {
   const [response, setResponse] = useState<ScreenerSnapshotResponse | null>(null);
   const [status, setStatus] = useState<ScreenerStatusResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshProgress, setRefreshProgress] =
+    useState<{ done: number; total: number } | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const pollRef = useRef<number | null>(null);
+  const { success, error } = useToastManager();
 
   useEffect(() => {
     let alive = true;
@@ -51,7 +62,7 @@ export function ScreenerTab() {
       .catch(console.error)
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [market, sortBy, sortDir, filterValues]);
+  }, [market, sortBy, sortDir, filterValues, reloadKey]);
 
   const rows: SnapshotRow[] = response?.rows ?? [];
   const totalCount = response?.total_count ?? 0;
@@ -74,6 +85,54 @@ export function ScreenerTab() {
     }
   };
 
+  // Stop polling if the tab unmounts mid-refresh.
+  useEffect(() => () => {
+    if (pollRef.current !== null) window.clearInterval(pollRef.current);
+  }, []);
+
+  const handleRefresh = async () => {
+    // CN is disabled in the selector today; map anything non-CN to US.
+    const refreshMarket: 'US' | 'CN' = market === 'CN' ? 'CN' : 'US';
+    setRefreshing(true);
+    setRefreshProgress(null);
+    try {
+      await triggerSnapshotRefresh(refreshMarket);
+    } catch (e) {
+      console.error(e);
+      setRefreshing(false);
+      error(t('screener.refresh.failed', 'Data update failed'));
+      return;
+    }
+    // Poll progress until the server reports the build finished.
+    pollRef.current = window.setInterval(async () => {
+      let st;
+      try {
+        st = await getSnapshotRefreshState();
+      } catch (e) {
+        console.error(e);
+        return;
+      }
+      setRefreshProgress({ done: st.done, total: st.total });
+      if (st.running) return;
+      if (pollRef.current !== null) {
+        window.clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+      setRefreshing(false);
+      setRefreshProgress(null);
+      if (st.error) {
+        error(`${t('screener.refresh.failed', 'Data update failed')}: ${st.error}`);
+        return;
+      }
+      success(
+        t('screener.refresh.done', 'Data updated')
+        + (st.inserted != null ? ` (${st.inserted})` : ''),
+      );
+      getSnapshotStatus().then(setStatus).catch(console.error);
+      setReloadKey((k) => k + 1);
+    }, 2000);
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-3 px-2 pt-2">
@@ -90,6 +149,21 @@ export function ScreenerTab() {
           </SelectContent>
         </Select>
         {loading && <span className="text-xs text-muted-foreground">…</span>}
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto h-8 gap-1 text-xs"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title={t('screener.refresh.tooltip', 'Fetch the latest market data')}
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+          {refreshing
+            ? (refreshProgress && refreshProgress.total > 0
+                ? `${t('screener.refresh.running', 'Updating')} ${refreshProgress.done}/${refreshProgress.total}`
+                : t('screener.refresh.starting', 'Starting…'))
+            : t('screener.refresh.button', 'Update data')}
+        </Button>
       </div>
 
       <PresetBar

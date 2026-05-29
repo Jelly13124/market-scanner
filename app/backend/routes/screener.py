@@ -22,11 +22,14 @@ from app.backend.models.screener_schemas import (
     ScreenerColumnMetadata,
     ScreenerSnapshotResponse,
     ScreenerStatusResponse,
+    SnapshotRefreshOut,
+    SnapshotRefreshStateOut,
     SnapshotRowOut,
 )
 from app.backend.models.screener_preset_schemas import PresetCreate, PresetOut, PresetPatch
 from app.backend.repositories.screener_preset_repository import ScreenerPresetRepository
 from app.backend.repositories.screener_repository import ScreenerRepository
+from app.backend.services.snapshot_refresh import get_refresh_state, start_refresh
 from src.screener.column_metadata import COLUMN_METADATA
 
 logger = logging.getLogger(__name__)
@@ -129,6 +132,27 @@ def get_snapshot_status(db: Session = Depends(get_db)) -> ScreenerStatusResponse
         row_count=row_count,
         by_market=by_market,
     )
+
+
+@router.post("/snapshot/refresh", response_model=SnapshotRefreshOut)
+def refresh_snapshot(
+    market: Annotated[str, Query(pattern="^(US|CN)$")] = "US",
+) -> SnapshotRefreshOut:
+    """Trigger a single-market snapshot rebuild on a background thread.
+
+    Returns immediately. ``started=False`` means a refresh was already in
+    flight; poll GET /snapshot/refresh for progress either way.
+    """
+    try:
+        started, state = start_refresh(market)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return SnapshotRefreshOut(started=started, state=SnapshotRefreshStateOut(**state))
+
+
+@router.get("/snapshot/refresh", response_model=SnapshotRefreshStateOut)
+def snapshot_refresh_status() -> SnapshotRefreshStateOut:
+    return SnapshotRefreshStateOut(**get_refresh_state())
 
 
 @router.get("/presets", response_model=list[PresetOut])

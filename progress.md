@@ -2826,3 +2826,9 @@ verification (this entry).
 - Everything committed on `main`; NO PR opened (per instruction). 29 commits
   since the Wave-0 baseline (96db890).
 - Out of scope tonight (unchanged): CN data unblock, Phase 10 Wave 2 intraday.
+
+- Feature (post-batch, user-requested): Screener「更新数据」on-demand refresh button.
+  - Backend: new app/backend/services/snapshot_refresh.py — background thread + in-memory progress state + process-wide lock (one concurrent build, own DB session per thread); refreshes ONE market per call (US|CN). Routes POST/GET /screener/snapshot/refresh + SnapshotRefresh{State,}Out schemas.
+  - Frontend: screener-service triggerSnapshotRefresh/getSnapshotRefreshState; screener-tab button shows live "更新中 N/total" via 2s poll, auto-reloads table+status on done + toast. i18n screener.refresh.* (en+zh).
+  - Scope (user pick): refreshes the currently-selected market (US today; CN auto when enabled). Full universe re-pull = multi-minute; reuses SnapshotBuilder.build_for_universe on_progress.
+  - Verify: tests/screener/test_snapshot_refresh.py 5 passed (screener suite 54 passed); tsc clean; locale JSON valid; backend restarted, GET /snapshot/refresh → idle state OK.

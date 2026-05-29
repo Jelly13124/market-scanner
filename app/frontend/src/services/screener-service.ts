@@ -5,6 +5,8 @@ import {
   ScreenerStatusResponse,
   ChipValues,
   ScreenerPreset,
+  SnapshotRefreshResult,
+  SnapshotRefreshState,
 } from '@/types/screener';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
@@ -55,6 +57,22 @@ export async function getSnapshotStatus(): Promise<ScreenerStatusResponse> {
   const res = await fetch(`${API_BASE}/screener/snapshot/status`);
   if (!res.ok) throw new Error(`screener status failed: ${res.status}`);
   return res.json();
+}
+
+/** Trigger a single-market snapshot rebuild (runs server-side in the background). */
+export async function triggerSnapshotRefresh(market: 'US' | 'CN'): Promise<SnapshotRefreshResult> {
+  const r = await fetch(`${API_BASE}/screener/snapshot/refresh?market=${market}`, {
+    method: 'POST',
+  });
+  if (!r.ok) throw new Error(`triggerSnapshotRefresh ${r.status}`);
+  return r.json();
+}
+
+/** Poll the current refresh progress/state. */
+export async function getSnapshotRefreshState(): Promise<SnapshotRefreshState> {
+  const r = await fetch(`${API_BASE}/screener/snapshot/refresh`);
+  if (!r.ok) throw new Error(`getSnapshotRefreshState ${r.status}`);
+  return r.json();
 }
 
 export async function listPresets(): Promise<ScreenerPreset[]> {

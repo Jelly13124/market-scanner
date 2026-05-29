@@ -6,12 +6,13 @@ import {
 } from '@/services/screener-service';
 import {
   ChipValues, ColumnMetadata, Market,
-  ScreenerSnapshotResponse, ScreenerStatusResponse, SnapshotRow,
+  ScreenerPreset, ScreenerSnapshotResponse, ScreenerStatusResponse, SnapshotRow,
 } from '@/types/screener';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EmptyState } from './empty-state';
 import { FilterChipBar } from './filter-chip-bar';
+import { PresetBar } from './preset-bar';
 import { SnapshotTable } from './snapshot-table';
 import { StatusBar } from './status-bar';
 
@@ -57,6 +58,13 @@ export function ScreenerTab() {
   const hasAnySnapshot = useMemo(
     () => (status?.row_count ?? 0) > 0, [status]);
 
+  const handleLoadPreset = (p: ScreenerPreset) => {
+    setMarket(p.market ?? 'US');
+    setFilterValues(p.filters);
+    setSortBy(p.sort_by);
+    setSortDir(p.sort_dir);
+  };
+
   const handleSort = (column: string) => {
     if (sortBy === column) {
       setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
@@ -83,6 +91,14 @@ export function ScreenerTab() {
         </Select>
         {loading && <span className="text-xs text-muted-foreground">…</span>}
       </div>
+
+      <PresetBar
+        market={market}
+        filters={filterValues}
+        sortBy={sortBy}
+        sortDir={sortDir}
+        onLoad={handleLoadPreset}
+      />
 
       {columns.length > 0 && (
         <FilterChipBar

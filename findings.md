@@ -123,3 +123,5 @@ Verified signal quality:
 6. **`datetime.utcnow()` DeprecationWarning** throughout `scanner_repository.py` (Python 3.13+). Cosmetic; M6 cleanup.
 
 7. **`screener.match` webhook handler**: `_build_payload` in `webhook_handler.py` uses `getattr(run, ...)` for all fields — the `_ScreenerMatchRun` surrogate carries `.id` and `.payload`; all other fields resolve to `None` (correct for this event). No code change needed; webhook sends a generic JSON envelope with `event="screener.match"` + the surrogate attributes.
+
+8. **A8 PresetBar layout**: placed as a separate compact row (h-7, text-xs, flex gap-2, px-2 py-1) between the header row and FilterChipBar — not merged into the header row — because the header row already holds the market Select and loading indicator, and adding a preset Select + Save button there would overflow on narrow panels. The Manage button is rendered conditionally (only when onManage prop is provided), so it is hidden rather than disabled when undefined, keeping the bar minimal by default.

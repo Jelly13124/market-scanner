@@ -2756,3 +2756,8 @@ fd9d67f feat(screener): ScreenerRepository with filter-dict query + idempotent u
 
 - A4: preset CRUD + run routes — 2 tests pass, screener suite green
 - A5: screener.match render + dispatch — render_screener_match_html/text added to render.py; _render_for_event + dispatch_screener_match added to dispatcher.py; email/webhook handlers wired additively; 7 new tests + full suite 120 passed
+
+- A6: nightly preset cron at 22:05 ET — SCREENER_PRESET_CRON_EXPR/JOB_ID constants; _run_preset_job_body (notify on non-empty match); _register_preset_job; called from start(); bumped scheduler add_job counts 5→6 and 3→4 in test_scheduler_service.py; 3 new tests + full scheduler+screener suite 69 passed
+
+- A7: frontend preset service + type — ScreenerPreset interface in types/screener.ts; listPresets/createPreset/patchPreset/deletePreset in screener-service.ts; tsc zero NEW errors (2 pre-existing); commit d0f3884
+- A8: preset-bar.tsx — compact one-row PresetBar (Select load + Save popover + optional Manage); wired into screener-tab.tsx above FilterChipBar; tsc zero NEW errors (2 pre-existing); commit TBD

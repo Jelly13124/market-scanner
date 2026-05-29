@@ -569,3 +569,25 @@ class ScreenerPreset(Base):
     last_match_count = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now(),
                         nullable=False)
+
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    hashed_password = Column(String(255), nullable=True)  # null = OAuth-only account
+    full_name = Column(String(120))
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    is_superuser = Column(Boolean, nullable=False, server_default=text("false"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class OAuthAccount(Base):
+    __tablename__ = "oauth_accounts"
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
+    provider = Column(String(16), nullable=False)         # 'google' | 'github'
+    provider_account_id = Column(String(128), nullable=False)
+    email = Column(String(255))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (UniqueConstraint("provider", "provider_account_id", name="uq_oauth_provider_account"),)

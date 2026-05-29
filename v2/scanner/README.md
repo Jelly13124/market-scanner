@@ -38,6 +38,7 @@ via `weights.enabled_detectors` (None = all).
 | `news_sentiment.py` | ≥3 scored articles in 7d AND ≥10 baseline articles | z of 7d polarity mean shift vs 90d baseline. Scheduled for removal once LLM agents pick up sentiment via web search; kept in registry but transitionally under-weighted (default mult 0.50). |
 | `intraday_move.py` | Outsized intraday return / overnight gap / range — applied to **benchmark-adjusted** values when `ScanContext.benchmark_prices` is set | z of cvo / gap / range vs trailing window (also adjusted). Range stays raw — volatility is not a market-relative quantity. |
 | `breakout_52w.py` | First-day close above trailing 52-week high (or below low) | Categorical magnitude ~2.0 |
+| `ma_cross.py` | SMA50 crosses SMA200 (golden cross → bullish; death cross → bearish). Requires ≥202 bars. | Fixed 2.0 — binary regime event, **no z-divisor** |
 | `analyst_rating.py` | Net upgrade z ≥ 2.0 (action flow only — `gap_hit` removed M9.c.1 because Wall St consensus is structurally bullish) | net_z |
 
 ### Std floors (load-bearing — see `findings.md`)
@@ -57,6 +58,7 @@ explodes by 10+ orders of magnitude. Floors:
 | analyst_rating (action score) | 0.5 weight-points |
 | high_breakout (daily-return std) | 0.005 (50 bps) — `max(returns.std(ddof=1), 0.005)` |
 | gap (overnight gap std) | 0.003 (30 bps) — `max(np.std(gaps, ddof=1), 0.003)` |
+| ma_cross | N/A — no std computed; severity is fixed at 2.0 (binary regime event) |
 
 Below the floor, the detector falls back to the categorical "trigger fired,
 baseline uninformative" magnitude (typically 2.0–2.5).

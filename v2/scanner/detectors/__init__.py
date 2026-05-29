@@ -16,6 +16,7 @@ from v2.scanner.detectors.earnings_upcoming import EarningsUpcomingDetector
 from v2.scanner.detectors.gap import GapDetector
 from v2.scanner.detectors.high_breakout import HighBreakoutDetector
 from v2.scanner.detectors.insider import InsiderClusterDetector
+from v2.scanner.detectors.ma_cross import MaCrossDetector
 from v2.scanner.detectors.intraday_move import IntradayMoveDetector
 from v2.scanner.detectors.news_sentiment import NewsSentimentShiftDetector
 from v2.scanner.detectors.obv_divergence import OBVDivergenceDetector
@@ -34,6 +35,7 @@ ALL_DETECTORS: tuple[type[EventDetector], ...] = (
     OBVDivergenceDetector,
     HighBreakoutDetector,
     GapDetector,
+    MaCrossDetector,
     # EarningsSurpriseDetector + EarningsUpcomingDetector — UNREGISTERED
     # 2026-05-18. Merged into the unified ``EarningsEventDetector`` above.
     # The two old classes remain importable for back-compat with tests and
@@ -136,6 +138,16 @@ DETECTOR_METADATA: dict[str, dict] = {
             "denominator collapse on ultra-stable overnight opens."
         ),
     },
+    "ma_cross": {
+        "label": "Golden/Death Cross",
+        "default_mult": 1.00,
+        "description": (
+            "Fires on the day SMA(50) crosses SMA(200). Golden cross (SMA50 crosses "
+            "above SMA200) → bullish; death cross (SMA50 crosses below SMA200) → bearish. "
+            "Requires ≥202 bars. Severity is fixed at 2.0 — a cross is a binary regime "
+            "event, not a z-scored quantity; no std divisor is used."
+        ),
+    },
 }
 
 
@@ -166,6 +178,7 @@ __all__ = [
     "OBVDivergenceDetector",
     "HighBreakoutDetector",
     "GapDetector",
+    "MaCrossDetector",
     "ALL_DETECTORS",
     "DETECTOR_METADATA",
     "LEGACY_DETECTOR_ALIASES",

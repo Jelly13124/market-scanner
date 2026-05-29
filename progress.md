@@ -6,6 +6,7 @@
 - B2 (overnight): fix pre-existing tsc unused-symbol errors — agent-run-detail.tsx line 5 (removed unused Badge import), utils.ts line 20 (removed unused provider param). tsc now 0 errors. Commit f73ac24.
 - B3 (overnight): expand test coverage — 5 verdict-extraction tests (test_research_verdict.py), 3 screener date/perf_1y filter tests (test_screener_repository.py extension), 3 report-delete tests (test_research_repository_delete.py); 21 tests total, all green. Commit cc101a7.
 - C1 (overnight): HighBreakoutDetector — 52-week-high breakout (bullish-only, first-day gate, ret_std floor 0.005, severity clamped [0,8]); 8 new tests green; v2/scanner suite 119/2 (was 111/2); no registry test updates needed. Commit 2ec630b.
+- C3 (overnight): MaCrossDetector — golden/death cross (SMA50 x SMA200). Fixed severity_z=2.0 (binary regime event, no z-divisor). None on <202 bars; triggered=False on no cross. Registered in ALL_DETECTORS + DETECTOR_METADATA + __all__. README updated (detector table + std-floor table). 8 new tests green (golden cross, death cross, no-cross, empty, insufficient bars, degenerate-identical no-raise, registration, components). v2/scanner suite 137/2 (was 129/2). Commit pending.
 
 ## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
 

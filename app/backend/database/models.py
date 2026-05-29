@@ -21,6 +21,8 @@ class ApiKey(Base):
     description = Column(Text, nullable=True)  # Human-readable description
     last_used = Column(DateTime(timezone=True), nullable=True)  # Track usage
 
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
+
 
 class ScannerConfig(Base):
     """Saved configuration for the daily market scanner."""
@@ -62,6 +64,8 @@ class ScannerConfig(Base):
     auto_sop_use_personas = Column(
         Boolean, nullable=False, default=False, server_default=sa.false(),
     )
+
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
 
 
 class ScanRun(Base):
@@ -177,6 +181,8 @@ class PipelineRun(Base):
     analyst_signals_json = Column(JSON, nullable=True)       # per-agent per-ticker signals
     duration_seconds = Column(Float, nullable=True)
 
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
+
 
 class PipelineSchedule(Base):
     """Single-row config for the daily pipeline cron job.
@@ -202,6 +208,8 @@ class PipelineSchedule(Base):
     universe = Column(String(50), nullable=False, default="nasdaq100")
     model_name = Column(String(100), nullable=False, default="gpt-4.1")
     model_provider = Column(String(50), nullable=False, default="OpenAI")
+
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
 
 
 class NotificationSubscription(Base):
@@ -229,6 +237,8 @@ class NotificationSubscription(Base):
     # Optional header value for webhook channel (e.g. "Bearer xxx" or
     # "X-Hub-Signature: ..."). Email channel ignores this.
     auth_header = Column(String(500), nullable=True)
+
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
 
 
 class NotificationDelivery(Base):
@@ -291,6 +301,8 @@ class ResearchReport(Base):
     analyze_request_json = Column(JSON, nullable=True)
     sections_json = Column(JSON, nullable=True)
 
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
+
     __table_args__ = (
         Index("ix_research_reports_ticker_scan_date", "ticker", "scan_date"),
     )
@@ -311,6 +323,8 @@ class UserWatchlist(Base):
     name = Column(String(200), nullable=False, unique=True, index=True)
     # list[str] of uppercased tickers; defaults to empty list
     tickers = Column(JSON, nullable=False, default=list)
+
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
 
 
 class AnalyzeFlow(Base):
@@ -340,6 +354,8 @@ class AnalyzeFlow(Base):
     included_sections = Column(JSON, nullable=False, default=list)  # list[str]
     persona_overrides = Column(JSON, nullable=True)  # dict[section_name, persona_name]
     use_personas = Column(Boolean, nullable=False, default=False)
+
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
 
 
 class ResearchTradePlan(Base):
@@ -395,6 +411,8 @@ class Strategy(Base):
     spec_json = Column(JSON, nullable=False)
     version = Column(Integer, nullable=False, default=1, server_default="1")
 
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
+
 
 class LabChatMessage(Base):
     """Phase 6: one chat turn under a Strategy. AI proposals include a
@@ -412,6 +430,8 @@ class LabChatMessage(Base):
     spec_snapshot_json = Column(JSON, nullable=True)  # spec AFTER accept
     spec_patch_json = Column(JSON, nullable=True)     # raw AI patch
     patch_accepted = Column(Boolean, nullable=True)   # null if N/A
+
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
 
 
 class Backtest(Base):
@@ -467,6 +487,8 @@ class Backtest(Base):
 
     duration_seconds = Column(Float, nullable=True)
     error_message = Column(Text, nullable=True)
+
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
 
 
 class TickerSnapshot(Base):

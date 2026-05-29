@@ -47,7 +47,7 @@ def login(body: LoginRequest, response: Response, db: Session = Depends(get_db))
 
 
 @router.post("/refresh", response_model=TokenResponse)
-def refresh(request: Request, db: Session = Depends(get_db)):
+def refresh(request: Request, response: Response, db: Session = Depends(get_db)):
     token = request.cookies.get("refresh_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -60,6 +60,8 @@ def refresh(request: Request, db: Session = Depends(get_db)):
     user = UserRepository(db).get_by_id(int(claims["sub"]))
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
+    # Rotate the refresh cookie so its TTL slides and a leaked token is superseded on the next refresh.
+    _set_refresh_cookie(response, user.id)
     return TokenResponse(access_token=create_access_token(user.id))
 
 

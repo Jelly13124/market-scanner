@@ -1,9 +1,9 @@
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(min_length=8)  # bcrypt truncates >72 bytes; min length blocks trivial passwords
     full_name: str | None = None
 
 

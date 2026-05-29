@@ -30,3 +30,17 @@ def test_refresh_issues_new_access(client):
     # refresh cookie is set on the client jar by login
     r = client.post("/auth/refresh")
     assert r.status_code == 200 and "access_token" in r.json()
+
+
+def test_refresh_token_rejected_as_access(client):
+    # A refresh token must NOT authenticate /me (type-confusion guard).
+    client.post("/auth/register", json={"email": "a@x.com", "password": "pw123456"})
+    login = client.post("/auth/login", json={"email": "a@x.com", "password": "pw123456"})
+    refresh_tok = login.cookies.get("refresh_token")
+    assert refresh_tok is not None
+    assert client.get("/auth/me", headers=_auth(refresh_tok)).status_code == 401
+
+
+def test_short_password_rejected(client):
+    r = client.post("/auth/register", json={"email": "b@x.com", "password": "short"})
+    assert r.status_code == 422  # min_length=8 enforced by RegisterRequest

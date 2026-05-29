@@ -413,6 +413,27 @@
     "analyze": {
       "button": "分析",
       "tooltip": "深度分析这只股票 (SOP 研报)"
+    },
+    "presets": {
+      "save": "保存预设",
+      "save_title": "保存预设",
+      "save_confirm": "保存",
+      "saving": "保存中…",
+      "saved": "预设已保存",
+      "save_error": "保存预设失败",
+      "name_placeholder": "预设名称",
+      "select_placeholder": "加载预设…",
+      "manage": "管理",
+      "manage_title": "管理预设",
+      "empty": "暂无预设",
+      "schedule": "定时",
+      "channel_email": "邮件",
+      "channel_webhook": "Webhook",
+      "last_match": "上次命中",
+      "delete_confirm": "删除此预设？",
+      "deleted": "预设已删除",
+      "delete_error": "删除预设失败",
+      "patch_error": "更新预设失败"
     }
   },
   "reports": {

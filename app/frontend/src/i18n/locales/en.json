@@ -413,6 +413,27 @@
     "analyze": {
       "button": "Analyze",
       "tooltip": "Analyze this stock (deep SOP report)"
+    },
+    "presets": {
+      "save": "Save preset",
+      "save_title": "Save preset",
+      "save_confirm": "Save",
+      "saving": "Saving…",
+      "saved": "Preset saved",
+      "save_error": "Could not save preset",
+      "name_placeholder": "Preset name",
+      "select_placeholder": "Load preset…",
+      "manage": "Manage",
+      "manage_title": "Manage presets",
+      "empty": "No presets yet",
+      "schedule": "Schedule",
+      "channel_email": "Email",
+      "channel_webhook": "Webhook",
+      "last_match": "last match",
+      "delete_confirm": "Delete this preset?",
+      "deleted": "Preset deleted",
+      "delete_error": "Could not delete preset",
+      "patch_error": "Could not update preset"
     }
   },
   "reports": {

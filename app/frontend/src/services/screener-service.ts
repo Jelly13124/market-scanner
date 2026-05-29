@@ -4,6 +4,7 @@ import {
   ScreenerSnapshotResponse,
   ScreenerStatusResponse,
   ChipValues,
+  ScreenerPreset,
 } from '@/types/screener';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
@@ -54,4 +55,50 @@ export async function getSnapshotStatus(): Promise<ScreenerStatusResponse> {
   const res = await fetch(`${API_BASE}/screener/snapshot/status`);
   if (!res.ok) throw new Error(`screener status failed: ${res.status}`);
   return res.json();
+}
+
+export async function listPresets(): Promise<ScreenerPreset[]> {
+  const r = await fetch(`${API_BASE}/screener/presets`);
+  if (!r.ok) throw new Error(`listPresets ${r.status}`);
+  return r.json();
+}
+
+export async function createPreset(body: {
+  name: string;
+  market: 'US' | 'CN' | null;
+  filters: ChipValues;
+  sort_by: string;
+  sort_dir: 'asc' | 'desc';
+  schedule_enabled?: boolean;
+  notify_channels?: string[] | null;
+}): Promise<ScreenerPreset> {
+  const r = await fetch(`${API_BASE}/screener/presets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`createPreset ${r.status}`);
+  return r.json();
+}
+
+export async function patchPreset(
+  id: number,
+  patch: Partial<{
+    name: string;
+    schedule_enabled: boolean;
+    notify_channels: string[] | null;
+  }>
+): Promise<ScreenerPreset> {
+  const r = await fetch(`${API_BASE}/screener/presets/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error(`patchPreset ${r.status}`);
+  return r.json();
+}
+
+export async function deletePreset(id: number): Promise<void> {
+  const r = await fetch(`${API_BASE}/screener/presets/${id}`, { method: 'DELETE' });
+  if (!r.ok && r.status !== 204) throw new Error(`deletePreset ${r.status}`);
 }

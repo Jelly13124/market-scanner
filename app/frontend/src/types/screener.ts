@@ -95,3 +95,16 @@ export interface ColumnMetadataResponse {
 
 /** Local filter state per chip slug. Sent to the API as flat query params. */
 export type ChipValues = Record<string, string | number | string[] | null>;
+
+export interface ScreenerPreset {
+  id: number;
+  name: string;
+  market: 'US' | 'CN' | null;
+  filters: ChipValues;
+  sort_by: string;
+  sort_dir: 'asc' | 'desc';
+  schedule_enabled: boolean;
+  notify_channels: string[] | null;
+  last_run_at: string | null;
+  last_match_count: number | null;
+}

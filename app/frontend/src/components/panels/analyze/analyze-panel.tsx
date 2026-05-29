@@ -30,6 +30,7 @@ import {
   PersonaAssignmentsBox,
   SectionStatusPanel,
 } from './section-status-panel';
+import { VerdictCard } from './verdict-card';
 
 export function AnalyzePanel() {
   const canvasRef = useRef<FlowCanvasHandle | null>(null);
@@ -174,8 +175,13 @@ export function AnalyzePanel() {
         <FlowCanvas ref={canvasRef} onChange={onCanvasChange} />
       </div>
 
-      {/* 3. Collapsible bottom — status pills, report iframe, history */}
+      {/* 3. Collapsible bottom — verdict card, status pills, report iframe, history */}
       <div className="flex-shrink-0 max-h-[40vh] overflow-auto bg-background">
+        {showLiveDetail && currentDetail?.verdict && (
+          <div className="px-3 pt-3">
+            <VerdictCard verdict={currentDetail.verdict} />
+          </div>
+        )}
         <Accordion
           type="multiple"
           defaultValue={['report', 'history']}

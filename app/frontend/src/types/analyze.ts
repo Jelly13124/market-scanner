@@ -55,6 +55,15 @@ export interface BacktestVerdictAPI {
   verdict: string;
 }
 
+export type Recommendation =
+  | 'strong_buy' | 'buy' | 'hold' | 'sell' | 'strong_sell';
+
+export interface VerdictPayload {
+  recommendation: Recommendation;
+  confidence_score: number; // 0-100
+  one_liner: string;
+}
+
 export interface AnalyzeReportDetail {
   id: number;
   ticker: string;
@@ -70,6 +79,7 @@ export interface AnalyzeReportDetail {
   persona_assignments: Record<string, unknown> | null;
   sections: Record<string, SectionPayloadAPI>;
   backtest: BacktestVerdictAPI | null;
+  verdict: VerdictPayload | null;
 }
 
 // Default section order — keep in sync with src/research/models.py:SECTION_ORDER

@@ -32,6 +32,7 @@ from app.backend.models.research_schemas import (
     ResearchRunRequest,
     SectionPayloadAPI,
     TradePlanPayload,
+    VerdictPayload,
 )
 from app.backend.repositories.research_repository import ResearchReportRepository
 from src.research.backtest_signal import _closes, run_signal_backtest
@@ -208,6 +209,23 @@ def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
         significant=bt.significant, verdict=bt.verdict,
     ) if bt is not None else None
 
+    # Lift the verdict (buy/sell/hold + confidence) out of the
+    # executive_summary section so the frontend can show a top-of-report card.
+    verdict_api: VerdictPayload | None = None
+    exec_p = (report_dict.get("sections") or {}).get("executive_summary")
+    exec_struct = getattr(exec_p, "structured", None)
+    if isinstance(exec_struct, dict):
+        rec = exec_struct.get("recommendation")
+        conf = exec_struct.get("confidence_score")
+        if rec in ("strong_buy", "buy", "hold", "sell", "strong_sell") and isinstance(
+            conf, (int, float)
+        ):
+            verdict_api = VerdictPayload(
+                recommendation=rec,
+                confidence_score=int(conf),
+                one_liner=exec_struct.get("overall_view") or "",
+            )
+
     return AnalyzeReportDetail(
         id=row.id,
         ticker=row.ticker,
@@ -223,6 +241,7 @@ def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
         persona_assignments=report_dict.get("persona_assignments"),
         sections=sections_api,
         backtest=backtest_api,
+        verdict=verdict_api,
     )
 
 

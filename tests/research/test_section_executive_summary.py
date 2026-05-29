@@ -32,6 +32,7 @@ def test_emits_bullet_summary(mock_llm):
     from src.research.sections.executive_summary import (
         ExecutiveSummarySection, _ExecOut)
     mock_llm.return_value = _ExecOut(
+        recommendation="buy", confidence_score=72,
         overall_view="bullish", main_bullish="ai", main_bearish="comp",
         target_range="$100/120/140", strategy_type="swing",
         confidence_qualitative="medium", key_invalidation="earnings miss",
@@ -40,6 +41,10 @@ def test_emits_bullet_summary(mock_llm):
     assert out.name == "executive_summary"
     assert "Overall view" in out.markdown
     assert "bullish" in out.markdown
+    # Verdict fields surface in markdown + structured.
+    assert "Recommendation" in out.markdown
+    assert out.structured["recommendation"] == "buy"
+    assert out.structured["confidence_score"] == 72
 
 
 @patch("src.research.sections.executive_summary.call_research_llm")
@@ -49,6 +54,7 @@ def test_score_pulled_from_conviction_not_llm(mock_llm):
     from src.research.sections.executive_summary import (
         ExecutiveSummarySection, _ExecOut)
     mock_llm.return_value = _ExecOut(
+        recommendation="hold", confidence_score=50,
         overall_view="x", main_bullish="x", main_bearish="x",
         target_range="x", strategy_type="x",
         confidence_qualitative="medium", key_invalidation="x",

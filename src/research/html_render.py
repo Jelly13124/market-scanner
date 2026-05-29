@@ -323,6 +323,65 @@ def _technical_chart_imgs(payload, *, report_id: int | None) -> str:
     return "".join(parts)
 
 
+# 5-level verdict styling. (color, light background) per recommendation.
+_VERDICT_STYLE = {
+    "strong_buy":  ("#15803d", "#f0fdf4"),
+    "buy":         ("#16a34a", "#f0fdf4"),
+    "hold":        ("#6b7280", "#f9fafb"),
+    "sell":        ("#ea580c", "#fff7ed"),
+    "strong_sell": ("#dc2626", "#fef2f2"),
+}
+_VERDICT_LABEL_EN = {
+    "strong_buy": "STRONG BUY", "buy": "BUY", "hold": "HOLD",
+    "sell": "SELL", "strong_sell": "STRONG SELL",
+}
+_VERDICT_LABEL_ZH = {
+    "strong_buy": "强力买入", "buy": "买入", "hold": "持有 / 观望",
+    "sell": "卖出", "strong_sell": "强力卖出",
+}
+
+
+def _verdict_banner_html(exec_structured: dict, lang: str) -> str:
+    """Prominent buy/sell/hold + confidence banner for the top of the report.
+    Reads the executive_summary section's structured output."""
+    rec = exec_structured.get("recommendation")
+    if rec not in _VERDICT_STYLE:
+        return ""
+    conf = exec_structured.get("confidence_score")
+    conf = int(conf) if isinstance(conf, (int, float)) else None
+    one_liner = exec_structured.get("overall_view") or ""
+
+    color, bg = _VERDICT_STYLE[rec]
+    label = (_VERDICT_LABEL_ZH if lang == "zh" else _VERDICT_LABEL_EN)[rec]
+    conf_word = "置信度" if lang == "zh" else "Confidence"
+    head_word = "投资建议" if lang == "zh" else "Recommendation"
+
+    conf_html = ""
+    if conf is not None:
+        conf_html = (
+            f'<div style="flex:1;min-width:160px;">'
+            f'<div style="font-size:0.75rem;color:#6b7280;text-transform:uppercase;'
+            f'letter-spacing:0.05em;">{conf_word}</div>'
+            f'<div style="display:flex;align-items:center;gap:8px;">'
+            f'<div style="flex:1;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;">'
+            f'<div style="width:{conf}%;height:100%;background:{color};"></div></div>'
+            f'<strong style="color:{color};">{conf}/100</strong></div></div>'
+        )
+
+    return (
+        f'<div style="border:2px solid {color};border-radius:12px;'
+        f'padding:16px 20px;margin:18px 0 28px;background:{bg};">'
+        f'<div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">'
+        f'<div><div style="font-size:0.75rem;color:#6b7280;text-transform:uppercase;'
+        f'letter-spacing:0.05em;">{head_word}</div>'
+        f'<div style="font-size:1.9rem;font-weight:800;color:{color};line-height:1.1;">'
+        f'{label}</div></div>'
+        f'{conf_html}</div>'
+        f'<div style="margin-top:10px;color:#374151;font-size:0.95rem;">'
+        f'{_html.escape(one_liner)}</div></div>'
+    )
+
+
 def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
     """Render an ``AnalyzeReport`` into a single self-contained HTML
     document using the vendored skill template + per-section body
@@ -416,6 +475,16 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
     # Phase 11.1 fix: localize the template's hardcoded English <h2>
     # headings to Chinese when report_language=='zh'.
     html = _localize_template_headings(html, getattr(req, "report_language", "en"))
+
+    # Verdict banner — buy/sell/hold + confidence at the very top, for
+    # readers who won't scroll the full report. Injected after the header.
+    exec_p = sections.get("executive_summary")
+    if exec_p and not exec_p.skipped and isinstance(exec_p.structured, dict):
+        banner = _verdict_banner_html(
+            exec_p.structured, getattr(req, "report_language", "en")
+        )
+        if banner:
+            html = html.replace("</header>", "</header>\n" + banner, 1)
 
     return html
 

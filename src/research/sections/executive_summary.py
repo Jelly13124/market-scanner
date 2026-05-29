@@ -23,6 +23,15 @@ logger = logging.getLogger(__name__)
 
 
 class _ExecOut(BaseModel):
+    # The verdict — the impatient-reader takeaway, surfaced as a banner at
+    # the top of the report and a card in the Analyze panel.
+    recommendation: Literal["strong_buy", "buy", "hold", "sell", "strong_sell"] = Field(
+        description="Actionable call: strong_buy / buy / hold / sell / strong_sell"
+    )
+    confidence_score: int = Field(
+        ge=0, le=100,
+        description="0-100 confidence in THIS recommendation (not setup quality)",
+    )
     overall_view: str = Field(description="1-2 sentence decision summary")
     main_bullish: str
     main_bearish: str
@@ -49,11 +58,18 @@ def _conviction_score(ctx: SectionContext) -> int | None:
 
 
 _TASK_INSTRUCTION = (
-    "Write the Executive Summary as a bullet list. Output: overall_view, "
-    "main_bullish, main_bearish, target_range (bear/base/bull dollar "
-    "ranges), strategy_type, confidence_qualitative (high/medium/low), "
-    "key_invalidation. Do NOT invent a numeric score - the score is "
-    "pulled from the prior conviction section by the runner."
+    "Write the Executive Summary. Output these fields:\n"
+    "  recommendation — the single actionable call, exactly one of: "
+    "strong_buy, buy, hold, sell, strong_sell. Base it on the balance of "
+    "the bullish vs bearish evidence and the risk/reward.\n"
+    "  confidence_score — integer 0-100, how confident you are in THIS "
+    "recommendation given the evidence quality and agreement across "
+    "sections (this is NOT the conviction setup-quality score).\n"
+    "  overall_view (1-2 sentence decision summary), main_bullish, "
+    "main_bearish, target_range (bear/base/bull dollar ranges), "
+    "strategy_type, confidence_qualitative (high/medium/low), "
+    "key_invalidation. Do NOT invent a conviction score - that is pulled "
+    "from the prior conviction section by the runner."
 )
 
 
@@ -79,6 +95,7 @@ class ExecutiveSummarySection(Section):
             out = call_research_llm(
                 prompt, _ExecOut,
                 default_factory=lambda: _ExecOut(
+                    recommendation="hold", confidence_score=0,
                     overall_view="LLM failed; no summary.",
                     main_bullish="n/a", main_bearish="n/a",
                     target_range="n/a", strategy_type="n/a",
@@ -95,7 +112,19 @@ class ExecutiveSummarySection(Section):
             )
 
         score = _conviction_score(ctx)
+        rec_label_en = {
+            "strong_buy": "Strong Buy", "buy": "Buy", "hold": "Hold",
+            "sell": "Sell", "strong_sell": "Strong Sell",
+        }
+        rec_label_zh = {
+            "strong_buy": "强力买入", "buy": "买入", "hold": "持有/观望",
+            "sell": "卖出", "strong_sell": "强力卖出",
+        }
+        rec_display = (rec_label_zh if lang == "zh" else rec_label_en).get(
+            out.recommendation, out.recommendation
+        )
         L = {
+            "recommend":  "投资建议"        if lang == "zh" else "Recommendation",
             "overall":    "总体观点"        if lang == "zh" else "Overall view",
             "bullish":    "主要看多论点"    if lang == "zh" else "Main bullish argument",
             "bearish":    "主要看空风险"    if lang == "zh" else "Main bearish risk",
@@ -109,6 +138,8 @@ class ExecutiveSummarySection(Section):
 
         md = (
             f"{heading}\n\n"
+            f"- **{L['recommend']}:** {rec_display} "
+            f"({L['confidence']} {out.confidence_score}/100)\n"
             f"- **{L['overall']}:** {out.overall_view}\n"
             f"- **{L['bullish']}:** {out.main_bullish}\n"
             f"- **{L['bearish']}:** {out.main_bearish}\n"

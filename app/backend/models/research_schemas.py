@@ -185,6 +185,14 @@ class BacktestVerdictAPI(BaseModel):
     verdict: str
 
 
+class VerdictPayload(BaseModel):
+    """The impatient-reader takeaway, lifted from the executive_summary
+    section: a 5-level call + 0-100 confidence + one-line rationale."""
+    recommendation: Literal["strong_buy", "buy", "hold", "sell", "strong_sell"]
+    confidence_score: int = Field(ge=0, le=100)
+    one_liner: str = ""
+
+
 class AnalyzeReportDetail(BaseModel):
     """Response from POST /research/analyze and GET /research/reports/{id}/analyze."""
     model_config = ConfigDict(from_attributes=True)
@@ -205,3 +213,4 @@ class AnalyzeReportDetail(BaseModel):
 
     sections: dict[str, SectionPayloadAPI]
     backtest: BacktestVerdictAPI | None
+    verdict: VerdictPayload | None = None

@@ -1,6 +1,7 @@
 # Progress Log
 
 - A9: preset-manager.tsx (Dialog + per-row Schedule/Email/Webhook Checkbox + delete); preset-bar.tsx wired with internal mgrOpen state; Manage button always visible; tsc 2 errors (both pre-existing).
+- A10: i18n presets — added `screener.presets` block (19 keys) to en.json + zh.json via Python round-trip (no hand-edit). Both files validate. Commit c98a52a.
 
 ## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
 
@@ -2763,3 +2764,5 @@ fd9d67f feat(screener): ScreenerRepository with filter-dict query + idempotent u
 
 - A7: frontend preset service + type — ScreenerPreset interface in types/screener.ts; listPresets/createPreset/patchPreset/deletePreset in screener-service.ts; tsc zero NEW errors (2 pre-existing); commit d0f3884
 - A8: preset-bar.tsx — compact one-row PresetBar (Select load + Save popover + optional Manage); wired into screener-tab.tsx above FilterChipBar; tsc zero NEW errors (2 pre-existing); commit TBD
+
+- A11: Wave A verification — backend 890 passed / 1 pre-existing fail (earnings_event, B1 fixes) / 5 skipped; frontend tsc 2 pre-existing errors (B2 fixes). Wave A introduced 0 regressions.

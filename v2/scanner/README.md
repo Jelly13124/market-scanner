@@ -55,6 +55,7 @@ explodes by 10+ orders of magnitude. Floors:
 | news (polarity) | 0.10 |
 | intraday_move (cvo/gap/range) | 0.005 |
 | analyst_rating (action score) | 0.5 weight-points |
+| high_breakout (daily-return std) | 0.005 (50 bps) — `max(returns.std(ddof=1), 0.005)` |
 
 Below the floor, the detector falls back to the categorical "trigger fired,
 baseline uninformative" magnitude (typically 2.0–2.5).

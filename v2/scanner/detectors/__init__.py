@@ -13,6 +13,7 @@ from v2.scanner.detectors.earnings import (
     EarningsSurpriseDetector,
 )
 from v2.scanner.detectors.earnings_upcoming import EarningsUpcomingDetector
+from v2.scanner.detectors.high_breakout import HighBreakoutDetector
 from v2.scanner.detectors.insider import InsiderClusterDetector
 from v2.scanner.detectors.intraday_move import IntradayMoveDetector
 from v2.scanner.detectors.news_sentiment import NewsSentimentShiftDetector
@@ -30,6 +31,7 @@ ALL_DETECTORS: tuple[type[EventDetector], ...] = (
     TargetPriceChangeDetector,
     BollingerSqueezeDetector,
     OBVDivergenceDetector,
+    HighBreakoutDetector,
     # EarningsSurpriseDetector + EarningsUpcomingDetector — UNREGISTERED
     # 2026-05-18. Merged into the unified ``EarningsEventDetector`` above.
     # The two old classes remain importable for back-compat with tests and
@@ -112,6 +114,16 @@ DETECTOR_METADATA: dict[str, dict] = {
             "Granville 1963 + microstructure (Blume/Easley/O'Hara 1994)."
         ),
     },
+    "high_breakout": {
+        "label": "52-Week High Breakout",
+        "default_mult": 1.00,
+        "description": (
+            "First-day close above trailing 252-bar (≈52-week) high. "
+            "Bullish only. Severity z-scored vs daily-return std (floor 0.005), "
+            "clamped to [0, 8]. First-day gate prevents re-fire on subsequent "
+            "new-high days."
+        ),
+    },
 }
 
 
@@ -140,6 +152,7 @@ __all__ = [
     "BollingerSqueezeDetector",
     "EarningsUpcomingDetector",
     "OBVDivergenceDetector",
+    "HighBreakoutDetector",
     "ALL_DETECTORS",
     "DETECTOR_METADATA",
     "LEGACY_DETECTOR_ALIASES",

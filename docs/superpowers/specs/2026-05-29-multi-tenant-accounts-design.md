@@ -34,7 +34,7 @@ their own API keys. Shared market data (snapshots, analyst targets) stays global
 | Tenancy | Per-user data; market data (ticker_snapshots, analyst_target_snapshots) shared/global |
 | API keys / cost | **Each user brings their own keys** — host never pays; no quota system needed |
 | Auth implementation | **Hand-rolled** with `passlib[bcrypt]` + `python-jose` + `authlib` (fits the sync codebase) |
-| Database | **Migrate SQLite → Postgres** (concurrent users + background threads; standard for deployed multi-tenant) |
+| Database | **Stay on SQLite** with WAL + busy_timeout (fine for a few friends); Postgres optional later via `DATABASE_URL`, zero code change [revised 2026-05-29] |
 | Crons | Per-user **opt-in**; snapshot build stays global |
 
 Rejected: `fastapi-users` (async-first, fights the sync codebase); managed auth

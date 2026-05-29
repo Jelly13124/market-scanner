@@ -6,7 +6,9 @@
 
 **Architecture:** Hand-rolled sync auth (`passlib` + `python-jose` + `authlib`) on the existing sync-SQLAlchemy FastAPI app; a `users`/`oauth_accounts` model; `user_id` added to every top-level user-owned table with all queries scoped by the authenticated user; SQLite→Postgres for the deployed multi-user target. Frontend gains an `AuthProvider` + a conditional login gate (no router exists — the app is a single mounted `<App/>`).
 
-**Tech Stack:** FastAPI (sync), SQLAlchemy 2.x, Alembic, Postgres (psycopg2), passlib[bcrypt], python-jose[cryptography], authlib; React + Vite + TypeScript, react-i18next.
+**Tech Stack:** FastAPI (sync), SQLAlchemy 2.x, Alembic, SQLite with WAL (Postgres optional later via `DATABASE_URL`), passlib[bcrypt], python-jose[cryptography], authlib; React + Vite + TypeScript, react-i18next.
+
+> **DB decision revised 2026-05-29:** staying on SQLite (WAL + busy_timeout) — sufficient for a few friends and far simpler to deploy/back up. The Wave-0 `DATABASE_URL` plumbing means Postgres is a 1-env-var switch if scale ever demands it, so no work is wasted. Wave 0 Task 0.3's "PG smoke" becomes optional/future; migrations still author PG-safe DDL (cheap insurance).
 
 **Source spec:** `docs/superpowers/specs/2026-05-29-multi-tenant-accounts-design.md`
 

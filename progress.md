@@ -5,6 +5,7 @@
 - B1 (overnight): fix test_scanner_service.py::test_enabled_detectors_filters_run_scan_detectors — expected earnings_surprise, got earnings_event (intentional merge/alias). Updated assertion to expect canonical name; all 8 tests pass. Commit 8246b4d.
 - B2 (overnight): fix pre-existing tsc unused-symbol errors — agent-run-detail.tsx line 5 (removed unused Badge import), utils.ts line 20 (removed unused provider param). tsc now 0 errors. Commit f73ac24.
 - B3 (overnight): expand test coverage — 5 verdict-extraction tests (test_research_verdict.py), 3 screener date/perf_1y filter tests (test_screener_repository.py extension), 3 report-delete tests (test_research_repository_delete.py); 21 tests total, all green. Commit cc101a7.
+- C1 (overnight): HighBreakoutDetector — 52-week-high breakout (bullish-only, first-day gate, ret_std floor 0.005, severity clamped [0,8]); 8 new tests green; v2/scanner suite 119/2 (was 111/2); no registry test updates needed. Commit 2ec630b.
 
 ## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
 

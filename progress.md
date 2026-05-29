@@ -2785,3 +2785,44 @@ fd9d67f feat(screener): ScreenerRepository with filter-dict query + idempotent u
 - D1: searchable multi-select chip — multi-select-chip.tsx: added `useState` import; local search state + showSearch gate (>8 options); uses Input component styled h-7/text-xs; filters visible options by label case-insensitive substring; clears search on Clear button click; i18n placeholder via t('common.search', 'Search…'). No locale file edits (fallback default works). tsc: zero errors. Commit ebf607f. No Co-Authored-By trailer.
 
 - D2: column-group tabs — snapshot-table.tsx refactored to data-driven ColDescriptor array + GROUPS map; Tabs control (h-8, text-xs) with Overview/Valuation/Performance above the table; colSpan now uses activeCols.length; anchor cols (ticker, sector, rating, analyze) in every group; tsc zero errors; commit dfa0662.
+
+---
+
+## D4 — OVERNIGHT BATCH WRAP-UP (2026-05-29)
+
+ALL FOUR WAVES COMPLETE (A→B→C→D). Final verification:
+- Backend `tests/`: **934 passed, 5 skipped** (was 6-failed after Wave C; fixed in 299949f).
+- `v2/scanner/` + `tests/test_detector_invariants.py`: **270 passed, 2 skipped**.
+- Frontend `node node_modules/typescript/bin/tsc --noEmit`: **clean (exit 0)**.
+- Pre-existing live-API/conformance failures in `v2/data` + `v2/event_study` (~19) remain — logged in findings.md, out of scope, NOT chased.
+
+### Wave A — Screener Phase 2 (presets + cron + notify) — 11 tasks ✓
+ScreenerPreset model+migration (75502b2), repo (f9437f4), schemas (704c67a),
+CRUD+run routes (ab6f854), screener.match notify render+dispatch (f43d4b3),
+nightly preset cron 22:05 ET + notify-on-match (2bcd9ef), FE service+type
+(d0f3884), save/load preset bar (f36530b), presets manager dialog (36ee231),
+i18n en+zh (c98a52a), Wave A verification (6a69356).
+
+### Wave B — test hardening — 4 tasks ✓
+earnings_event assertion fix (8246b4d), pre-existing tsc errors cleared
+(f73ac24), coverage expansion: verdict extraction + screener filters + report
+delete (cc101a7), full-suite checkpoint + live-API failure log (a5e6756).
+
+### Wave C — Scanner detectors + A/B eval — 6 tasks ✓
+4 new detectors, each gated by scanner-invariant-reviewer (APPROVED):
+high_breakout (2ec630b), gap (520fe1f), ma_cross golden/death (8a9110e),
+rsi_divergence (f14335a). A/B eval harness vs random baseline (2f91a4d).
+Wave C verification — 13 detectors total (af244a1). Post-checkpoint lint fix
+for RULE-3/RULE-5 (299949f) — see findings.md GAP note.
+
+### Wave D — Screener Phase 3 polish — 4 tasks ✓
+searchable multi-select chip (ebf607f), Overview/Valuation/Performance
+column-group tabs (dfa0662), bulk add-to-watchlist (2c09592), final
+verification (this entry).
+
+### Left for morning review
+- Visual QA of the 3 Wave-D frontend features (search chip, column tabs,
+  bulk-watchlist) — tsc-verified but not eyeballed (no unattended browser).
+- Everything committed on `main`; NO PR opened (per instruction). 29 commits
+  since the Wave-0 baseline (96db890).
+- Out of scope tonight (unchanged): CN data unblock, Phase 10 Wave 2 intraday.

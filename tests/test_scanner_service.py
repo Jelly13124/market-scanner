@@ -214,9 +214,10 @@ class TestScannerServiceExecute:
         svc.execute(cfg_id)
 
         det_names = [d.name for d in captured["detectors"]]
-        assert sorted(det_names) == sorted(["earnings_surprise", "intraday_move"])
-        # Sanity: weights round-tripped correctly via _build_weights
-        assert captured["weights"].enabled_detectors == ["earnings_surprise", "intraday_move"]
+        assert sorted(det_names) == sorted(["earnings_event", "intraday_move"])
+        # Sanity: weights round-tripped correctly via _build_weights; legacy alias
+        # "earnings_surprise" is rewritten to canonical "earnings_event" by validation
+        assert captured["weights"].enabled_detectors == ["earnings_event", "intraday_move"]
 
     def test_no_enabled_detectors_means_all_run(self, session_factory, config, monkeypatch):
         """Existing configs without weights.enabled_detectors should run all 7

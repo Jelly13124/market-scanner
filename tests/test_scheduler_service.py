@@ -79,8 +79,8 @@ class TestLifecycle:
             ScannerConfigRepository(session).create(name="b", universe_kind="sp500", is_enabled=False)
             ScannerConfigRepository(session).create(name="c", universe_kind="sp500", is_enabled=True)
         svc.start()
-        # 2 enabled scanner configs + 1 singleton daily pipeline job + 1 daily research job + 1 screener snapshot job
-        assert svc._scheduler.add_job.call_count == 5
+        # 2 enabled scanner configs + 1 singleton daily pipeline job + 1 daily research job + 1 screener snapshot job + 1 screener preset job
+        assert svc._scheduler.add_job.call_count == 6
         job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
         assert "daily-pipeline" in job_ids
         assert "research_daily" in job_ids
@@ -89,8 +89,8 @@ class TestLifecycle:
         """Pipeline and research jobs are independent of scanner configs —
         both must register even when no scanner configs exist."""
         svc.start()
-        # No configs, but daily pipeline + daily research + screener snapshot still registered
-        assert svc._scheduler.add_job.call_count == 3
+        # No configs, but daily pipeline + daily research + screener snapshot + screener preset still registered
+        assert svc._scheduler.add_job.call_count == 4
         job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
         assert "daily-pipeline" in job_ids
         assert "research_daily" in job_ids

@@ -36,6 +36,8 @@ from app.backend.repositories.pipeline_repository import PipelineRunRepository
 from app.backend.repositories.research_repository import ResearchReportRepository
 from app.backend.repositories.scanner_repository import ScannerConfigRepository
 from app.backend.repositories.screener_repository import ScreenerRepository
+from app.backend.repositories.screener_preset_repository import ScreenerPresetRepository
+from app.backend.services.notifications.dispatcher import NotificationDispatcher
 from src.screener.ashare_metrics import AshareMetrics
 from src.screener.snapshot_builder import SnapshotBuilder
 from app.backend.services.scanner_service import ScannerService
@@ -66,6 +68,11 @@ RESEARCH_JOB_ID = "research_daily"
 # Friday's close.
 SCREENER_SNAPSHOT_CRON_EXPR = "0 22 * * *"
 SCREENER_SNAPSHOT_JOB_ID = "screener_snapshot"
+
+# Daily screener-preset cron: 22:05 ET every day, 5 min after the snapshot
+# cron so fresh rows are already written when presets run.
+SCREENER_PRESET_CRON_EXPR = "5 22 * * *"
+SCREENER_PRESET_JOB_ID = "screener_presets"
 
 
 class SchedulerService:
@@ -131,6 +138,13 @@ class SchedulerService:
             self._register_snapshot_job()
         except Exception as e:
             logger.warning("Failed to register screener snapshot job: %s", e)
+
+        # Register the singleton daily screener-preset cron — 22:05 ET
+        # every day, 5 min after the snapshot so fresh rows are available.
+        try:
+            self._register_preset_job()
+        except Exception as e:
+            logger.warning("Failed to register screener preset job: %s", e)
 
         logger.info(
             "SchedulerService started (tz=%s); registered %d/%d enabled scanner configs + daily pipeline + daily research",
@@ -284,6 +298,22 @@ class SchedulerService:
         logger.info(
             "Registered cron job %s with expression %s (timezone=%s)",
             SCREENER_SNAPSHOT_JOB_ID, SCREENER_SNAPSHOT_CRON_EXPR, self._tz,
+        )
+
+    def _register_preset_job(self) -> None:
+        """Register the singleton daily screener-preset cron (22:05 ET)."""
+        trigger = CronTrigger.from_crontab(SCREENER_PRESET_CRON_EXPR, timezone=self._tz)
+        self._scheduler.add_job(
+            _run_preset_job_body,
+            trigger=trigger,
+            id=SCREENER_PRESET_JOB_ID,
+            max_instances=1,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
+        logger.info(
+            "Registered cron job %s with expression %s (timezone=%s)",
+            SCREENER_PRESET_JOB_ID, SCREENER_PRESET_CRON_EXPR, self._tz,
         )
 
     def _run_pipeline_job(self) -> None:
@@ -499,6 +529,52 @@ def _run_snapshot_job_body() -> None:
 
         deleted = repo.cleanup_old_snapshots(keep_days=30)
         logger.info("screener snapshot cleanup deleted %d old rows", deleted)
+    finally:
+        db.close()
+
+
+# ----------------------------------------------------------------------
+# Daily screener-preset job — module-level function so tests can patch
+# SessionLocal, ScreenerPresetRepository, ScreenerRepository, and
+# NotificationDispatcher at this module's namespace.
+# ----------------------------------------------------------------------
+
+
+def _run_preset_job_body() -> None:
+    """Run every schedule-enabled screener preset against the latest snapshot;
+    notify on non-empty matches. Per-preset failures log + continue."""
+    from datetime import date as _date, datetime as _dt, timezone as _tz
+
+    db = SessionLocal()
+    try:
+        presets = ScreenerPresetRepository(db).list_enabled()
+        screener = ScreenerRepository(db)
+        dispatcher = NotificationDispatcher(SessionLocal)
+        for p in presets:
+            try:
+                market = [p.market] if p.market else None
+                rows, total = screener.query(
+                    market=market, filters=p.filters_json or {},
+                    sort_by=p.sort_by, sort_dir=p.sort_dir, limit=200)
+                ScreenerPresetRepository(db).mark_run(
+                    p.id, match_count=total, when=_dt.now(_tz.utc))
+                if total > 0 and (p.notify_channels or []):
+                    payload = {
+                        "preset_id": p.id,
+                        "preset_name": p.name,
+                        "match_count": total,
+                        "snapshot_date": (rows[0].snapshot_date.isoformat()
+                                          if rows else _date.today().isoformat()),
+                        "rows": [{"ticker": r.ticker,
+                                  "price": str(r.price) if r.price is not None else None,
+                                  "pe_ttm": str(r.pe_ttm) if r.pe_ttm is not None else None,
+                                  "change_pct": str(r.change_pct) if r.change_pct is not None else None}
+                                 for r in rows[:25]],
+                    }
+                    dispatcher.dispatch_screener_match(payload=payload,
+                                                       event_type="screener.match")
+            except Exception as e:
+                logger.exception("preset %s failed: %s", getattr(p, "id", "?"), e)
     finally:
         db.close()
 

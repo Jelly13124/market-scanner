@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 from app.backend.database import get_db
 from app.backend.database.models import Base
 from app.backend.repositories.screener_repository import ScreenerRepository, SnapshotRow
+from app.backend.routes.auth import router as auth_router
 from app.backend.routes.screener import router as screener_router
 
 
@@ -27,7 +28,9 @@ def client():
         finally:
             db.close()
 
-    app = FastAPI(); app.include_router(screener_router)
+    app = FastAPI()
+    app.include_router(auth_router)
+    app.include_router(screener_router)
     app.dependency_overrides[get_db] = override
     db = TS()
     ScreenerRepository(db).bulk_upsert([
@@ -42,19 +45,33 @@ def client():
     return TestClient(app)
 
 
+def _token(client):
+    r = client.post("/auth/register", json={"email": "u@test.com", "password": "pw123456"})
+    assert r.status_code == 201, r.text
+    return r.json()["access_token"]
+
+
+def _hdr(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
 def test_crud_lifecycle(client):
+    tok = _token(client)
     r = client.post("/screener/presets", json={"name": "cheap", "market": "US",
-                    "filters": {"pe_max": 20}})
+                    "filters": {"pe_max": 20}}, headers=_hdr(tok))
     assert r.status_code == 201, r.text
     pid = r.json()["id"]
-    assert client.get("/screener/presets").json()[0]["name"] == "cheap"
-    r = client.patch(f"/screener/presets/{pid}", json={"schedule_enabled": True})
+    assert client.get("/screener/presets", headers=_hdr(tok)).json()[0]["name"] == "cheap"
+    r = client.patch(f"/screener/presets/{pid}", json={"schedule_enabled": True},
+                     headers=_hdr(tok))
     assert r.json()["schedule_enabled"] is True
-    run = client.post(f"/screener/presets/{pid}/run").json()
+    run = client.post(f"/screener/presets/{pid}/run", headers=_hdr(tok)).json()
     assert run["total_count"] == 1 and run["rows"][0]["ticker"] == "JPM"
-    assert client.delete(f"/screener/presets/{pid}").status_code == 204
-    assert client.get("/screener/presets").json() == []
+    assert client.delete(f"/screener/presets/{pid}", headers=_hdr(tok)).status_code == 204
+    assert client.get("/screener/presets", headers=_hdr(tok)).json() == []
 
 
 def test_patch_404(client):
-    assert client.patch("/screener/presets/999", json={"name": "x"}).status_code == 404
+    tok = _token(client)
+    assert client.patch("/screener/presets/999", json={"name": "x"},
+                        headers=_hdr(tok)).status_code == 404

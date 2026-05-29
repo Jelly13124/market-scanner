@@ -16,8 +16,9 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
-from app.backend.database.models import TickerSnapshot
+from app.backend.database.models import TickerSnapshot, User
 from app.backend.models.screener_schemas import (
     ScreenerColumnMetadata,
     ScreenerSnapshotResponse,
@@ -156,40 +157,60 @@ def snapshot_refresh_status() -> SnapshotRefreshStateOut:
 
 
 @router.get("/presets", response_model=list[PresetOut])
-def list_presets(db: Session = Depends(get_db)) -> list[PresetOut]:
-    return [PresetOut.model_validate(p) for p in ScreenerPresetRepository(db).list()]
+def list_presets(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[PresetOut]:
+    return [PresetOut.model_validate(p) for p in ScreenerPresetRepository(db).list(user_id=current_user.id)]
 
 
 @router.post("/presets", response_model=PresetOut, status_code=status.HTTP_201_CREATED)
-def create_preset(body: PresetCreate, db: Session = Depends(get_db)) -> PresetOut:
+def create_preset(
+    body: PresetCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PresetOut:
     p = ScreenerPresetRepository(db).create(
         name=body.name, market=body.market, filters=body.filters,
         sort_by=body.sort_by, sort_dir=body.sort_dir,
         schedule_enabled=body.schedule_enabled, notify_channels=body.notify_channels,
+        user_id=current_user.id,
     )
     return PresetOut.model_validate(p)
 
 
 @router.patch("/presets/{preset_id}", response_model=PresetOut)
-def patch_preset(preset_id: int, body: PresetPatch,
-                 db: Session = Depends(get_db)) -> PresetOut:
-    p = ScreenerPresetRepository(db).patch(preset_id, body.model_dump(exclude_unset=True))
+def patch_preset(
+    preset_id: int,
+    body: PresetPatch,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PresetOut:
+    p = ScreenerPresetRepository(db).patch(preset_id, body.model_dump(exclude_unset=True), user_id=current_user.id)
     if p is None:
         raise HTTPException(404, f"No preset {preset_id}")
     return PresetOut.model_validate(p)
 
 
 @router.delete("/presets/{preset_id}", status_code=204)
-def delete_preset(preset_id: int, db: Session = Depends(get_db)) -> Response:
-    if not ScreenerPresetRepository(db).delete(preset_id):
+def delete_preset(
+    preset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    if not ScreenerPresetRepository(db).delete(preset_id, user_id=current_user.id):
         raise HTTPException(404, f"No preset {preset_id}")
     return Response(status_code=204)
 
 
 @router.post("/presets/{preset_id}/run", response_model=ScreenerSnapshotResponse)
-def run_preset(preset_id: int, db: Session = Depends(get_db)) -> ScreenerSnapshotResponse:
+def run_preset(
+    preset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ScreenerSnapshotResponse:
     repo = ScreenerPresetRepository(db)
-    p = repo.get(preset_id)
+    p = repo.get(preset_id, user_id=current_user.id)
     if p is None:
         raise HTTPException(404, f"No preset {preset_id}")
     screener = ScreenerRepository(db)

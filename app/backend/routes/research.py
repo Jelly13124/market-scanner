@@ -158,6 +158,14 @@ def get_report_html(report_id: int, db: Session = Depends(get_db)) -> HTMLRespon
     return HTMLResponse(content=report.rendered_html or "<html></html>")
 
 
+@router.delete("/reports/{report_id}", status_code=204)
+def delete_report(report_id: int, db: Session = Depends(get_db)) -> Response:
+    """Delete a saved report (used by the sidebar Recent Reports list)."""
+    if not ResearchReportRepository(db).delete(report_id):
+        raise HTTPException(404, f"No research report with id {report_id}")
+    return Response(status_code=204)
+
+
 # ---------------------------------------------------------------------------
 # Phase 4 — POST /research/analyze (SOP pipeline)
 # ---------------------------------------------------------------------------

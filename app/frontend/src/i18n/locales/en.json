@@ -183,7 +183,9 @@
       "titleFor": "Recent reports for {{ticker}}",
       "reportN": "Report #{{id}}",
       "openInNewTab": "Open in new tab",
-      "noReports": "No reports yet"
+      "noReports": "No reports yet",
+      "deleteConfirm": "Delete report #{{id}} ({{ticker}})?",
+      "deleted": "Report #{{id}} deleted"
     },
     "errors": {
       "noInput": "Add an Input node to the canvas first.",
@@ -193,7 +195,8 @@
       "complete": "Analyze complete: {{ticker}} (id {{id}})",
       "flowSaved": "Flow saved",
       "flowLoaded": "Flow loaded",
-      "canvasReset": "Canvas reset to default template"
+      "canvasReset": "Canvas reset to default template",
+      "completeInReports": "Report #{{id}} for {{ticker}} is ready — open it from Recent Reports in the sidebar."
     }
   },
   "lab": {

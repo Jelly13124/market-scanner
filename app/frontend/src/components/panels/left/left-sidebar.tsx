@@ -4,6 +4,7 @@ import { ReactNode, useEffect } from 'react';
 import { AnalyzeAction } from './analyze-action';
 import { ApiKeysSection } from './api-keys-section';
 import { LabAction } from './lab-action';
+import { ReportsSection } from './reports-section';
 import { ScannerAction } from './scanner-action';
 import { ScreenerAction } from './screener-action';
 import { WatchlistSection } from './watchlist-section';
@@ -37,7 +38,7 @@ export function LeftSidebar({
     <div
       ref={elementRef}
       className={cn(
-        "h-full bg-panel flex flex-col relative pt-5 border",
+        "h-full bg-panel flex flex-col relative pt-5 border overflow-y-auto",
         isCollapsed ? "shadow-lg" : "",
       )}
       style={{
@@ -53,6 +54,8 @@ export function LeftSidebar({
       <ScannerAction />
 
       <AnalyzeAction />
+
+      <ReportsSection />
 
       <LabAction />
 

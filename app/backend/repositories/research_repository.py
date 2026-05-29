@@ -95,3 +95,21 @@ class ResearchReportRepository:
         if scan_date:
             q = q.filter(ResearchReport.scan_date == scan_date)
         return q.order_by(desc(ResearchReport.created_at), desc(ResearchReport.id)).limit(limit).all()
+
+    # -- delete -------------------------------------------------------------
+
+    def delete(self, report_id: int) -> bool:
+        """Delete a report (and its paired trade plan, if any). Returns
+        False when the report doesn't exist."""
+        report = self.get_by_id(report_id)
+        if report is None:
+            return False
+        # Phase 1-3 reports have a 1-to-1 ResearchTradePlan via report_id;
+        # Phase 4 SOP reports don't. Remove any plan first to avoid an FK
+        # constraint error.
+        self.db.query(ResearchTradePlan).filter(
+            ResearchTradePlan.report_id == report_id
+        ).delete()
+        self.db.delete(report)
+        self.db.commit()
+        return True

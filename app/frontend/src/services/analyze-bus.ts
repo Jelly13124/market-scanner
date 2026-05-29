@@ -19,9 +19,11 @@ export interface AnalyzeRequest {
 }
 
 type Listener = (req: AnalyzeRequest) => void;
+type VoidListener = () => void;
 
 let pending: AnalyzeRequest | null = null;
 const listeners = new Set<Listener>();
+const createdListeners = new Set<VoidListener>();
 
 export const analyzeBus = {
   /** Queue a ticker for analysis and notify any mounted Analyze panel. */
@@ -41,5 +43,17 @@ export const analyzeBus = {
   subscribe(l: Listener): () => void {
     listeners.add(l);
     return () => listeners.delete(l);
+  },
+
+  // --- "the report set changed" channel (refreshes the sidebar list) ---
+  // Fired after a run persists a new report, or after a delete.
+
+  notifyReportsChanged(): void {
+    createdListeners.forEach((l) => l());
+  },
+
+  subscribeReportsChanged(l: VoidListener): () => void {
+    createdListeners.add(l);
+    return () => createdListeners.delete(l);
   },
 };

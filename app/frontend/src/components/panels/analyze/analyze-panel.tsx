@@ -25,7 +25,6 @@ import { toast } from 'sonner';
 
 import { AnalyzeToolbar } from './analyze-toolbar';
 import { FlowCanvas, type FlowCanvasHandle } from './flow-canvas';
-import { ReportList } from './report-list';
 import {
   PersonaAssignmentsBox,
   SectionStatusPanel,
@@ -43,7 +42,6 @@ export function AnalyzePanel() {
   const [running, setRunning] = useState(false);
   const [currentReportId, setCurrentReportId] = useState<number | null>(null);
   const [currentDetail, setCurrentDetail] = useState<AnalyzeReportDetail | null>(null);
-  const [tickerFilter, setTickerFilter] = useState<string | undefined>(undefined);
   const [loadedFlowId, setLoadedFlowId] = useState<number | null>(null);
 
   const getConfig = useCallback(
@@ -103,8 +101,15 @@ export function AnalyzePanel() {
       const detail = await analyzeService.runAnalyze(req);
       setCurrentReportId(detail.id);
       setCurrentDetail(detail);
-      setTickerFilter(detail.ticker);
-      toast.success(t('analyze.toasts.complete', { ticker: detail.ticker, id: detail.id }));
+      // Tell the sidebar Recent Reports list to refresh + nudge the user there.
+      analyzeBus.notifyReportsChanged();
+      toast.success(
+        t('analyze.toasts.completeInReports', {
+          ticker: detail.ticker,
+          id: detail.id,
+          defaultValue: 'Report #{{id}} for {{ticker}} is ready — open it from Recent Reports in the sidebar.',
+        }),
+      );
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -184,7 +189,7 @@ export function AnalyzePanel() {
         )}
         <Accordion
           type="multiple"
-          defaultValue={['report', 'history']}
+          defaultValue={['report']}
           className="px-3"
         >
           {showLiveDetail && currentDetail && (
@@ -217,19 +222,6 @@ export function AnalyzePanel() {
               </AccordionContent>
             </AccordionItem>
           )}
-
-          <AccordionItem value="history">
-            <AccordionTrigger className="py-2 text-xs uppercase font-medium">
-              {tickerFilter ? t('analyze.reports.titleFor', { ticker: tickerFilter }) : t('analyze.reports.title')}
-            </AccordionTrigger>
-            <AccordionContent className="pb-3">
-              <ReportList
-                tickerFilter={tickerFilter}
-                currentReportId={currentReportId}
-                onSelect={(id) => setCurrentReportId(id)}
-              />
-            </AccordionContent>
-          </AccordionItem>
         </Accordion>
       </div>
     </div>

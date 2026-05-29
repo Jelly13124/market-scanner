@@ -183,7 +183,9 @@
       "titleFor": "{{ticker}} 的近期报告",
       "reportN": "报告 #{{id}}",
       "openInNewTab": "在新标签页打开",
-      "noReports": "暂无报告"
+      "noReports": "暂无报告",
+      "deleteConfirm": "删除报告 #{{id}}（{{ticker}}）？",
+      "deleted": "报告 #{{id}} 已删除"
     },
     "errors": {
       "noInput": "请先在画布添加一个 Input 节点。",
@@ -193,7 +195,8 @@
       "complete": "分析完成: {{ticker}} (id {{id}})",
       "flowSaved": "流程已保存",
       "flowLoaded": "流程已加载",
-      "canvasReset": "画布已重置为默认模板"
+      "canvasReset": "画布已重置为默认模板",
+      "completeInReports": "{{ticker}} 的报告 #{{id}} 已生成 —— 在左侧「近期报告」中查看。"
     }
   },
   "lab": {

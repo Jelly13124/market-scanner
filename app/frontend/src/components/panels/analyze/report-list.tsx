@@ -3,9 +3,10 @@
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { analyzeBus } from '@/services/analyze-bus';
 import { analyzeService } from '@/services/analyze-service';
 import type { ResearchReportSummary } from '@/types/research';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -14,9 +15,10 @@ interface ReportListProps {
   tickerFilter?: string;
   currentReportId: number | null;
   onSelect: (reportId: number) => void;
+  onDelete?: (reportId: number) => void;
 }
 
-export function ReportList({ tickerFilter, currentReportId, onSelect }: ReportListProps) {
+export function ReportList({ tickerFilter, currentReportId, onSelect, onDelete }: ReportListProps) {
   const [rows, setRows] = useState<ResearchReportSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const { t } = useTranslation();
@@ -30,6 +32,8 @@ export function ReportList({ tickerFilter, currentReportId, onSelect }: ReportLi
   }, [tickerFilter]);
 
   useEffect(() => { reload(); }, [reload]);
+  // Refresh when the report set changes (new run lands, or a delete).
+  useEffect(() => analyzeBus.subscribeReportsChanged(reload), [reload]);
 
   return (
     <div className="border rounded">
@@ -51,29 +55,46 @@ export function ReportList({ tickerFilter, currentReportId, onSelect }: ReportLi
       ) : (
         <div className="divide-y max-h-60 overflow-y-auto">
           {rows.map((r) => (
-            <button
+            <div
               key={r.id}
-              onClick={() => onSelect(r.id)}
               className={cn(
-                'w-full text-left px-3 py-1.5 hover:bg-accent/40',
-                'flex items-center gap-2 text-xs',
+                'group flex items-center gap-2 text-xs pr-1 hover:bg-accent/40',
                 r.id === currentReportId && 'bg-accent/30',
               )}
             >
-              <span className="font-mono text-muted-foreground w-10 shrink-0">
-                #{r.id}
-              </span>
-              <span className="font-mono font-bold w-16 shrink-0">{r.ticker}</span>
-              <span className="w-24 shrink-0 text-muted-foreground">{r.scan_date}</span>
-              <span className="text-muted-foreground tabular-nums">
-                {r.duration_seconds != null ? `${r.duration_seconds.toFixed(1)}s` : '—'}
-              </span>
-              {r.use_personas && (
-                <span className="ml-auto text-purple-600 text-[10px] uppercase">
-                  personas
+              <button
+                onClick={() => onSelect(r.id)}
+                className="flex-1 min-w-0 text-left px-3 py-1.5 flex items-center gap-2"
+              >
+                <span className="font-mono text-muted-foreground w-9 shrink-0">#{r.id}</span>
+                <span className="font-mono font-bold w-14 shrink-0 truncate">{r.ticker}</span>
+                <span className="w-20 shrink-0 text-muted-foreground">{r.scan_date}</span>
+                <span className="text-muted-foreground tabular-nums">
+                  {r.duration_seconds != null ? `${r.duration_seconds.toFixed(1)}s` : '—'}
                 </span>
+                {r.use_personas && (
+                  <span className="ml-auto text-purple-600 text-[10px] uppercase">personas</span>
+                )}
+              </button>
+              {onDelete && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0 text-muted-foreground hover:text-red-600 opacity-0 group-hover:opacity-100"
+                  title={t('common.delete')}
+                  onClick={() => {
+                    if (window.confirm(t('analyze.reports.deleteConfirm', {
+                      id: r.id, ticker: r.ticker,
+                      defaultValue: 'Delete report #{{id}} ({{ticker}})?',
+                    }))) {
+                      onDelete(r.id);
+                    }
+                  }}
+                >
+                  <Trash2 className="size-3" />
+                </Button>
               )}
-            </button>
+            </div>
           ))}
         </div>
       )}

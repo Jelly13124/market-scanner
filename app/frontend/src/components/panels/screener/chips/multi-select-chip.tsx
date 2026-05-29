@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
@@ -14,14 +16,18 @@ interface MultiSelectChipProps {
 }
 
 export function MultiSelectChip({ meta, selectedValues, market, onChange }: MultiSelectChipProps) {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isZh = i18n.language === 'zh';
   const label = isZh ? meta.label_zh : meta.label_en;
+  const [search, setSearch] = useState('');
 
   let options: ChipOption[] = [];
   if (meta.options) options = meta.options;
   else if (market === 'CN' && meta.options_cn) options = meta.options_cn;
   else if (meta.options_us) options = meta.options_us;
+
+  const showSearch = options.length > 8;
+  const visible = showSearch && search ? options.filter(o => (isZh ? o.label_zh : o.label_en).toLowerCase().includes(search.toLowerCase())) : options;
 
   const active = selectedValues.length > 0;
   const summary = active ? `${label} (${selectedValues.length})` : label;
@@ -32,6 +38,11 @@ export function MultiSelectChip({ meta, selectedValues, market, onChange }: Mult
     } else {
       onChange([...selectedValues, value]);
     }
+  };
+
+  const handleClear = () => {
+    onChange([]);
+    setSearch('');
   };
 
   return (
@@ -46,9 +57,17 @@ export function MultiSelectChip({ meta, selectedValues, market, onChange }: Mult
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-56 p-2">
+        {showSearch && (
+          <Input
+            placeholder={t('common.search', 'Search…')}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="h-7 text-xs mb-1"
+          />
+        )}
         <ScrollArea className="h-56">
           <div className="space-y-1">
-            {options.map((o) => (
+            {visible.map((o) => (
               <label key={o.value} className="flex items-center gap-2 px-1 py-1 text-xs cursor-pointer hover:bg-muted">
                 <Checkbox
                   checked={selectedValues.includes(o.value)}
@@ -61,7 +80,7 @@ export function MultiSelectChip({ meta, selectedValues, market, onChange }: Mult
         </ScrollArea>
         {active && (
           <Button variant="ghost" size="sm" className="w-full h-7 text-xs mt-1"
-                  onClick={() => onChange([])}>
+                  onClick={handleClear}>
             Clear
           </Button>
         )}

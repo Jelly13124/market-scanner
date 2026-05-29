@@ -1,6 +1,6 @@
 import sqlalchemy as sa
 from sqlalchemy import Column, Integer, Float, String, DateTime, Text, Boolean, JSON, ForeignKey, Index, UniqueConstraint, BigInteger, Date, Numeric
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, text
 from .connection import Base
 
 
@@ -548,3 +548,24 @@ class TickerSnapshot(Base):
         Index("idx_snapshot_market_date", "market", "snapshot_date"),
         Index("idx_snapshot_sector", "sector", "snapshot_date"),
     )
+
+
+class ScreenerPreset(Base):
+    """A saved Screener filter set, optionally run on a daily cron."""
+
+    __tablename__ = "screener_presets"
+
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"),
+                primary_key=True, autoincrement=True)
+    name = Column(String(120), nullable=False)
+    market = Column(String(8))                       # 'US' | 'CN' | None(all)
+    filters_json = Column(JSON, nullable=False, default=dict)
+    sort_by = Column(String(32), nullable=False, default="market_cap")
+    sort_dir = Column(String(4), nullable=False, default="desc")
+    schedule_enabled = Column(Boolean, nullable=False, default=False,
+                              server_default=text("0"))
+    notify_channels = Column(JSON)                   # ["email","webhook"]
+    last_run_at = Column(DateTime(timezone=True))
+    last_match_count = Column(Integer)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(),
+                        nullable=False)

@@ -2776,3 +2776,5 @@ fd9d67f feat(screener): ScreenerRepository with filter-dict query + idempotent u
 - B4: full suite checkpoint — tests/ 100% green; 1335 passed / 19 pre-existing v2 live-API+conformance fails (logged, not chased) / 8 skipped.
 
 - C2: gap up/down detector — GapDetector (name="gap") added; 10 new tests green; v2/scanner/ 129 passed 2 skipped (was 119/2); all 4 invariants satisfied; registered in ALL_DETECTORS + DETECTOR_METADATA + __all__; README std-floor row added.
+
+- C5: detector A/B eval harness — new subpackage v2/scanner/eval/ (__init__.py + detector_ab.py); pure functions: forward_return, evaluate_detector (Welch t-stat, n<2 guard), run_ab (seeded random.Random, data-injected); 12 new tests in v2/scanner/test_eval_ab.py all green; v2/scanner/ 156 passed 2 skipped (was 144/2); no regressions.

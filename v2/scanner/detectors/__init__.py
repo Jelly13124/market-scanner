@@ -20,6 +20,7 @@ from v2.scanner.detectors.ma_cross import MaCrossDetector
 from v2.scanner.detectors.intraday_move import IntradayMoveDetector
 from v2.scanner.detectors.news_sentiment import NewsSentimentShiftDetector
 from v2.scanner.detectors.obv_divergence import OBVDivergenceDetector
+from v2.scanner.detectors.rsi_divergence import RsiDivergenceDetector
 from v2.scanner.detectors.target_price_change import TargetPriceChangeDetector
 from v2.scanner.detectors.volume_anomaly import VolumeAnomalyDetector
 
@@ -33,6 +34,7 @@ ALL_DETECTORS: tuple[type[EventDetector], ...] = (
     TargetPriceChangeDetector,
     BollingerSqueezeDetector,
     OBVDivergenceDetector,
+    RsiDivergenceDetector,
     HighBreakoutDetector,
     GapDetector,
     MaCrossDetector,
@@ -118,6 +120,16 @@ DETECTOR_METADATA: dict[str, dict] = {
             "Granville 1963 + microstructure (Blume/Easley/O'Hara 1994)."
         ),
     },
+    "rsi_divergence": {
+        "label": "RSI Divergence",
+        "default_mult": 1.00,
+        "description": (
+            "Classic price-vs-RSI(14) divergence over a 40-bar window split into "
+            "two 20-bar halves. Bearish: recent price high > older price high BUT "
+            "RSI at that high is lower. Bullish: recent price low < older price low "
+            "BUT RSI at that low is higher. Severity = RSI gap / 10, capped at 8."
+        ),
+    },
     "high_breakout": {
         "label": "52-Week High Breakout",
         "default_mult": 1.00,
@@ -176,6 +188,7 @@ __all__ = [
     "BollingerSqueezeDetector",
     "EarningsUpcomingDetector",
     "OBVDivergenceDetector",
+    "RsiDivergenceDetector",
     "HighBreakoutDetector",
     "GapDetector",
     "MaCrossDetector",

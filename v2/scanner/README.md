@@ -39,6 +39,7 @@ via `weights.enabled_detectors` (None = all).
 | `intraday_move.py` | Outsized intraday return / overnight gap / range — applied to **benchmark-adjusted** values when `ScanContext.benchmark_prices` is set | z of cvo / gap / range vs trailing window (also adjusted). Range stays raw — volatility is not a market-relative quantity. |
 | `breakout_52w.py` | First-day close above trailing 52-week high (or below low) | Categorical magnitude ~2.0 |
 | `ma_cross.py` | SMA50 crosses SMA200 (golden cross → bullish; death cross → bearish). Requires ≥202 bars. | Fixed 2.0 — binary regime event, **no z-divisor** |
+| `rsi_divergence.py` | Price-vs-RSI(14) divergence over 40-bar window (split into two 20-bar halves). Bearish: recent price high > old BUT RSI at high is lower. Bullish: recent price low < old BUT RSI at low is higher. Requires ≥55 bars. | RSI gap / 10, capped at 8 — coefficient, **no z-divisor** |
 | `analyst_rating.py` | Net upgrade z ≥ 2.0 (action flow only — `gap_hit` removed M9.c.1 because Wall St consensus is structurally bullish) | net_z |
 
 ### Std floors (load-bearing — see `findings.md`)
@@ -59,6 +60,7 @@ explodes by 10+ orders of magnitude. Floors:
 | high_breakout (daily-return std) | 0.005 (50 bps) — `max(returns.std(ddof=1), 0.005)` |
 | gap (overnight gap std) | 0.003 (30 bps) — `max(np.std(gaps, ddof=1), 0.003)` |
 | ma_cross | N/A — no std computed; severity is fixed at 2.0 (binary regime event) |
+| rsi_divergence | N/A — severity is `rsi_gap / 10` (coefficient of RSI gap magnitude, capped at 8); no std divisor |
 
 Below the floor, the detector falls back to the categorical "trigger fired,
 baseline uninformative" magnitude (typically 2.0–2.5).

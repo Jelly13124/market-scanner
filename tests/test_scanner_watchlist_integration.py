@@ -101,9 +101,9 @@ class TestRoundTripViaAPI:
         # Seed a watchlist row directly so we control the id.
         SessionLocal = client._session_local  # type: ignore[attr-defined]
         with SessionLocal() as db:
-            wl = UserWatchlistRepository(db).create("Mega Caps")
+            wl = UserWatchlistRepository(db).create("Mega Caps", user_id=1)
             wl = UserWatchlistRepository(db).update(
-                wl.id, tickers=["NVDA", "AAPL", "MSFT"],
+                wl.id, user_id=1, tickers=["NVDA", "AAPL", "MSFT"],
             )
             watchlist_id = wl.id
 

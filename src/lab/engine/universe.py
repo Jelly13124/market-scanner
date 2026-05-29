@@ -25,7 +25,7 @@ def load_universe_tickers(spec: UniverseSpec, db: Any) -> list[str]:
     """
     if spec.kind == "watchlist":
         repo = UserWatchlistRepository(db)
-        row = repo.get(spec.watchlist_id)
+        row = repo.get_by_id_unscoped(spec.watchlist_id)
         if row is None:
             raise UniverseError(f"UserWatchlist id={spec.watchlist_id} not found")
         tickers = list(row.tickers or [])

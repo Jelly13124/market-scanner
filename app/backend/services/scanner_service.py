@@ -283,7 +283,7 @@ class ScannerService:
                         f"Scanner config {config_id} has universe_kind='watchlist' "
                         "but user_watchlist_id is null"
                     )
-                wl = UserWatchlistRepository(session).get(config.user_watchlist_id)
+                wl = UserWatchlistRepository(session).get_by_id_unscoped(config.user_watchlist_id)
                 if wl is None:
                     raise ValueError(
                         f"watchlist {config.user_watchlist_id} not found "

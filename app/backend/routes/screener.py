@@ -11,7 +11,8 @@ import logging
 from datetime import date, datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,8 @@ from app.backend.models.screener_schemas import (
     ScreenerStatusResponse,
     SnapshotRowOut,
 )
+from app.backend.models.screener_preset_schemas import PresetCreate, PresetOut, PresetPatch
+from app.backend.repositories.screener_preset_repository import ScreenerPresetRepository
 from app.backend.repositories.screener_repository import ScreenerRepository
 from src.screener.column_metadata import COLUMN_METADATA
 
@@ -125,4 +128,57 @@ def get_snapshot_status(db: Session = Depends(get_db)) -> ScreenerStatusResponse
         last_updated=last_updated,
         row_count=row_count,
         by_market=by_market,
+    )
+
+
+@router.get("/presets", response_model=list[PresetOut])
+def list_presets(db: Session = Depends(get_db)) -> list[PresetOut]:
+    return [PresetOut.model_validate(p) for p in ScreenerPresetRepository(db).list()]
+
+
+@router.post("/presets", response_model=PresetOut, status_code=status.HTTP_201_CREATED)
+def create_preset(body: PresetCreate, db: Session = Depends(get_db)) -> PresetOut:
+    p = ScreenerPresetRepository(db).create(
+        name=body.name, market=body.market, filters=body.filters,
+        sort_by=body.sort_by, sort_dir=body.sort_dir,
+        schedule_enabled=body.schedule_enabled, notify_channels=body.notify_channels,
+    )
+    return PresetOut.model_validate(p)
+
+
+@router.patch("/presets/{preset_id}", response_model=PresetOut)
+def patch_preset(preset_id: int, body: PresetPatch,
+                 db: Session = Depends(get_db)) -> PresetOut:
+    p = ScreenerPresetRepository(db).patch(preset_id, body.model_dump(exclude_unset=True))
+    if p is None:
+        raise HTTPException(404, f"No preset {preset_id}")
+    return PresetOut.model_validate(p)
+
+
+@router.delete("/presets/{preset_id}", status_code=204)
+def delete_preset(preset_id: int, db: Session = Depends(get_db)) -> Response:
+    if not ScreenerPresetRepository(db).delete(preset_id):
+        raise HTTPException(404, f"No preset {preset_id}")
+    return Response(status_code=204)
+
+
+@router.post("/presets/{preset_id}/run", response_model=ScreenerSnapshotResponse)
+def run_preset(preset_id: int, db: Session = Depends(get_db)) -> ScreenerSnapshotResponse:
+    repo = ScreenerPresetRepository(db)
+    p = repo.get(preset_id)
+    if p is None:
+        raise HTTPException(404, f"No preset {preset_id}")
+    screener = ScreenerRepository(db)
+    market_list = [p.market] if p.market else None
+    rows, total = screener.query(
+        market=market_list, filters=p.filters_json or {},
+        sort_by=p.sort_by, sort_dir=p.sort_dir, limit=200,
+    )
+    snap_date = rows[0].snapshot_date if rows else (
+        screener.latest_snapshot_date() or date.today())
+    last_updated = max((r.last_updated for r in rows if r.last_updated),
+                       default=datetime.now(timezone.utc))
+    return ScreenerSnapshotResponse(
+        rows=[SnapshotRowOut.model_validate(r) for r in rows],
+        total_count=total, snapshot_date=snap_date, last_updated=last_updated,
     )

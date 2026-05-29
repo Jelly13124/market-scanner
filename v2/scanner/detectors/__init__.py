@@ -13,6 +13,7 @@ from v2.scanner.detectors.earnings import (
     EarningsSurpriseDetector,
 )
 from v2.scanner.detectors.earnings_upcoming import EarningsUpcomingDetector
+from v2.scanner.detectors.gap import GapDetector
 from v2.scanner.detectors.high_breakout import HighBreakoutDetector
 from v2.scanner.detectors.insider import InsiderClusterDetector
 from v2.scanner.detectors.intraday_move import IntradayMoveDetector
@@ -32,6 +33,7 @@ ALL_DETECTORS: tuple[type[EventDetector], ...] = (
     BollingerSqueezeDetector,
     OBVDivergenceDetector,
     HighBreakoutDetector,
+    GapDetector,
     # EarningsSurpriseDetector + EarningsUpcomingDetector — UNREGISTERED
     # 2026-05-18. Merged into the unified ``EarningsEventDetector`` above.
     # The two old classes remain importable for back-compat with tests and
@@ -124,6 +126,16 @@ DETECTOR_METADATA: dict[str, dict] = {
             "new-high days."
         ),
     },
+    "gap": {
+        "label": "Gap Up/Down",
+        "default_mult": 1.00,
+        "description": (
+            "Today's open gaps ≥3σ from yesterday's close relative to the trailing "
+            "60-bar gap distribution. Bullish on gap-up, bearish on gap-down. "
+            "Severity z clamped to [0, 8]. Std floor 0.003 (30 bps) prevents "
+            "denominator collapse on ultra-stable overnight opens."
+        ),
+    },
 }
 
 
@@ -153,6 +165,7 @@ __all__ = [
     "EarningsUpcomingDetector",
     "OBVDivergenceDetector",
     "HighBreakoutDetector",
+    "GapDetector",
     "ALL_DETECTORS",
     "DETECTOR_METADATA",
     "LEGACY_DETECTOR_ALIASES",

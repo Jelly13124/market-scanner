@@ -2772,3 +2772,5 @@ fd9d67f feat(screener): ScreenerRepository with filter-dict query + idempotent u
 - A11: Wave A verification — backend 890 passed / 1 pre-existing fail (earnings_event, B1 fixes) / 5 skipped; frontend tsc 2 pre-existing errors (B2 fixes). Wave A introduced 0 regressions.
 
 - B4: full suite checkpoint — tests/ 100% green; 1335 passed / 19 pre-existing v2 live-API+conformance fails (logged, not chased) / 8 skipped.
+
+- C2: gap up/down detector — GapDetector (name="gap") added; 10 new tests green; v2/scanner/ 129 passed 2 skipped (was 119/2); all 4 invariants satisfied; registered in ALL_DETECTORS + DETECTOR_METADATA + __all__; README std-floor row added.

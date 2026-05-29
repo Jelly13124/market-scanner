@@ -451,7 +451,13 @@ def test_user_id_added_to_owned_tables():
 - [ ] **Step 5: Run → PASS**; `alembic upgrade head` clean (SQLite + the PG smoke from Task 0.3).
 - [ ] **Step 6: Commit** — `git commit -am "feat(tenancy): add nullable user_id to owned tables + seed owner + backfill"`
 
-### Task 3.2: Enforce user_id NOT NULL
+### Task 3.2: Enforce user_id NOT NULL  ⟶ MOVED to end of Wave 4 (Task 4.12)
+
+> **Re-sequenced 2026-05-29:** enforcing NOT NULL here (before any writer sets
+> `user_id`) red-lined 154 existing tests (`NOT NULL constraint failed`). The
+> column stays **nullable** through Wave 4 so the suite stays green task-by-task;
+> NOT NULL becomes the final step (Task 4.12) once every repo/route + test sets
+> `user_id`. The original 3.2 commit was reverted (`cf26994`).
 
 **Files:** migration `<sha>_user_id_not_null.py`; Modify models (`nullable=False`); Test (extend `test_tenancy_migration.py`)
 
@@ -511,6 +517,7 @@ For each resource below, do the 5 steps from 4.1 — failing isolation test → 
 - [ ] **4.9 backtests** — backtest repo/routes.
 - [ ] **4.10 notification_subscriptions** (+ `notification_deliveries` via FK) — `routes/notifications.py` + repo.
 - [ ] **4.11 watchlist_entries** — inspect usage; if user-owned, scope it; if it's a global scanner artifact, leave it and note why in the commit message.
+- [ ] **4.12 Enforce `user_id` NOT NULL (moved from Task 3.2)** — now that every writer sets `user_id` and every owned-table test creates rows under a user, add the migration that flips all 11 `user_id` columns to `nullable=False` via `batch_alter_table` (per-table recreate; verify `ix_*_user_id` indexes survive), flip the models to `nullable=False`, and confirm the full suite is green. alembic-reviewer gate. This is the real "tenancy is airtight" checkpoint.
 
 ---
 

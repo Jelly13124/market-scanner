@@ -414,5 +414,13 @@
       "button": "分析",
       "tooltip": "深度分析这只股票 (SOP 研报)"
     }
+  },
+  "reports": {
+    "deleteSelected": "删除所选 ({{count}})",
+    "deleteSelectedConfirm": "删除所选的 {{count}} 份报告？",
+    "deletedN": "已删除 {{count}} 份报告",
+    "colId": "编号",
+    "colTicker": "代码",
+    "colDate": "日期"
   }
 }

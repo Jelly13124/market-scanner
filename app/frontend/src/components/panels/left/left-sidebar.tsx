@@ -4,7 +4,7 @@ import { ReactNode, useEffect } from 'react';
 import { AnalyzeAction } from './analyze-action';
 import { ApiKeysSection } from './api-keys-section';
 import { LabAction } from './lab-action';
-import { ReportsSection } from './reports-section';
+import { ReportsAction } from './reports-action';
 import { ScannerAction } from './scanner-action';
 import { ScreenerAction } from './screener-action';
 import { WatchlistSection } from './watchlist-section';
@@ -55,7 +55,7 @@ export function LeftSidebar({
 
       <AnalyzeAction />
 
-      <ReportsSection />
+      <ReportsAction />
 
       <LabAction />
 

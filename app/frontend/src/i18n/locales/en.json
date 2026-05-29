@@ -414,5 +414,13 @@
       "button": "Analyze",
       "tooltip": "Analyze this stock (deep SOP report)"
     }
+  },
+  "reports": {
+    "deleteSelected": "Delete selected ({{count}})",
+    "deleteSelectedConfirm": "Delete {{count}} selected report(s)?",
+    "deletedN": "{{count}} report(s) deleted",
+    "colId": "ID",
+    "colTicker": "Ticker",
+    "colDate": "Date"
   }
 }

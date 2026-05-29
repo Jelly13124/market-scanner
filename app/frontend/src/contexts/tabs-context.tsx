@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 // Define tab types
-export type TabType = 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener';
+export type TabType = 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports';
 
 export interface Tab {
   id: string;
@@ -77,6 +77,10 @@ export function TabsProvider({ children }: TabsProviderProps) {
     if (type === 'screener') {
       // Single screener tab.
       return 'screener';
+    }
+    if (type === 'reports') {
+      // Single reports tab.
+      return 'reports';
     }
     return `${type}-${Date.now()}`;
   }, []);

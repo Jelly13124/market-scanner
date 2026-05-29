@@ -1,5 +1,7 @@
 # Progress Log
 
+- A9: preset-manager.tsx (Dialog + per-row Schedule/Email/Webhook Checkbox + delete); preset-bar.tsx wired with internal mgrOpen state; Manage button always visible; tsc 2 errors (both pre-existing).
+
 ## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
 
 ### What shipped (Task 15 of `docs/superpowers/plans/2026-05-26-a-share-data-integration.md`)

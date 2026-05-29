@@ -9,6 +9,7 @@ import { ChipValues, Market, ScreenerPreset } from '@/types/screener';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import { PresetManager } from './preset-manager';
 
 interface PresetBarProps {
   market: Market;
@@ -26,6 +27,7 @@ export function PresetBar({ market, filters, sortBy, sortDir, onLoad, onManage }
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saving, setSaving] = useState(false);
+  const [mgrOpen, setMgrOpen] = useState(false);
 
   const loadList = () => {
     listPresets()
@@ -117,11 +119,20 @@ export function PresetBar({ market, filters, sortBy, sortDir, onLoad, onManage }
         </PopoverContent>
       </Popover>
 
-      {onManage && (
-        <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={onManage}>
-          {t('screener.presets.manage', 'Manage')}
-        </Button>
-      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 text-xs px-2"
+        onClick={() => { setMgrOpen(true); onManage?.(); }}
+      >
+        {t('screener.presets.manage', 'Manage')}
+      </Button>
+
+      <PresetManager
+        open={mgrOpen}
+        onOpenChange={setMgrOpen}
+        onChanged={loadList}
+      />
     </div>
   );
 }

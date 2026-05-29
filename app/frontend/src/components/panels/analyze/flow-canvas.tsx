@@ -69,6 +69,8 @@ export interface FlowCanvasHandle {
   resetToDefault: () => void;
   getConfig: () => CanvasConfig;
   getInputData: () => InputNodeData | null;
+  /** Merge a patch into the Input node's data (e.g. {ticker, market}). */
+  patchInput: (patch: Partial<InputNodeData>) => void;
   getDebateSettings: () => DebateSettings;
   getPresentSections: () => Set<string>;
   hasInputNode: () => boolean;
@@ -256,6 +258,16 @@ const InnerCanvas = forwardRef<FlowCanvasHandle, InnerCanvasProps>(
           const input = nodes.find((n) => n.id === INPUT_NODE_ID_CONST);
           if (!input) return null;
           return input.data as unknown as InputNodeData;
+        },
+        patchInput: (patch: Partial<InputNodeData>) => {
+          setNodes((curr) =>
+            curr.map((n) =>
+              n.id === INPUT_NODE_ID_CONST
+                ? { ...n, data: { ...n.data, ...patch } }
+                : n,
+            ),
+          );
+          onChange?.();
         },
         getDebateSettings: () => {
           // Source of truth for use_personas + debate_rounds is the Debate

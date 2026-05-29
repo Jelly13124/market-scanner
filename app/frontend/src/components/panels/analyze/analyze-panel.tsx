@@ -16,9 +16,10 @@ import {
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { analyzeService } from '@/services/analyze-service';
+import { analyzeBus, type AnalyzeRequest as AnalyzeBusRequest } from '@/services/analyze-bus';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
 import { ExternalLink } from 'lucide-react';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -53,14 +54,19 @@ export function AnalyzePanel() {
     [],
   );
 
-  const handleRun = useCallback(async () => {
+  const handleRun = useCallback(async (override?: AnalyzeBusRequest) => {
+    // When invoked from a DOM onClick the event object leaks in as `override`;
+    // only honor it when it actually carries a ticker (bus-driven auto-run).
+    const ov = override && typeof override === 'object' && 'ticker' in override
+      ? override
+      : undefined;
     const cfg = getConfig();
     const input = canvasRef.current?.getInputData();
     if (!input) {
       toast.error(t('analyze.errors.noInput'));
       return;
     }
-    const ticker = input.ticker.trim().toUpperCase();
+    const ticker = (ov?.ticker ?? input.ticker).trim().toUpperCase();
     if (!ticker) {
       toast.error(t('analyze.errors.noTicker'));
       return;
@@ -89,7 +95,7 @@ export function AnalyzePanel() {
       // on the Input node (fallback covers older saved canvases).
       report_language: input.report_language ?? 'en',
       // Phase 8 — defaults to 'us'. Older saved canvases lack this field.
-      market: input.market ?? 'us',
+      market: ov?.market ?? input.market ?? 'us',
     };
     setRunning(true);
     try {
@@ -103,7 +109,24 @@ export function AnalyzePanel() {
     } finally {
       setRunning(false);
     }
-  }, [getConfig]);
+  }, [getConfig, t]);
+
+  // Bus-driven one-click analyze (from Screener / Scanner). Pre-fills the
+  // Input node with the requested ticker + market, then auto-runs. Handles
+  // both "tab already open" (subscribe fires) and "tab opening fresh"
+  // (takePending on mount); the 60ms delay lets patchInput's setNodes apply.
+  useEffect(() => {
+    const runFor = (req: AnalyzeBusRequest) => {
+      canvasRef.current?.patchInput({ ticker: req.ticker, market: req.market });
+      window.setTimeout(() => { void handleRun(req); }, 60);
+    };
+    const queued = analyzeBus.takePending();
+    if (queued) runFor(queued);
+    return analyzeBus.subscribe((req) => {
+      analyzeBus.takePending(); // clear so a later remount won't re-run it
+      runFor(req);
+    });
+  }, [handleRun]);
 
   // Re-read canvas state every render (tick triggers a refresh).
   void canvasTick;

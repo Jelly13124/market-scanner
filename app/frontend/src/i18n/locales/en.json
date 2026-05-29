@@ -366,8 +366,15 @@
     "watchlistNamePlaceholder": "My Mega-caps"
   },
   "screener": {
-    "tab": { "title": "Screener" },
-    "market": { "all": "US + CN", "us": "US", "cn": "CN (A-shares)" },
+    "tab": {
+      "title": "Screener"
+    },
+    "market": {
+      "all": "US + CN",
+      "us": "US",
+      "cn": "CN (A-shares)",
+      "cn_dev": "CN / A-shares (in dev)"
+    },
     "status": {
       "no_data": "No snapshot yet",
       "matched": "Matched",
@@ -377,13 +384,32 @@
       "title": "No snapshot yet",
       "body": "Snapshot runs nightly at 22:00 ET. Check back tomorrow."
     },
-    "table": { "no_results": "No tickers match the current filters." },
+    "table": {
+      "no_results": "No tickers match the current filters."
+    },
     "col": {
-      "ticker": "Ticker", "market": "Mkt", "price": "Price", "chg": "Chg %",
-      "vol": "Vol", "mcap": "Mkt cap", "pe": "P/E", "eps_g": "EPS gro",
-      "div": "Div %", "sector": "Sector", "rating": "Rating",
-      "perf_1d": "1D", "perf_5d": "5D", "perf_1m": "1M", "perf_3m": "3M",
-      "perf_ytd": "YTD", "perf_1y": "1Y"
+      "ticker": "Ticker",
+      "market": "Mkt",
+      "price": "Price",
+      "chg": "Chg %",
+      "vol": "Vol",
+      "mcap": "Mkt cap",
+      "pe": "P/E",
+      "eps_g": "EPS gro",
+      "div": "Div %",
+      "sector": "Sector",
+      "rating": "Rating",
+      "perf_1d": "1D",
+      "perf_5d": "5D",
+      "perf_1m": "1M",
+      "perf_3m": "3M",
+      "perf_ytd": "YTD",
+      "perf_1y": "1Y",
+      "analyze": "Analyze"
+    },
+    "analyze": {
+      "button": "Analyze",
+      "tooltip": "Analyze this stock (deep SOP report)"
     }
   }
 }

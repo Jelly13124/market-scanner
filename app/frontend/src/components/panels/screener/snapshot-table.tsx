@@ -2,10 +2,11 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { useTabsContext } from '@/contexts/tabs-context';
+import { Button } from '@/components/ui/button';
+import { useRequestAnalyze } from '@/hooks/use-request-analyze';
 import { cn } from '@/lib/utils';
 import { SnapshotRow } from '@/types/screener';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface SnapshotTableProps {
@@ -55,7 +56,7 @@ const RATING_COLOR: Record<string, string> = {
 };
 
 export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTableProps) {
-  const { openTab } = useTabsContext();
+  const requestAnalyze = useRequestAnalyze();
   const { t } = useTranslation();
 
   const headerCell = (column: string, label: string, align: 'left' | 'right' = 'right') => {
@@ -96,12 +97,15 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
             {headerCell('perf_1m', t('screener.col.perf_1m', '1M'))}
             {headerCell('perf_ytd', t('screener.col.perf_ytd', 'YTD'))}
             {headerCell('perf_1y', t('screener.col.perf_1y', '1Y'))}
+            <TableHead className="text-center whitespace-nowrap">
+              {t('screener.col.analyze', 'Analyze')}
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={14} className="text-center text-muted-foreground py-6">
+              <TableCell colSpan={15} className="text-center text-muted-foreground py-6">
                 {t('screener.table.no_results', 'No tickers match the current filters.')}
               </TableCell>
             </TableRow>
@@ -109,16 +113,7 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
           {rows.map((r) => {
             const chgN = r.change_pct === null ? 0 : Number(r.change_pct);
             return (
-              <TableRow
-                key={r.ticker}
-                className="cursor-pointer"
-                onClick={() => openTab({
-                  type: 'analyze',
-                  title: r.ticker,
-                  content: null,
-                  metadata: { ticker: r.ticker },
-                })}
-              >
+              <TableRow key={r.ticker}>
                 <TableCell className="font-mono font-semibold">{r.ticker}</TableCell>
                 <TableCell>
                   <Badge variant="outline" className="h-5 text-[10px]">{r.market}</Badge>
@@ -149,6 +144,20 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
                 <TableCell className={cn('text-right',
                   Number(r.perf_1y) > 0 && 'text-green-500',
                   Number(r.perf_1y) < 0 && 'text-red-500')}>{fmtPct(r.perf_1y)}</TableCell>
+                <TableCell className="text-center">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-primary"
+                    title={t('screener.analyze.tooltip', 'Analyze this stock')}
+                    onClick={() =>
+                      requestAnalyze(r.ticker, r.market === 'CN' ? 'cn' : 'us')
+                    }
+                  >
+                    <Sparkles className="w-3 h-3 mr-1" />
+                    {t('screener.analyze.button', 'Analyze')}
+                  </Button>
+                </TableCell>
               </TableRow>
             );
           })}

@@ -17,7 +17,9 @@ import { StatusBar } from './status-bar';
 
 export function ScreenerTab() {
   const { t } = useTranslation();
-  const [market, setMarket] = useState<Market>('ALL');
+  // CN is under development (akshare/Eastmoney fundamentals are geo-blocked),
+  // so default to US and disable CN selection for now.
+  const [market, setMarket] = useState<Market>('US');
   const [columns, setColumns] = useState<ColumnMetadata[]>([]);
   const [filterValues, setFilterValues] = useState<ChipValues>({});
   const [sortBy, setSortBy] = useState('market_cap');
@@ -73,9 +75,10 @@ export function ScreenerTab() {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="ALL">{t('screener.market.all', 'US + CN')}</SelectItem>
             <SelectItem value="US">{t('screener.market.us', 'US')}</SelectItem>
-            <SelectItem value="CN">{t('screener.market.cn', 'CN (A股)')}</SelectItem>
+            <SelectItem value="CN" disabled>
+              {t('screener.market.cn_dev', 'CN / A股 (开发中)')}
+            </SelectItem>
           </SelectContent>
         </Select>
         {loading && <span className="text-xs text-muted-foreground">…</span>}

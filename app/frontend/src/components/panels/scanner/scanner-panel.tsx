@@ -15,6 +15,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { scannerService } from '@/services/scanner-service';
+import { useRequestAnalyze } from '@/hooks/use-request-analyze';
 import { toast } from 'sonner';
 import type {
   ScanProgressEvent,
@@ -38,6 +39,7 @@ interface ScannerPanelProps {
 
 export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
   const { t } = useTranslation();
+  const requestAnalyze = useRequestAnalyze();
   // ---- config state -------------------------------------------------------
   const [configs, setConfigs] = useState<ScannerConfigResponse[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(initialConfigId ?? null);
@@ -196,24 +198,9 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
   }
 
   function handleTickerClick(ticker: string) {
-    // Auto-creating a flow with the ticker pre-seeded requires reaching deep
-    // into React Flow node state (portfolio_start node's `data.positions`),
-    // which couples the scanner to flow editor internals. Pragmatic v1:
-    // copy the ticker to the clipboard and toast a hint. Auto-flow-creation
-    // is deferred to a follow-up milestone.
-    navigator.clipboard
-      ?.writeText(ticker)
-      .then(() => {
-        toast.success(`Copied ${ticker} to clipboard`, {
-          description:
-            'Open a flow and paste this ticker into the portfolio start node to run Stage-2 deep analysis.',
-        });
-      })
-      .catch(() => {
-        toast(`Ticker: ${ticker}`, {
-          description: 'Could not access clipboard; copy manually.',
-        });
-      });
+    // One-click → open/focus the Analyze tab, pre-fill this ticker, auto-run
+    // the SOP deep-research report. Scanner universes are US.
+    requestAnalyze(ticker, 'us');
   }
 
   // ---- render -------------------------------------------------------------

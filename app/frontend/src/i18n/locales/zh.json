@@ -366,8 +366,15 @@
     "watchlistNamePlaceholder": "例如：科技股龙头"
   },
   "screener": {
-    "tab": { "title": "选股器" },
-    "market": { "all": "美股 + A股", "us": "美股", "cn": "A 股" },
+    "tab": {
+      "title": "选股器"
+    },
+    "market": {
+      "all": "美股 + A股",
+      "us": "美股",
+      "cn": "A 股",
+      "cn_dev": "A股 (开发中)"
+    },
     "status": {
       "no_data": "暂无快照数据",
       "matched": "匹配",
@@ -377,13 +384,32 @@
       "title": "暂无快照",
       "body": "快照每日 22:00 (美东) 自动构建，请明日再来。"
     },
-    "table": { "no_results": "当前筛选条件下无匹配股票。" },
+    "table": {
+      "no_results": "当前筛选条件下无匹配股票。"
+    },
     "col": {
-      "ticker": "代码", "market": "市场", "price": "价格", "chg": "涨跌幅",
-      "vol": "成交量", "mcap": "市值", "pe": "市盈率", "eps_g": "EPS 增长",
-      "div": "股息率", "sector": "板块", "rating": "评级",
-      "perf_1d": "1 日", "perf_5d": "5 日", "perf_1m": "1 月", "perf_3m": "3 月",
-      "perf_ytd": "今年", "perf_1y": "1 年"
+      "ticker": "代码",
+      "market": "市场",
+      "price": "价格",
+      "chg": "涨跌幅",
+      "vol": "成交量",
+      "mcap": "市值",
+      "pe": "市盈率",
+      "eps_g": "EPS 增长",
+      "div": "股息率",
+      "sector": "板块",
+      "rating": "评级",
+      "perf_1d": "1 日",
+      "perf_5d": "5 日",
+      "perf_1m": "1 月",
+      "perf_3m": "3 月",
+      "perf_ytd": "今年",
+      "perf_1y": "1 年",
+      "analyze": "分析"
+    },
+    "analyze": {
+      "button": "分析",
+      "tooltip": "深度分析这只股票 (SOP 研报)"
     }
   }
 }

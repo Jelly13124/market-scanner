@@ -9,6 +9,8 @@ from sqlalchemy.orm import sessionmaker
 from app.backend.database.connection import Base
 from app.backend.repositories.analyze_flow_repository import AnalyzeFlowRepository
 
+UID = 1  # dummy user_id used throughout
+
 
 @pytest.fixture
 def db_session():
@@ -31,6 +33,7 @@ class TestAnalyzeFlowRepository:
             included_sections=["data_health", "executive_summary"],
             use_personas=True,
             persona_overrides={"valuation": "graham"},
+            user_id=UID,
         )
         assert row.id > 0
         assert row.name == "quick-screen"
@@ -38,20 +41,20 @@ class TestAnalyzeFlowRepository:
         assert row.persona_overrides == {"valuation": "graham"}
         assert row.use_personas is True
 
-        fetched = repo.get(row.id)
+        fetched = repo.get(row.id, user_id=UID)
         assert fetched is not None
         assert fetched.name == "quick-screen"
 
     def test_get_missing_returns_none(self, db_session):
         repo = AnalyzeFlowRepository(db_session)
-        assert repo.get(99999) is None
-        assert repo.get_by_name("does-not-exist") is None
+        assert repo.get(99999, user_id=UID) is None
+        assert repo.get_by_name("does-not-exist", user_id=UID) is None
 
     def test_list_orders_newest_first(self, db_session):
         repo = AnalyzeFlowRepository(db_session)
-        a = repo.create(name="first", included_sections=["data_health"])
-        b = repo.create(name="second", included_sections=["macro"])
-        rows = repo.list()
+        a = repo.create(name="first", included_sections=["data_health"], user_id=UID)
+        b = repo.create(name="second", included_sections=["macro"], user_id=UID)
+        rows = repo.list(user_id=UID)
         ids = [r.id for r in rows]
         # second-created row should appear before first-created row
         assert ids.index(b.id) < ids.index(a.id)
@@ -62,9 +65,11 @@ class TestAnalyzeFlowRepository:
             name="orig",
             included_sections=["data_health"],
             use_personas=False,
+            user_id=UID,
         )
         updated = repo.update(
             row.id,
+            user_id=UID,
             included_sections=["macro", "sector"],
             persona_overrides={"macro": "druckenmiller"},
         )
@@ -79,8 +84,8 @@ class TestAnalyzeFlowRepository:
 
     def test_delete_removes_row(self, db_session):
         repo = AnalyzeFlowRepository(db_session)
-        row = repo.create(name="to-delete", included_sections=[])
-        assert repo.delete(row.id) is True
-        assert repo.get(row.id) is None
+        row = repo.create(name="to-delete", included_sections=[], user_id=UID)
+        assert repo.delete(row.id, user_id=UID) is True
+        assert repo.get(row.id, user_id=UID) is None
         # second delete returns False
-        assert repo.delete(row.id) is False
+        assert repo.delete(row.id, user_id=UID) is False

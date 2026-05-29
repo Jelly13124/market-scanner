@@ -352,12 +352,14 @@ class AnalyzeFlow(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    name = Column(String(200), nullable=False, unique=True, index=True)
+    name = Column(String(200), nullable=False, index=True)
     included_sections = Column(JSON, nullable=False, default=list)  # list[str]
     persona_overrides = Column(JSON, nullable=True)  # dict[section_name, persona_name]
     use_personas = Column(Boolean, nullable=False, default=False)
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
+
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_analyze_flow_user_name"),)
 
 
 class ResearchTradePlan(Base):
@@ -593,6 +595,7 @@ class ScreenerPreset(Base):
     last_match_count = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now(),
                         nullable=False)
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
 
 
 class User(Base):

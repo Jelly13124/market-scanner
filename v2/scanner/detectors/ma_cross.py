@@ -20,6 +20,7 @@ Below this threshold the detector returns ``None`` (no data, exclude ticker).
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 import numpy as np
@@ -33,6 +34,8 @@ _SLOW = 200
 _MIN_BARS = _SLOW + 2   # 202: 200 for SMA200 + today + yesterday
 _LOOKBACK_DAYS = 400    # calendar-day buffer; yields ≥ 202 trading bars
 _SEVERITY = 2.0         # fixed categorical magnitude — no z-divisor
+
+logger = logging.getLogger(__name__)
 
 
 class MaCrossDetector(EventDetector):
@@ -55,7 +58,8 @@ class MaCrossDetector(EventDetector):
         start = (today_date - timedelta(days=_LOOKBACK_DAYS)).isoformat()
         try:
             prices = fd.get_prices(ticker, start, end_date)
-        except Exception:
+        except Exception as e:
+            logger.debug("ma_cross: get_prices(%s) failed: %s", ticker, e)
             return None
 
         if not prices or len(prices) < _MIN_BARS:
@@ -75,7 +79,7 @@ class MaCrossDetector(EventDetector):
         sma_fast_yest = float(closes[-_FAST - 1 : -1].mean())
         sma_slow_yest = float(closes[-_SLOW - 1 : -1].mean())
 
-        components = {
+        components: dict[str, float] = {
             "sma_fast_today": sma_fast_today,
             "sma_slow_today": sma_slow_today,
             "sma_fast_yest": sma_fast_yest,

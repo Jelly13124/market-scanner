@@ -26,6 +26,7 @@ other tickers in composite scoring.
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 import numpy as np
@@ -33,6 +34,8 @@ import numpy as np
 from v2.data.protocol import DataClient
 from v2.scanner.detectors.base import EventDetector, EventTrigger, close_of, parse_date as _parse_date
 from v2.scanner.models import ScanContext
+
+logger = logging.getLogger(__name__)
 
 
 class GapDetector(EventDetector):
@@ -68,7 +71,8 @@ class GapDetector(EventDetector):
         start = (today_date - timedelta(days=self._lookback)).isoformat()
         try:
             prices = fd.get_prices(ticker, start, end_date)
-        except Exception:
+        except Exception as e:
+            logger.debug("gap: get_prices(%s) failed: %s", ticker, e)
             return None
 
         # Need ≥ min_bars price bars: min_bars - 1 gap observations from the

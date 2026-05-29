@@ -151,3 +151,6 @@ Verified signal quality:
   - v2/event_study/test_event_study.py — test_compute_car_live + multi_ticker (live-API / network)
 - Per plan B4: live-API + conformance failures are out of scope; not chased.
 - Note: none are in v2/scanner/, so Wave C detectors are unaffected.
+
+AMBIGUITY: except-log level for per-ticker get_prices failure → chose logger.debug (not warning like analyst_rating) because a bulk 800-ticker scan would spam warnings on routine transient fetch misses; debug satisfies RULE-5 (logger.* present) without noise.
+GAP: the per-detector scanner-invariant-reviewer gate validates the 4 CLAUDE.md invariants but NOT the 4 extra static-lint rules in tests/test_detector_invariants.py (RULE-3 components-float, RULE-5 except-logging, RULE-7 direction-literal, RULE-8 return-annotation). C1-C4 passed the gate but failed RULE-3/RULE-5 at the full-suite checkpoint; fixed by annotating components: dict[str,float] (matches gap.py/high_breakout.py) + adding module logger + logger.debug in except. Future detector tasks should also run `pytest tests/test_detector_invariants.py` before marking complete.

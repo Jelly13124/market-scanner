@@ -40,6 +40,7 @@ is NOT reused here — we implement Wilder RSI inline.
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 import numpy as np
@@ -52,6 +53,8 @@ from v2.scanner.detectors.base import (
     parse_date as _parse_date,
 )
 from v2.scanner.models import ScanContext
+
+logger = logging.getLogger(__name__)
 
 # RSI period (Wilder default).
 _RSI_PERIOD = 14
@@ -134,7 +137,8 @@ class RsiDivergenceDetector(EventDetector):
         start = (today_date - timedelta(days=self._lookback)).isoformat()
         try:
             prices = fd.get_prices(ticker, start, end_date)
-        except Exception:
+        except Exception as e:
+            logger.debug("rsi_divergence: get_prices(%s) failed: %s", ticker, e)
             return None
 
         if not prices or len(prices) < self._min_bars:
@@ -195,7 +199,7 @@ class RsiDivergenceDetector(EventDetector):
             # Severity: RSI gap as fraction of 10 RSI pts, capped at 8.
             # This is a coefficient of the RSI-gap magnitude, NOT a z-divisor.
             severity_z = float(min(rsi_gap / 10.0, 8.0))  # noqa: std-floor (coefficient, not z-divisor)
-            components = {
+            components: dict[str, float] = {
                 "old_price_high": old_price_high,
                 "recent_price_high": recent_price_high,
                 "old_rsi_at_high": old_rsi_at_high,
@@ -220,7 +224,7 @@ class RsiDivergenceDetector(EventDetector):
         if bullish:
             rsi_gap = recent_rsi_at_low - old_rsi_at_low  # positive
             severity_z = float(min(rsi_gap / 10.0, 8.0))  # noqa: std-floor (coefficient, not z-divisor)
-            components = {
+            components: dict[str, float] = {
                 "old_price_low": old_price_low,
                 "recent_price_low": recent_price_low,
                 "old_rsi_at_low": old_rsi_at_low,
@@ -243,7 +247,7 @@ class RsiDivergenceDetector(EventDetector):
             )
 
         # Ran cleanly, no divergence found.
-        components = {
+        components: dict[str, float] = {
             "old_price_high": old_price_high,
             "recent_price_high": recent_price_high,
             "old_rsi_at_high": old_rsi_at_high,

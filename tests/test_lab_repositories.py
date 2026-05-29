@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError
 
 from app.backend.database.connection import Base
 # Import models so SQLAlchemy registers them on Base.metadata before create_all
@@ -43,61 +44,90 @@ def _spec_dict():
 class TestStrategyRepository:
     def test_create_get_list_delete(self, db):
         repo = StrategyRepository(db)
-        s = repo.create(name="Test", description="x", spec_json=_spec_dict())
+        s = repo.create(name="Test", description="x", spec_json=_spec_dict(), user_id=1)
         assert s.id > 0 and s.version == 1
-        loaded = repo.get(s.id)
+        loaded = repo.get(s.id, user_id=1)
         assert loaded.name == "Test"
-        assert repo.list()[0].id == s.id
-        assert repo.get_by_name("Test").id == s.id
-        repo.delete(s.id)
-        assert repo.get(s.id) is None
+        assert repo.list(user_id=1)[0].id == s.id
+        assert repo.get_by_name("Test", user_id=1).id == s.id
+        repo.delete(s.id, user_id=1)
+        assert repo.get(s.id, user_id=1) is None
 
     def test_update_spec_bumps_version(self, db):
         repo = StrategyRepository(db)
-        s = repo.create(name="V", description="", spec_json=_spec_dict())
+        s = repo.create(name="V", description="", spec_json=_spec_dict(), user_id=1)
         new_spec = _spec_dict()
         new_spec["description"] = "edited"
-        updated = repo.update_spec(s.id, spec_json=new_spec)
+        updated = repo.update_spec(s.id, user_id=1, spec_json=new_spec)
         assert updated.version == 2
 
-    def test_unique_name(self, db):
+    def test_unique_name_per_user(self, db):
+        """Same user + same name → IntegrityError; different user + same name → OK."""
         repo = StrategyRepository(db)
-        repo.create(name="Dup", description="", spec_json=_spec_dict())
-        with pytest.raises(Exception):
-            repo.create(name="Dup", description="", spec_json=_spec_dict())
+        repo.create(name="Dup", description="", spec_json=_spec_dict(), user_id=1)
+        # Same user, same name → must fail
+        with pytest.raises((IntegrityError, Exception)):
+            repo.create(name="Dup", description="", spec_json=_spec_dict(), user_id=1)
+
+    def test_same_name_allowed_across_users(self, db):
+        """Different users may share a strategy name (per-user uniqueness)."""
+        repo = StrategyRepository(db)
+        repo.create(name="Shared", description="", spec_json=_spec_dict(), user_id=1)
+        s2 = repo.create(name="Shared", description="", spec_json=_spec_dict(), user_id=2)
+        assert s2.id is not None
+
+    def test_cross_user_get_returns_none(self, db):
+        repo = StrategyRepository(db)
+        s = repo.create(name="Mine", description="", spec_json=_spec_dict(), user_id=1)
+        assert repo.get(s.id, user_id=2) is None
+
+    def test_get_by_id_unscoped(self, db):
+        repo = StrategyRepository(db)
+        s = repo.create(name="Unscoped", description="", spec_json=_spec_dict(), user_id=1)
+        assert repo.get_by_id_unscoped(s.id).id == s.id
 
 
 class TestLabChatRepository:
     def test_add_message_and_list(self, db):
         srepo = StrategyRepository(db)
-        s = srepo.create(name="ChatTest", description="", spec_json=_spec_dict())
+        s = srepo.create(name="ChatTest", description="", spec_json=_spec_dict(), user_id=1)
         crepo = LabChatRepository(db)
-        m = crepo.add(strategy_id=s.id, role="user", content="hello")
+        m = crepo.add(strategy_id=s.id, role="user", content="hello", user_id=1)
         assert m.id > 0
         crepo.add(
             strategy_id=s.id, role="assistant", content="hi",
             spec_patch_json={"x": 1}, spec_snapshot_json=_spec_dict(),
+            user_id=1,
         )
-        messages = crepo.list_for_strategy(s.id, limit=20)
+        messages = crepo.list_for_strategy(s.id, user_id=1, limit=20)
         assert len(messages) == 2
 
     def test_mark_patch_accepted(self, db):
         srepo = StrategyRepository(db)
-        s = srepo.create(name="C2", description="", spec_json=_spec_dict())
+        s = srepo.create(name="C2", description="", spec_json=_spec_dict(), user_id=1)
         crepo = LabChatRepository(db)
         m = crepo.add(
             strategy_id=s.id, role="assistant", content="patch",
             spec_patch_json={"x": 1}, spec_snapshot_json=_spec_dict(),
+            user_id=1,
         )
         crepo.mark_patch_accepted(m.id, accepted=True)
-        loaded = crepo.list_for_strategy(s.id)[0]
+        loaded = crepo.list_for_strategy(s.id, user_id=1)[0]
         assert loaded.patch_accepted is True
+
+    def test_cross_user_messages_not_visible(self, db):
+        srepo = StrategyRepository(db)
+        s = srepo.create(name="ChatIso", description="", spec_json=_spec_dict(), user_id=1)
+        crepo = LabChatRepository(db)
+        crepo.add(strategy_id=s.id, role="user", content="secret", user_id=1)
+        # User 2 should see no messages
+        assert crepo.list_for_strategy(s.id, user_id=2, limit=20) == []
 
 
 class TestBacktestRepository:
     def test_create_and_list(self, db):
         srepo = StrategyRepository(db)
-        s = srepo.create(name="B", description="", spec_json=_spec_dict())
+        s = srepo.create(name="B", description="", spec_json=_spec_dict(), user_id=1)
         brepo = BacktestRepository(db)
         bt = brepo.create(
             strategy_id=s.id,
@@ -122,7 +152,35 @@ class TestBacktestRepository:
             equity_curve_is=[100000, 110000],
             equity_curve_oos=[110000, 115000],
             benchmark_curve=None, duration_seconds=42.5,
+            user_id=1,
         )
         assert bt.id > 0
-        assert brepo.get(bt.id).verdict_label == "weak"
-        assert brepo.list_for_strategy(s.id)[0].id == bt.id
+        assert brepo.get(bt.id, user_id=1).verdict_label == "weak"
+        assert brepo.list_for_strategy(s.id, user_id=1)[0].id == bt.id
+
+    def test_cross_user_backtest_not_visible(self, db):
+        srepo = StrategyRepository(db)
+        s = srepo.create(name="BIso", description="", spec_json=_spec_dict(), user_id=1)
+        brepo = BacktestRepository(db)
+        bt = brepo.create(
+            strategy_id=s.id, spec_snapshot_json=_spec_dict(),
+            start_date="2020-01-01", end_date="2024-12-31", midpoint_date="2023-09-08",
+            universe_size=5,
+            is_metrics={
+                "cagr": 0.1, "sharpe": 1.0, "n_trades": 10,
+                "total_return": 0.3, "sortino": 1.0, "max_drawdown": -0.1,
+                "calmar": 1.0, "win_rate": 0.5, "profit_factor": 1.0,
+                "avg_holding_days": 10,
+            },
+            oos_metrics={
+                "cagr": 0.08, "sharpe": 0.8, "n_trades": 5,
+                "total_return": 0.2, "sortino": 0.8, "max_drawdown": -0.12,
+                "calmar": 0.7, "win_rate": 0.48, "profit_factor": 0.9,
+                "avg_holding_days": 9,
+            },
+            degradation_ratio=0.8, benchmark_cagr=0.1,
+            verdict_label="weak", verdict_text="weak",
+            trades=[], equity_curve_is=[], equity_curve_oos=[],
+            user_id=1,
+        )
+        assert brepo.get(bt.id, user_id=2) is None

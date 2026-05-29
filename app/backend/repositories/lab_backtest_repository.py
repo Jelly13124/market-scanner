@@ -1,4 +1,8 @@
-"""Phase 6D: Backtest CRUD repository."""
+"""Phase 6D: Backtest CRUD repository.
+
+Wave 4: ``get`` and ``list_for_strategy`` are scoped by ``user_id``;
+``create`` sets ``user_id`` so new backtests are owned.
+"""
 
 from __future__ import annotations
 
@@ -32,6 +36,7 @@ class BacktestRepository:
         trades: list,
         equity_curve_is: list,
         equity_curve_oos: list,
+        user_id: int,
         benchmark_curve: list | None = None,
         duration_seconds: float | None = None,
         error_message: str | None = None,
@@ -55,21 +60,26 @@ class BacktestRepository:
             benchmark_curve=benchmark_curve,
             duration_seconds=duration_seconds,
             error_message=error_message,
+            user_id=user_id,
         )
         self.db.add(bt)
         self.db.commit()
         self.db.refresh(bt)
         return bt
 
-    def get(self, backtest_id: int) -> Optional[Backtest]:
-        return self.db.query(Backtest).filter(Backtest.id == backtest_id).first()
+    def get(self, backtest_id: int, *, user_id: int) -> Optional[Backtest]:
+        return (
+            self.db.query(Backtest)
+            .filter(Backtest.id == backtest_id, Backtest.user_id == user_id)
+            .first()
+        )
 
     def list_for_strategy(
-        self, strategy_id: int, *, limit: int = 50,
+        self, strategy_id: int, *, user_id: int, limit: int = 50,
     ) -> list[Backtest]:
         return (
             self.db.query(Backtest)
-            .filter(Backtest.strategy_id == strategy_id)
+            .filter(Backtest.strategy_id == strategy_id, Backtest.user_id == user_id)
             .order_by(desc(Backtest.created_at), desc(Backtest.id))
             .limit(limit)
             .all()

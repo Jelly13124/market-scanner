@@ -17,6 +17,10 @@ Endpoints (12):
     GET    /lab/backtests/{id}
   Catalog:
     GET    /lab/catalog
+
+Wave 4: every strategy/chat/backtest endpoint requires a valid Bearer token;
+all repository calls are scoped to ``current_user.id``. Cross-tenant access
+returns 404.
 """
 
 from __future__ import annotations
@@ -27,7 +31,9 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
+from app.backend.database.models import User
 from app.backend.models.lab_schemas import (
     BacktestResponse,
     BacktestRunRequest,
@@ -77,41 +83,57 @@ def _scaffold_spec(strategy_name: str) -> dict:
 # ---- Strategy CRUD ----
 
 @router.get("/strategies", response_model=list[StrategyResponse])
-def list_strategies(db: Session = Depends(get_db)) -> list[StrategyResponse]:
-    rows = StrategyRepository(db).list()
+def list_strategies(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[StrategyResponse]:
+    rows = StrategyRepository(db).list(user_id=current_user.id)
     return [StrategyResponse.model_validate(r) for r in rows]
 
 
 @router.post("/strategies", response_model=StrategyResponse, status_code=201)
-def create_strategy(req: StrategyCreateRequest, db: Session = Depends(get_db)):
+def create_strategy(
+    req: StrategyCreateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     spec = req.initial_spec_json or _scaffold_spec(req.name)
     try:
         StrategySpec.model_validate(spec)
     except Exception as e:
         raise HTTPException(422, f"Invalid initial_spec_json: {e}")
     repo = StrategyRepository(db)
-    if repo.get_by_name(req.name) is not None:
+    if repo.get_by_name(req.name, user_id=current_user.id) is not None:
         raise HTTPException(409, f"Strategy named {req.name!r} already exists")
     try:
-        s = repo.create(name=req.name, description=req.description, spec_json=spec)
+        s = repo.create(name=req.name, description=req.description, spec_json=spec, user_id=current_user.id)
     except IntegrityError:
+        db.rollback()
         raise HTTPException(409, f"Strategy named {req.name!r} already exists")
     return StrategyResponse.model_validate(s)
 
 
 @router.get("/strategies/{strategy_id}", response_model=StrategyResponse)
-def get_strategy(strategy_id: int, db: Session = Depends(get_db)):
-    s = StrategyRepository(db).get(strategy_id)
+def get_strategy(
+    strategy_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    s = StrategyRepository(db).get(strategy_id, user_id=current_user.id)
     if s is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
     return StrategyResponse.model_validate(s)
 
 
 @router.patch("/strategies/{strategy_id}", response_model=StrategyResponse)
-def update_strategy(strategy_id: int, req: StrategyUpdateRequest,
-                     db: Session = Depends(get_db)):
+def update_strategy(
+    strategy_id: int,
+    req: StrategyUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     repo = StrategyRepository(db)
-    s = repo.get(strategy_id)
+    s = repo.get(strategy_id, user_id=current_user.id)
     if s is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
     if req.spec_json is not None:
@@ -119,24 +141,29 @@ def update_strategy(strategy_id: int, req: StrategyUpdateRequest,
             StrategySpec.model_validate(req.spec_json)
         except Exception as e:
             raise HTTPException(422, f"Invalid spec_json: {e}")
-        s = repo.update_spec(strategy_id, spec_json=req.spec_json,
+        s = repo.update_spec(strategy_id, user_id=current_user.id, spec_json=req.spec_json,
                               description=req.description)
         # Also log a manual_edit chat message
         LabChatRepository(db).add(
             strategy_id=strategy_id, role="user_manual_edit",
             content=(req.description or "manual edit"),
             spec_snapshot_json=req.spec_json,
+            user_id=current_user.id,
         )
     elif req.name is not None:
-        s = repo.rename(strategy_id, req.name)
+        s = repo.rename(strategy_id, req.name, user_id=current_user.id)
     if s is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
     return StrategyResponse.model_validate(s)
 
 
 @router.delete("/strategies/{strategy_id}", status_code=204)
-def delete_strategy(strategy_id: int, db: Session = Depends(get_db)):
-    ok = StrategyRepository(db).delete(strategy_id)
+def delete_strategy(
+    strategy_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ok = StrategyRepository(db).delete(strategy_id, user_id=current_user.id)
     if not ok:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
     return None
@@ -145,31 +172,41 @@ def delete_strategy(strategy_id: int, db: Session = Depends(get_db)):
 # ---- Chat ----
 
 @router.get("/strategies/{strategy_id}/chat", response_model=list[ChatMessageResponse])
-def list_chat(strategy_id: int, limit: int = 50, db: Session = Depends(get_db)):
-    if StrategyRepository(db).get(strategy_id) is None:
+def list_chat(
+    strategy_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if StrategyRepository(db).get(strategy_id, user_id=current_user.id) is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
-    rows = LabChatRepository(db).list_for_strategy(strategy_id, limit=limit)
+    rows = LabChatRepository(db).list_for_strategy(strategy_id, user_id=current_user.id, limit=limit)
     # Newest-first from repo -> reverse for chronological UI
     return [ChatMessageResponse.model_validate(r) for r in reversed(rows)]
 
 
 @router.post("/strategies/{strategy_id}/chat", response_model=ChatResponseSchema)
-def post_chat(strategy_id: int, req: ChatSendRequest, db: Session = Depends(get_db)):
+def post_chat(
+    strategy_id: int,
+    req: ChatSendRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     strategy_repo = StrategyRepository(db)
     chat_repo = LabChatRepository(db)
-    strategy = strategy_repo.get(strategy_id)
+    strategy = strategy_repo.get(strategy_id, user_id=current_user.id)
     if strategy is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
 
     # Save user message
-    chat_repo.add(strategy_id=strategy_id, role="user", content=req.message)
+    chat_repo.add(strategy_id=strategy_id, role="user", content=req.message, user_id=current_user.id)
 
-    # Build prior strategies summary
+    # Build prior strategies summary (scoped to this user)
     prior_strategies = []
-    for s in strategy_repo.list(limit=5):
+    for s in strategy_repo.list(user_id=current_user.id, limit=5):
         prior_strategies.append({"name": s.name, "verdict": None, "cagr": None})
 
-    history = chat_repo.list_for_strategy(strategy_id, limit=20)
+    history = chat_repo.list_for_strategy(strategy_id, user_id=current_user.id, limit=20)
     # Reverse to chronological for LLM (newest-first -> oldest-first)
     history = list(reversed(history))
 
@@ -191,6 +228,7 @@ def post_chat(strategy_id: int, req: ChatSendRequest, db: Session = Depends(get_
             err_msg = chat_repo.add(
                 strategy_id=strategy_id, role="assistant",
                 content=f"(LLM proposed an invalid patch: {e})",
+                user_id=current_user.id,
             )
             return ChatResponseSchema(
                 message=ChatMessageResponse.model_validate(err_msg),
@@ -203,6 +241,7 @@ def post_chat(strategy_id: int, req: ChatSendRequest, db: Session = Depends(get_
             spec_patch_json=root.patch,
             spec_snapshot_json=root.patch,  # would-be spec if accepted
             patch_accepted=None,
+            user_id=current_user.id,
         )
         return ChatResponseSchema(
             message=ChatMessageResponse.model_validate(ai_msg),
@@ -213,6 +252,7 @@ def post_chat(strategy_id: int, req: ChatSendRequest, db: Session = Depends(get_
         ai_msg = chat_repo.add(
             strategy_id=strategy_id, role="assistant",
             content=root.message,
+            user_id=current_user.id,
         )
         return ChatResponseSchema(
             message=ChatMessageResponse.model_validate(ai_msg),
@@ -221,20 +261,24 @@ def post_chat(strategy_id: int, req: ChatSendRequest, db: Session = Depends(get_
 
 
 @router.post("/strategies/{strategy_id}/chat/apply", response_model=StrategyResponse)
-def apply_chat_patch(strategy_id: int, req: ChatApplyRequest,
-                      db: Session = Depends(get_db)):
+def apply_chat_patch(
+    strategy_id: int,
+    req: ChatApplyRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     strategy_repo = StrategyRepository(db)
     chat_repo = LabChatRepository(db)
-    strategy = strategy_repo.get(strategy_id)
+    strategy = strategy_repo.get(strategy_id, user_id=current_user.id)
     if strategy is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
-    msg = chat_repo.get(req.message_id)
+    msg = chat_repo.get(req.message_id, user_id=current_user.id)
     if msg is None or msg.strategy_id != strategy_id:
         raise HTTPException(404, f"Message {req.message_id} not found for this strategy")
     if msg.spec_patch_json is None:
         raise HTTPException(400, "Message has no spec patch to apply")
     # Update strategy spec, bump version, mark patch accepted
-    s = strategy_repo.update_spec(strategy_id, spec_json=msg.spec_patch_json)
+    s = strategy_repo.update_spec(strategy_id, user_id=current_user.id, spec_json=msg.spec_patch_json)
     chat_repo.mark_patch_accepted(req.message_id, accepted=True)
     return StrategyResponse.model_validate(s)
 
@@ -242,9 +286,13 @@ def apply_chat_patch(strategy_id: int, req: ChatApplyRequest,
 # ---- Backtest ----
 
 @router.post("/strategies/{strategy_id}/backtest", response_model=BacktestResponse)
-def trigger_backtest(strategy_id: int, _: BacktestRunRequest,
-                       db: Session = Depends(get_db)):
-    strategy = StrategyRepository(db).get(strategy_id)
+def trigger_backtest(
+    strategy_id: int,
+    _: BacktestRunRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    strategy = StrategyRepository(db).get(strategy_id, user_id=current_user.id)
     if strategy is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
     try:
@@ -281,6 +329,7 @@ def trigger_backtest(strategy_id: int, _: BacktestRunRequest,
         benchmark_curve=result.benchmark_curve,
         duration_seconds=result.duration_seconds,
         error_message=result.error_message,
+        user_id=current_user.id,
     )
     return BacktestResponse.model_validate(bt)
 
@@ -301,16 +350,24 @@ def _metrics_dict(m) -> dict:
 
 
 @router.get("/strategies/{strategy_id}/backtests", response_model=list[BacktestResponse])
-def list_backtests(strategy_id: int, db: Session = Depends(get_db)):
-    if StrategyRepository(db).get(strategy_id) is None:
+def list_backtests(
+    strategy_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if StrategyRepository(db).get(strategy_id, user_id=current_user.id) is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
-    rows = BacktestRepository(db).list_for_strategy(strategy_id)
+    rows = BacktestRepository(db).list_for_strategy(strategy_id, user_id=current_user.id)
     return [BacktestResponse.model_validate(r) for r in rows]
 
 
 @router.get("/backtests/{backtest_id}", response_model=BacktestResponse)
-def get_backtest(backtest_id: int, db: Session = Depends(get_db)):
-    bt = BacktestRepository(db).get(backtest_id)
+def get_backtest(
+    backtest_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    bt = BacktestRepository(db).get(backtest_id, user_id=current_user.id)
     if bt is None:
         raise HTTPException(404, f"Backtest {backtest_id} not found")
     return BacktestResponse.model_validate(bt)
@@ -320,9 +377,11 @@ def get_backtest(backtest_id: int, db: Session = Depends(get_db)):
 
 @router.get("/backtests/{backtest_id}/chart/{chart_type}.png")
 def get_backtest_chart(
-    backtest_id: int, chart_type: str, db: Session = Depends(get_db),
+    backtest_id: int, chart_type: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    bt = BacktestRepository(db).get(backtest_id)
+    bt = BacktestRepository(db).get(backtest_id, user_id=current_user.id)
     if bt is None:
         raise HTTPException(404, f"Backtest {backtest_id} not found")
     if chart_type == "equity_curve":

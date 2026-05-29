@@ -410,12 +410,14 @@ class Strategy(Base):
     id = Column(Integer, primary_key=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    name = Column(String(200), nullable=False, unique=True, index=True)
+    name = Column(String(200), nullable=False, index=True)
     description = Column(Text, nullable=True)
     spec_json = Column(JSON, nullable=False)
     version = Column(Integer, nullable=False, default=1, server_default="1")
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
+
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_strategy_user_name"),)
 
 
 class LabChatMessage(Base):

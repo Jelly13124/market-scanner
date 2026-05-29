@@ -82,6 +82,13 @@ class EmailHandler:
             elif event_type == "research.completed":
                 html_body = render_research_html(run)
                 text_body = render_research_text(run)
+            elif event_type == "screener.match":
+                from app.backend.services.notifications.render import (
+                    render_screener_match_html,
+                    render_screener_match_text,
+                )
+                html_body = render_screener_match_html(run)
+                text_body = render_screener_match_text(run)
             else:
                 # Dispatcher attaches a precomputed gist_map (LLM-generated
                 # per-ticker Chinese take) when available. Render handles
@@ -149,6 +156,10 @@ def _make_subject(run: Any, *, event_type: str = "pipeline.completed") -> str:
         n = len(reports)
         scan_date = getattr(reports[0], "scan_date", "—") if reports else "—"
         return f"[ai-hedge-fund] Daily SOP — {scan_date} — {n} tickers"
+    if event_type == "screener.match":
+        p = run if isinstance(run, dict) else getattr(run, "payload", {}) or {}
+        preset_name = p.get("preset_name") or "screener"
+        return f"[ai-hedge-fund] Screener match: {preset_name}"
     template = getattr(run, "template", "—")
     scan_date = getattr(run, "scan_date", "—")
     agent_decisions = (

@@ -430,3 +430,52 @@ def render_research_text(report) -> str:
         stripped = raw.lstrip("#").lstrip()
         lines.append(stripped)
     return "\n".join(lines).strip() or f"Research report for {getattr(report, 'ticker', '?')}"
+
+
+# ---------------------------------------------------------------------------
+# Screener match rendering (A5)
+# ---------------------------------------------------------------------------
+
+
+def render_screener_match_html(payload) -> str:
+    p = payload if isinstance(payload, dict) else getattr(payload, "payload", {}) or {}
+    name = _esc(p.get("preset_name"))
+    rows = p.get("rows") or []
+    count = _esc(p.get("match_count", len(rows)))
+    trs = []
+    for r in rows[:25]:
+        trs.append(
+            "<tr>"
+            f"<td style='padding:4px 8px;font-family:monospace;font-weight:bold'>{_esc(r.get('ticker'))}</td>"
+            f"<td style='padding:4px 8px;text-align:right'>{_esc(r.get('price'))}</td>"
+            f"<td style='padding:4px 8px;text-align:right'>{_esc(r.get('pe_ttm'))}</td>"
+            f"<td style='padding:4px 8px;text-align:right'>{_esc(r.get('change_pct'))}</td>"
+            "</tr>"
+        )
+    return (
+        "<div style='font-family:system-ui,sans-serif'>"
+        f"<h2 style='margin:0 0 8px'>Screener match: {name}</h2>"
+        f"<p style='color:#374151;margin:0 0 12px'>{count} ticker(s) matched "
+        f"as of {_esc(p.get('snapshot_date'))}.</p>"
+        "<table style='border-collapse:collapse;font-size:13px'>"
+        "<thead><tr style='background:#f3f4f6'>"
+        "<th style='padding:4px 8px;text-align:left'>Ticker</th>"
+        "<th style='padding:4px 8px;text-align:right'>Price</th>"
+        "<th style='padding:4px 8px;text-align:right'>P/E</th>"
+        "<th style='padding:4px 8px;text-align:right'>Chg</th>"
+        f"</tr></thead><tbody>{''.join(trs)}</tbody></table></div>"
+    )
+
+
+def render_screener_match_text(payload) -> str:
+    p = payload if isinstance(payload, dict) else getattr(payload, "payload", {}) or {}
+    name = p.get("preset_name") or ""
+    rows = p.get("rows") or []
+    count = p.get("match_count", len(rows))
+    lines = [f"Screener match: {name}", f"{count} ticker(s) matched", ""]
+    for r in rows[:25]:
+        lines.append(
+            f"  {r.get('ticker', '?'):8} price={r.get('price', '—')} "
+            f"pe={r.get('pe_ttm', '—')} chg={r.get('change_pct', '—')}"
+        )
+    return "\n".join(lines)

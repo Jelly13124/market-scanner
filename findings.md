@@ -121,3 +121,5 @@ Verified signal quality:
 4. **Volume z-score sign asymmetry**: `vol_hit = z_vol >= 2.5` only fires on HIGH volume. Low-volume days never trigger. Intentional but worth re-evaluating in M6.
 5. **`recommend_max_workers("hybrid") = 4`**: bottlenecked by Finnhub's 60/min global cap, even though EODHD has plenty of headroom. Wall-clock dominated by Finnhub-bound calls.
 6. **`datetime.utcnow()` DeprecationWarning** throughout `scanner_repository.py` (Python 3.13+). Cosmetic; M6 cleanup.
+
+7. **`screener.match` webhook handler**: `_build_payload` in `webhook_handler.py` uses `getattr(run, ...)` for all fields — the `_ScreenerMatchRun` surrogate carries `.id` and `.payload`; all other fields resolve to `None` (correct for this event). No code change needed; webhook sends a generic JSON envelope with `event="screener.match"` + the surrogate attributes.

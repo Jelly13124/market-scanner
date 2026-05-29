@@ -41,6 +41,7 @@ from app.backend.services.notifications.gist import generate_gists
 from app.backend.services.notifications.render import (
     render_pipeline_html, render_pipeline_text,
     render_research_html, render_research_text,
+    render_screener_match_html, render_screener_match_text,
 )
 from app.backend.services.notifications.webhook_handler import WebhookHandler
 
@@ -81,6 +82,11 @@ class NotificationDispatcher:
             )
         if event_type == "research.completed":
             return render_research_html(run), render_research_text(run)
+        if event_type == "screener.match":
+            return (
+                render_screener_match_html(run),
+                render_screener_match_text(run),
+            )
         return render_pipeline_html(run), render_pipeline_text(run)
 
     def dispatch(
@@ -182,6 +188,39 @@ class NotificationDispatcher:
             # different default.
             sub.event_type = event_type
             self._dispatch_one(sub, run_surrogate)
+            attempts += 1
+        return attempts
+
+    def dispatch_screener_match(
+        self,
+        *,
+        payload: dict,
+        event_type: str = "screener.match",
+    ) -> int:
+        """Fan a screener preset match out to every enabled sub for
+        ``event_type``. ``payload`` is a plain dict (preset_name, match_count,
+        snapshot_date, rows). No PipelineRun involved."""
+        with self._session_factory() as session:
+            subs = SubscriptionRepository(session).list_enabled_for_event(event_type)
+            if not subs:
+                logger.debug(
+                    "dispatch_screener_match: no enabled subscriptions for event %r",
+                    event_type,
+                )
+                return 0
+            sub_snapshots = [_snapshot(s) for s in subs]
+
+        class _ScreenerMatchRun:
+            def __init__(self, p: dict) -> None:
+                self.payload = p
+                self.id = f"screener-{p.get('preset_id', '')}"
+
+        surrogate = _ScreenerMatchRun(payload)
+
+        attempts = 0
+        for sub in sub_snapshots:
+            sub.event_type = event_type
+            self._dispatch_one(sub, surrogate)
             attempts += 1
         return attempts
 

@@ -47,6 +47,10 @@ e07c673 feat(frontend): Phase 8 Wave 6 - Market dropdown + A-share universes + i
 d1285d6 docs: progress entry for Phase 8 Wave 6 (Task 14 frontend Market + universes)
 ```
 
+## Session — 2026-05-29 (Wave A overnight batch — Task A3)
+
+- A3: preset schemas (PresetCreate/Patch/Out) — 3 tests pass
+
 ### Tests
 
 Full backend pytest summary (Gate 1):
@@ -2748,3 +2752,7 @@ fd9d67f feat(screener): ScreenerRepository with filter-dict query + idempotent u
 - alembic upgrade again: idempotent
 - Commit: 75502b2, message: "feat(screener): ScreenerPreset model + migration"
 - No Co-Authored-By trailer on commit
+- A2: ScreenerPresetRepository (CRUD + list_enabled + mark_run) — 5 tests pass
+
+- A4: preset CRUD + run routes — 2 tests pass, screener suite green
+- A5: screener.match render + dispatch — render_screener_match_html/text added to render.py; _render_for_event + dispatch_screener_match added to dispatcher.py; email/webhook handlers wired additively; 7 new tests + full suite 120 passed

@@ -127,3 +127,13 @@ Verified signal quality:
 8. **A8 PresetBar layout**: placed as a separate compact row (h-7, text-xs, flex gap-2, px-2 py-1) between the header row and FilterChipBar — not merged into the header row — because the header row already holds the market Select and loading indicator, and adding a preset Select + Save button there would overflow on narrow panels. The Manage button is rendered conditionally (only when onManage prop is provided), so it is hidden rather than disabled when undefined, keeping the bar minimal by default.
 
 9. **A9 PresetManager ambiguity — Manage button visibility**: task said make Manage button "always visible" by moving the open-state into PresetBar itself. The `onManage` prop is still accepted (for external callers) but is now optional/decorative — clicking the Manage button sets `mgrOpen=true` first, then calls `onManage?.()`. This means screener-tab.tsx required no changes.
+
+## B4 checkpoint (overnight batch) — pre-existing failures, NOT chased
+- `tests/` (Screener/research/notifications/scheduler — our scope): 100% green.
+- 19 PRE-EXISTING failures live only in `v2/` and are unrelated to waves A/B
+  (we never touched v2/data or v2/event_study):
+  - v2/data/test_protocol_conformance.py — DataClient protocol gaps (fd/eodhd lack get_earnings_history etc.)
+  - v2/data/test_yfinance_client.py — get_earnings_history NotImplemented expectation
+  - v2/event_study/test_event_study.py — test_compute_car_live + multi_ticker (live-API / network)
+- Per plan B4: live-API + conformance failures are out of scope; not chased.
+- Note: none are in v2/scanner/, so Wave C detectors are unaffected.

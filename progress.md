@@ -2,6 +2,9 @@
 
 - A9: preset-manager.tsx (Dialog + per-row Schedule/Email/Webhook Checkbox + delete); preset-bar.tsx wired with internal mgrOpen state; Manage button always visible; tsc 2 errors (both pre-existing).
 - A10: i18n presets — added `screener.presets` block (19 keys) to en.json + zh.json via Python round-trip (no hand-edit). Both files validate. Commit c98a52a.
+- B1 (overnight): fix test_scanner_service.py::test_enabled_detectors_filters_run_scan_detectors — expected earnings_surprise, got earnings_event (intentional merge/alias). Updated assertion to expect canonical name; all 8 tests pass. Commit 8246b4d.
+- B2 (overnight): fix pre-existing tsc unused-symbol errors — agent-run-detail.tsx line 5 (removed unused Badge import), utils.ts line 20 (removed unused provider param). tsc now 0 errors. Commit f73ac24.
+- B3 (overnight): expand test coverage — 5 verdict-extraction tests (test_research_verdict.py), 3 screener date/perf_1y filter tests (test_screener_repository.py extension), 3 report-delete tests (test_research_repository_delete.py); 21 tests total, all green. Commit cc101a7.
 
 ## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
 
@@ -2766,3 +2769,5 @@ fd9d67f feat(screener): ScreenerRepository with filter-dict query + idempotent u
 - A8: preset-bar.tsx — compact one-row PresetBar (Select load + Save popover + optional Manage); wired into screener-tab.tsx above FilterChipBar; tsc zero NEW errors (2 pre-existing); commit TBD
 
 - A11: Wave A verification — backend 890 passed / 1 pre-existing fail (earnings_event, B1 fixes) / 5 skipped; frontend tsc 2 pre-existing errors (B2 fixes). Wave A introduced 0 regressions.
+
+- B4: full suite checkpoint — tests/ 100% green; 1335 passed / 19 pre-existing v2 live-API+conformance fails (logged, not chased) / 8 skipped.

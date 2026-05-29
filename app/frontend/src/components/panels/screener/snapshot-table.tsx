@@ -5,9 +5,16 @@ import {
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 import { useRequestAnalyze } from '@/hooks/use-request-analyze';
+import { useToastManager } from '@/hooks/use-toast-manager';
 import { cn } from '@/lib/utils';
 import { SnapshotRow } from '@/types/screener';
+import { UserWatchlist } from '@/types/watchlist';
+import { watchlistService } from '@/services/watchlist-service';
 import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -271,29 +278,101 @@ const HEADER_DEFAULTS: Record<string, string> = {
 export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTableProps) {
   const requestAnalyze = useRequestAnalyze();
   const { t } = useTranslation();
+  const { success, error } = useToastManager();
   const [group, setGroup] = useState<GroupKey>('overview');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [watchlists, setWatchlists] = useState<UserWatchlist[]>([]);
+  const [loadingWl, setLoadingWl] = useState(false);
 
   const activeCols = GROUPS[group].map((k) => COL_MAP[k]);
 
+  const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.ticker));
+
+  function toggleAll(checked: boolean) {
+    if (checked) {
+      setSelected(new Set(rows.map((r) => r.ticker)));
+    } else {
+      setSelected(new Set());
+    }
+  }
+
+  function toggleOne(ticker: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(ticker);
+      else next.delete(ticker);
+      return next;
+    });
+  }
+
+  async function openDialog() {
+    setDialogOpen(true);
+    setLoadingWl(true);
+    try {
+      const wls = await watchlistService.list();
+      setWatchlists(wls);
+    } catch {
+      setWatchlists([]);
+    } finally {
+      setLoadingWl(false);
+    }
+  }
+
+  async function handlePickWatchlist(wl: UserWatchlist) {
+    const tickers = Array.from(selected).filter((tk) => !wl.tickers.includes(tk));
+    const results = await Promise.allSettled(
+      tickers.map((tk) => watchlistService.addTicker(wl.id, tk)),
+    );
+    const added = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    if (added > 0) {
+      success(t('screener.bulk.added', 'Added {{n}} to {{name}}', { n: added, name: wl.name }));
+    }
+    if (failed > 0) {
+      error(t('screener.bulk.addFailed', '{{n}} ticker(s) failed to add', { n: failed }));
+    }
+    setSelected(new Set());
+    setDialogOpen(false);
+  }
+
   return (
     <div className="space-y-2">
-      <Tabs value={group} onValueChange={(v) => setGroup(v as GroupKey)}>
-        <TabsList className="h-8">
-          <TabsTrigger value="overview" className="text-xs">
-            {t('screener.group.overview', 'Overview')}
-          </TabsTrigger>
-          <TabsTrigger value="valuation" className="text-xs">
-            {t('screener.group.valuation', 'Valuation')}
-          </TabsTrigger>
-          <TabsTrigger value="performance" className="text-xs">
-            {t('screener.group.performance', 'Performance')}
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex items-center">
+        <Tabs value={group} onValueChange={(v) => setGroup(v as GroupKey)}>
+          <TabsList className="h-8">
+            <TabsTrigger value="overview" className="text-xs">
+              {t('screener.group.overview', 'Overview')}
+            </TabsTrigger>
+            <TabsTrigger value="valuation" className="text-xs">
+              {t('screener.group.valuation', 'Valuation')}
+            </TabsTrigger>
+            <TabsTrigger value="performance" className="text-xs">
+              {t('screener.group.performance', 'Performance')}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {selected.size > 0 && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="ml-auto h-8 text-xs"
+            onClick={openDialog}
+          >
+            {t('screener.bulk.add', 'Add {{count}} to watchlist', { count: selected.size })}
+          </Button>
+        )}
+      </div>
       <div className="border rounded-md overflow-x-auto">
         <Table className="text-xs">
           <TableHeader>
             <TableRow>
+              <TableHead className="w-8">
+                <Checkbox
+                  checked={allSelected}
+                  onCheckedChange={(v) => toggleAll(!!v)}
+                />
+              </TableHead>
               {activeCols.map((col) => {
                 const label = t(col.header, HEADER_DEFAULTS[col.header] ?? col.key);
                 if (col.sortKey !== null) {
@@ -328,13 +407,20 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={activeCols.length} className="text-center text-muted-foreground py-6">
+                <TableCell colSpan={activeCols.length + 1} className="text-center text-muted-foreground py-6">
                   {t('screener.table.no_results', 'No tickers match the current filters.')}
                 </TableCell>
               </TableRow>
             )}
             {rows.map((r) => (
               <TableRow key={r.ticker}>
+                <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={selected.has(r.ticker)}
+                    onCheckedChange={(v) => toggleOne(r.ticker, !!v)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </TableCell>
                 {activeCols.map((col) => (
                   <React.Fragment key={col.key}>
                     {col.cell(r, requestAnalyze, t)}
@@ -345,6 +431,39 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('screener.bulk.dialogTitle', 'Add to watchlist')}</DialogTitle>
+            <DialogDescription>
+              {t('screener.bulk.dialogDesc', 'Select a watchlist to add the {{count}} selected ticker(s).', { count: selected.size })}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-1 max-h-64 overflow-y-auto">
+            {loadingWl && (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                {t('screener.bulk.loading', 'Loading…')}
+              </p>
+            )}
+            {!loadingWl && watchlists.length === 0 && (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                {t('screener.bulk.noLists', 'No watchlists yet. Create one in the sidebar.')}
+              </p>
+            )}
+            {!loadingWl && watchlists.map((wl) => (
+              <button
+                key={wl.id}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-md text-sm hover:bg-accent text-left"
+                onClick={() => handlePickWatchlist(wl)}
+              >
+                <span>{wl.name}</span>
+                <Badge variant="outline" className="h-5 text-[10px]">{wl.tickers.length}</Badge>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

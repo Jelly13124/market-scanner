@@ -2715,3 +2715,36 @@ fd9d67f feat(screener): ScreenerRepository with filter-dict query + idempotent u
 - Stock logos, column-group tabs (Overview/Performance/Valuation),
   bulk "add to watchlist" (Phase 3).
 - Universe expansion beyond SPX + CSI 300, intraday refresh.
+
+---
+
+## Session — 2026-05-29 (Screener Phase 2 Wave A — Task A1 ScreenerPreset model + migration)
+
+### What shipped (Task A1)
+
+- **app/backend/database/models.py** — added `ScreenerPreset` ORM class with fields:
+  - `id` (BigInteger with SQLite Integer variant, autoincrement)
+  - `name` (String 120, required)
+  - `market` (String 8, optional: 'US' | 'CN' | None for all)
+  - `filters_json` (JSON, required, defaults to {})
+  - `sort_by`, `sort_dir` (String, defaults "market_cap" / "desc")
+  - `schedule_enabled` (Boolean, default False, server_default "0")
+  - `notify_channels` (JSON, optional: ["email", "webhook"])
+  - `last_run_at`, `last_match_count` (DateTime / Integer, optional)
+  - `created_at` (DateTime with timezone, server_default func.now())
+- **app/backend/alembic/versions/e1a7c2f4b9d0_add_screener_presets.py** — migration
+  - Revision: e1a7c2f4b9d0, down_revision: d4e8a2c1b9f6 (current head)
+  - Upgrade: create table with all 11 columns + proper BigInteger variant
+  - Downgrade: drop table
+- **tests/screener/test_preset_models.py** — smoke tests:
+  - `test_insert_minimal` — create preset with name/market/filters_json, verify defaults
+  - `test_full_fields` — all fields populated, verify roundtrip
+
+### Verification
+
+- pytest: 2/2 tests pass
+- alembic upgrade: clean migration from d4e8a2c1b9f6 → e1a7c2f4b9d0
+- alembic downgrade: clean rollback
+- alembic upgrade again: idempotent
+- Commit: 75502b2, message: "feat(screener): ScreenerPreset model + migration"
+- No Co-Authored-By trailer on commit

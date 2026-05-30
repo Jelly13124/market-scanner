@@ -120,7 +120,9 @@ class ScannerService:
                 pass
 
         thread = threading.Thread(
-            target=_bg, name=f"scanner-run-{run_id}", daemon=True,
+            target=_bg,
+            name=f"scanner-run-{run_id}",
+            daemon=True,
         )
         thread.start()
         return run_id
@@ -162,7 +164,8 @@ class ScannerService:
                 "watchlist": "SPY",
             }
             benchmark_ticker = BENCHMARK_BY_UNIVERSE.get(
-                config_payload["universe_kind"], "SPY",
+                config_payload["universe_kind"],
+                "SPY",
             )
 
             # M9.d — refresh today's analyst-target snapshot for every ticker
@@ -171,7 +174,8 @@ class ScannerService:
             # Bootstrap: on day 1 the detector returns None (insufficient
             # snapshots); useful triggers only fire from day 2 onward.
             target_snapshots_by_ticker = self._refresh_target_snapshots(
-                tickers, end_date,
+                tickers,
+                end_date,
             )
 
             # M9.f — load the universe-wide earnings calendar ONCE via
@@ -181,7 +185,8 @@ class ScannerService:
             # calendar loaded" which makes the detector exclude tickers
             # from stats (vs returning a misleading "no upcoming" verdict).
             upcoming_earnings = self._load_earnings_calendar(
-                tickers, end_date,
+                tickers,
+                end_date,
             )
 
             # Build the per-config detector list. None = all (preserves
@@ -196,7 +201,9 @@ class ScannerService:
                 det_instances = [c() for c in ALL_DETECTORS if c().name in enabled_set]
             logger.info(
                 "Scan run %s using %d/%d detectors: %s",
-                run_id, len(det_instances), len(ALL_DETECTORS),
+                run_id,
+                len(det_instances),
+                len(ALL_DETECTORS),
                 [d.name for d in det_instances],
             )
 
@@ -216,11 +223,14 @@ class ScannerService:
 
             self._persist_results(run_id, scored)
             self._mark_complete(run_id)
-            self._publish(run_id, {
-                "event": "complete",
-                "run_id": run_id,
-                "entries": len(scored),
-            })
+            self._publish(
+                run_id,
+                {
+                    "event": "complete",
+                    "run_id": run_id,
+                    "entries": len(scored),
+                },
+            )
         except Exception as e:
             logger.exception("Scan run %s failed", run_id)
             self._mark_error(run_id, str(e))
@@ -240,7 +250,12 @@ class ScannerService:
                 use_personas = bool(
                     config_payload.get("auto_sop_use_personas") or False,
                 )
-                self._run_auto_sop_followup(run_id, top_n, use_personas)
+                self._run_auto_sop_followup(
+                    run_id,
+                    top_n,
+                    use_personas,
+                    owner_user_id=config_payload.get("owner_user_id"),
+                )
         except Exception:
             logger.exception(
                 "auto_sop follow-up failed for scan_run %s (scan itself OK)",
@@ -258,19 +273,13 @@ class ScannerService:
         so subsequent phases don't hold the session open across long-running work.
         """
         with self._session_factory() as session:
-            config = ScannerConfigRepository(session).get_by_id(config_id)
+            config = ScannerConfigRepository(session).get_by_id_unscoped(config_id)
             if not config:
                 raise ValueError(f"No scanner config with id {config_id}")
 
-            existing = (
-                session.query(ScanRun)
-                .filter(ScanRun.config_id == config_id, ScanRun.status == "RUNNING")
-                .first()
-            )
+            existing = session.query(ScanRun).filter(ScanRun.config_id == config_id, ScanRun.status == "RUNNING").first()
             if existing is not None:
-                raise ScanAlreadyRunningError(
-                    f"Scanner config {config_id} already has a RUNNING run (id={existing.id})"
-                )
+                raise ScanAlreadyRunningError(f"Scanner config {config_id} already has a RUNNING run (id={existing.id})")
 
             # Phase 5C — when targeting a UserWatchlist, resolve the tickers
             # here (inside the same session) so the long-running scan thread
@@ -279,21 +288,13 @@ class ScannerService:
             watchlist_tickers: list[str] | None = None
             if config.universe_kind == "watchlist":
                 if config.user_watchlist_id is None:
-                    raise ValueError(
-                        f"Scanner config {config_id} has universe_kind='watchlist' "
-                        "but user_watchlist_id is null"
-                    )
+                    raise ValueError(f"Scanner config {config_id} has universe_kind='watchlist' " "but user_watchlist_id is null")
                 wl = UserWatchlistRepository(session).get_by_id_unscoped(config.user_watchlist_id)
                 if wl is None:
-                    raise ValueError(
-                        f"watchlist {config.user_watchlist_id} not found "
-                        f"(referenced by scanner config {config_id})"
-                    )
+                    raise ValueError(f"watchlist {config.user_watchlist_id} not found " f"(referenced by scanner config {config_id})")
                 watchlist_tickers = list(wl.tickers or [])
                 if not watchlist_tickers:
-                    raise ValueError(
-                        f"watchlist {config.user_watchlist_id} ({wl.name!r}) is empty"
-                    )
+                    raise ValueError(f"watchlist {config.user_watchlist_id} ({wl.name!r}) is empty")
 
             run = ScanRunRepository(session).create_pending(config_id)
             payload = {
@@ -306,9 +307,11 @@ class ScannerService:
                 # follow-up hook at the end of _run_to_completion can read
                 # them without reopening a session.
                 "auto_sop_top_n": getattr(config, "auto_sop_top_n", 0) or 0,
-                "auto_sop_use_personas": bool(
-                    getattr(config, "auto_sop_use_personas", False)
-                ),
+                "auto_sop_use_personas": bool(getattr(config, "auto_sop_use_personas", False)),
+                # Wave 4 — the cron/manual run path attributes any auto-SOP
+                # reports to the config's OWNING user so they show up scoped
+                # under that user (not as orphaned user_id=NULL rows).
+                "owner_user_id": config.user_id,
             }
             return payload, run.id
 
@@ -360,7 +363,10 @@ class ScannerService:
             return ScannerWeights()
 
     def _refresh_target_snapshots(
-        self, tickers: list[str], end_date: str, *,
+        self,
+        tickers: list[str],
+        end_date: str,
+        *,
         max_fetch_workers: int = 16,
         lookback_days: int = 14,
     ) -> dict[str, list]:
@@ -428,15 +434,22 @@ class ScannerService:
             logger.info(
                 "Target snapshots: fetched %d/%d tickers, upserted %d for %s",
                 sum(1 for v in targets.values() if v is not None),
-                len(tickers), upserted, end_date,
+                len(tickers),
+                upserted,
+                end_date,
             )
 
             return repo.list_for_tickers(
-                tickers, lookback_days=lookback_days, end_date=end_date,
+                tickers,
+                lookback_days=lookback_days,
+                end_date=end_date,
             )
 
     def _load_earnings_calendar(
-        self, tickers: list[str], end_date: str, *,
+        self,
+        tickers: list[str],
+        end_date: str,
+        *,
         lookahead_days: int = 5,
     ) -> dict[str, int] | None:
         """Pull the upcoming earnings calendar once and build a
@@ -467,12 +480,15 @@ class ScannerService:
         client = provider_factory()
         try:
             entries = client.get_earnings_calendar(
-                start_date=cal_start, end_date=cal_end,
+                start_date=cal_start,
+                end_date=cal_end,
             )
         except Exception as e:
             logger.warning(
                 "earnings calendar fetch failed (from=%s to=%s): %s",
-                cal_start, cal_end, e,
+                cal_start,
+                cal_end,
+                e,
             )
             return None
         finally:
@@ -484,7 +500,9 @@ class ScannerService:
         if not entries:
             logger.info(
                 "Earnings calendar: 0 events in %s..%s (universe %d tickers)",
-                cal_start, cal_end, len(tickers),
+                cal_start,
+                cal_end,
+                len(tickers),
             )
             return {}
 
@@ -509,14 +527,21 @@ class ScannerService:
                 per_ticker_min[sym] = days_to
 
         logger.info(
-            "Earnings calendar: %d universe tickers with events in next %dd "
-            "(window %s..%s)",
-            len(per_ticker_min), lookahead_days, cal_start, cal_end,
+            "Earnings calendar: %d universe tickers with events in next %dd " "(window %s..%s)",
+            len(per_ticker_min),
+            lookahead_days,
+            cal_start,
+            cal_end,
         )
         return per_ticker_min
 
     def _run_auto_sop_followup(
-        self, scan_run_id: int, top_n: int, use_personas: bool,
+        self,
+        scan_run_id: int,
+        top_n: int,
+        use_personas: bool,
+        *,
+        owner_user_id: int | None = None,
     ) -> None:
         """Phase 5E: after a scan completes, fire SOP on the top-N watchlist
         entries and dispatch one bundled email containing all reports.
@@ -536,16 +561,22 @@ class ScannerService:
 
         logger.info(
             "auto_sop: starting follow-up for scan_run=%s top_n=%d personas=%s",
-            scan_run_id, top_n, use_personas,
+            scan_run_id,
+            top_n,
+            use_personas,
         )
         with self._session_factory() as session:
             report_ids = run_auto_sop_for_scan(
-                session, scan_run_id=scan_run_id,
-                top_n=top_n, use_personas=use_personas,
+                session,
+                scan_run_id=scan_run_id,
+                top_n=top_n,
+                use_personas=use_personas,
+                owner_user_id=owner_user_id,
             )
         logger.info(
             "auto_sop: produced %d reports for scan_run=%s",
-            len(report_ids), scan_run_id,
+            len(report_ids),
+            scan_run_id,
         )
 
         if not report_ids:
@@ -562,7 +593,9 @@ class ScannerService:
             # this one's transaction.
             detached = [
                 _DetachedReport(
-                    id=r.id, ticker=r.ticker, scan_date=r.scan_date,
+                    id=r.id,
+                    ticker=r.ticker,
+                    scan_date=r.scan_date,
                     rendered_html=r.rendered_html,
                     report_markdown=r.report_markdown,
                 )
@@ -571,8 +604,8 @@ class ScannerService:
 
         if not detached:
             logger.warning(
-                "auto_sop: report_ids non-empty but reload returned nothing "
-                "(scan_run=%s)", scan_run_id,
+                "auto_sop: report_ids non-empty but reload returned nothing " "(scan_run=%s)",
+                scan_run_id,
             )
             return
 
@@ -584,7 +617,8 @@ class ScannerService:
             )
         except Exception:
             logger.exception(
-                "auto_sop: bundled dispatch failed for scan_run=%s", scan_run_id,
+                "auto_sop: bundled dispatch failed for scan_run=%s",
+                scan_run_id,
             )
 
     def _publish(self, run_id: int, event: dict) -> None:
@@ -594,11 +628,14 @@ class ScannerService:
     def _publish_progress(self, run_id: int, p: ScanProgress) -> None:
         if self._broadcaster is None:
             return
-        self._broadcaster.publish(run_id, {
-            "event": "progress",
-            "run_id": run_id,
-            **p.model_dump(),
-        })
+        self._broadcaster.publish(
+            run_id,
+            {
+                "event": "progress",
+                "run_id": run_id,
+                **p.model_dump(),
+            },
+        )
 
 
 class _DetachedReport:
@@ -609,8 +646,13 @@ class _DetachedReport:
     __slots__ = ("id", "ticker", "scan_date", "rendered_html", "report_markdown")
 
     def __init__(
-        self, *, id: int, ticker: str, scan_date: str,
-        rendered_html: str | None, report_markdown: str | None,
+        self,
+        *,
+        id: int,
+        ticker: str,
+        scan_date: str,
+        rendered_html: str | None,
+        report_markdown: str | None,
     ) -> None:
         self.id = id
         self.ticker = ticker

@@ -1,16 +1,22 @@
 """Scanner REST API.
 
 Endpoints:
-    GET    /scanner/configs                  list all configs
-    POST   /scanner/configs                  create + register cron
-    GET    /scanner/configs/{id}             get one
-    PATCH  /scanner/configs/{id}             update + reschedule cron
-    DELETE /scanner/configs/{id}             delete + unregister cron
-    POST   /scanner/configs/{id}/run         trigger manual scan -> {run_id}
-    GET    /scanner/runs/{run_id}            run status summary
-    GET    /scanner/runs/{run_id}/entries    full ranked watchlist for run
-    GET    /scanner/runs/{run_id}/quotes     live quotes for that run's tickers
+    GET    /scanner/configs                  list caller's configs
+    POST   /scanner/configs                  create + register cron (owned by caller)
+    GET    /scanner/configs/{id}             get one (404 if not owned by caller)
+    PATCH  /scanner/configs/{id}             update + reschedule cron (scoped)
+    DELETE /scanner/configs/{id}             delete + unregister cron (scoped)
+    POST   /scanner/configs/{id}/run         trigger manual scan -> {run_id} (scoped)
+    GET    /scanner/runs/{run_id}            run status summary (scoped via config owner)
+    GET    /scanner/runs/{run_id}/entries    full ranked watchlist for run (scoped)
+    GET    /scanner/runs/{run_id}/quotes     live quotes for that run's tickers (scoped)
     GET    /scanner/runs/{run_id}/stream     SSE proxy of live progress
+
+Wave 4 (Task 4.2): all config CRUD + run endpoints require a Bearer token
+and are scoped to the caller's ``user_id``. Scan-run reads are scoped via
+the parent config's ownership (ScanRun has no user_id column; ownership is
+inferred through config_id → ScannerConfig.user_id). WatchlistEntry is
+scoped the same way (via scan_run → config → user_id).
 
 The ``/run`` endpoint dispatches the scan onto a background thread and returns
 ``run_id`` immediately; clients then subscribe to ``/runs/{run_id}/stream``
@@ -28,7 +34,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
+from app.backend.database.models import User
 from app.backend.models.scanner_schemas import (
     DetectorMetadataResponse,
     QuoteResponse,
@@ -75,17 +83,23 @@ def list_detectors() -> list[DetectorMetadataResponse]:
         if meta is None:
             # Detector with no metadata entry — fall back to bare name so the
             # endpoint never breaks if a detector ships before its metadata.
-            out.append(DetectorMetadataResponse(
-                name=name, label=name, default_mult=1.0,
-                description="(no description registered)",
-            ))
+            out.append(
+                DetectorMetadataResponse(
+                    name=name,
+                    label=name,
+                    default_mult=1.0,
+                    description="(no description registered)",
+                )
+            )
         else:
-            out.append(DetectorMetadataResponse(
-                name=name,
-                label=meta["label"],
-                default_mult=float(meta["default_mult"]),
-                description=meta["description"],
-            ))
+            out.append(
+                DetectorMetadataResponse(
+                    name=name,
+                    label=meta["label"],
+                    default_mult=float(meta["default_mult"]),
+                    description=meta["description"],
+                )
+            )
     return out
 
 
@@ -95,8 +109,11 @@ def list_detectors() -> list[DetectorMetadataResponse]:
 
 
 @router.get("/configs", response_model=list[ScannerConfigResponse])
-def list_configs(db: Session = Depends(get_db)) -> list[ScannerConfigResponse]:
-    rows = ScannerConfigRepository(db).list_all()
+def list_configs(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[ScannerConfigResponse]:
+    rows = ScannerConfigRepository(db).list_for_user(user_id=current_user.id)
     return [ScannerConfigResponse.model_validate(r) for r in rows]
 
 
@@ -109,6 +126,7 @@ def create_config(
     body: ScannerConfigCreateRequest,
     db: Session = Depends(get_db),
     scheduler: SchedulerService = Depends(get_scheduler_service),
+    current_user: User = Depends(get_current_user),
 ) -> ScannerConfigResponse:
     _validate_cron(body.cron_expr)
     cfg = ScannerConfigRepository(db).create(
@@ -122,6 +140,7 @@ def create_config(
         user_watchlist_id=body.user_watchlist_id,
         auto_sop_top_n=body.auto_sop_top_n,
         auto_sop_use_personas=body.auto_sop_use_personas,
+        user_id=current_user.id,
     )
     try:
         scheduler.register_config(cfg)
@@ -135,8 +154,9 @@ def create_config(
 def get_config(
     config_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ScannerConfigResponse:
-    cfg = ScannerConfigRepository(db).get_by_id(config_id)
+    cfg = ScannerConfigRepository(db).get_by_id(config_id, user_id=current_user.id)
     if not cfg:
         raise HTTPException(404, f"No scanner config with id {config_id}")
     return ScannerConfigResponse.model_validate(cfg)
@@ -148,6 +168,7 @@ def update_config(
     body: ScannerConfigUpdateRequest,
     db: Session = Depends(get_db),
     scheduler: SchedulerService = Depends(get_scheduler_service),
+    current_user: User = Depends(get_current_user),
 ) -> ScannerConfigResponse:
     if body.cron_expr is not None:
         _validate_cron(body.cron_expr)
@@ -159,7 +180,7 @@ def update_config(
     # (the repo uses this to know whether to overwrite an existing FK).
     if "user_watchlist_id" in updates:
         updates["_set_watchlist_id"] = True
-    cfg = ScannerConfigRepository(db).update(config_id, **updates)
+    cfg = ScannerConfigRepository(db).update(config_id, user_id=current_user.id, **updates)
     if not cfg:
         raise HTTPException(404, f"No scanner config with id {config_id}")
     try:
@@ -175,8 +196,9 @@ def delete_config(
     config_id: int,
     db: Session = Depends(get_db),
     scheduler: SchedulerService = Depends(get_scheduler_service),
+    current_user: User = Depends(get_current_user),
 ):
-    if not ScannerConfigRepository(db).delete(config_id):
+    if not ScannerConfigRepository(db).delete(config_id, user_id=current_user.id):
         raise HTTPException(404, f"No scanner config with id {config_id}")
     scheduler.unregister_config(config_id)
     return Response(status_code=204)
@@ -192,6 +214,7 @@ def run_config_now(
     config_id: int,
     db: Session = Depends(get_db),
     scheduler: SchedulerService = Depends(get_scheduler_service),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """Trigger a manual scan and return ``{run_id}`` immediately.
 
@@ -200,7 +223,7 @@ def run_config_now(
     the actual scan on a daemon thread. Clients should subscribe to
     ``/scanner/runs/{run_id}/stream`` for live progress.
     """
-    if not ScannerConfigRepository(db).get_by_id(config_id):
+    if not ScannerConfigRepository(db).get_by_id(config_id, user_id=current_user.id):
         raise HTTPException(404, f"No scanner config with id {config_id}")
     try:
         run_id = scheduler.run_now(config_id)
@@ -211,16 +234,24 @@ def run_config_now(
 
 
 @router.get("/runs/{run_id}", response_model=ScanRunSummary)
-def get_run(run_id: int, db: Session = Depends(get_db)) -> ScanRunSummary:
-    run = ScanRunRepository(db).get_by_id(run_id)
+def get_run(
+    run_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ScanRunSummary:
+    run = ScanRunRepository(db).get_by_id_for_user(run_id, user_id=current_user.id)
     if not run:
         raise HTTPException(404, f"No scan run with id {run_id}")
     return ScanRunSummary.model_validate(run)
 
 
 @router.get("/runs/{run_id}/entries", response_model=ScanRunDetailResponse)
-def get_run_entries(run_id: int, db: Session = Depends(get_db)) -> ScanRunDetailResponse:
-    run = ScanRunRepository(db).get_by_id(run_id)
+def get_run_entries(
+    run_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ScanRunDetailResponse:
+    run = ScanRunRepository(db).get_by_id_for_user(run_id, user_id=current_user.id)
     if not run:
         raise HTTPException(404, f"No scan run with id {run_id}")
     entries = WatchlistEntryRepository(db).list_for_run(run_id)
@@ -238,7 +269,11 @@ def get_run_entries(run_id: int, db: Session = Depends(get_db)) -> ScanRunDetail
 
 
 @router.get("/runs/{run_id}/quotes", response_model=dict[str, QuoteResponse | None])
-def get_run_quotes(run_id: int, db: Session = Depends(get_db)) -> dict[str, QuoteResponse | None]:
+def get_run_quotes(
+    run_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, QuoteResponse | None]:
     """Batch-fetch live Finnhub /quote for every ticker in this run's watchlist.
 
     Returns a dict keyed by ticker; value is ``None`` for tickers whose quote
@@ -247,7 +282,7 @@ def get_run_quotes(run_id: int, db: Session = Depends(get_db)) -> dict[str, Quot
     Finnhub's global rate-limit bucket (~57 req/min), so Top-N=20 takes
     roughly 20-25 seconds end-to-end.
     """
-    run = ScanRunRepository(db).get_by_id(run_id)
+    run = ScanRunRepository(db).get_by_id_for_user(run_id, user_id=current_user.id)
     if not run:
         raise HTTPException(404, f"No scan run with id {run_id}")
 

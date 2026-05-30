@@ -24,8 +24,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
-from app.backend.database.models import Base
+from app.backend.database.models import Base, User
 from app.backend.repositories.scanner_repository import (
     ScanRunRepository,
     ScannerConfigRepository,
@@ -72,6 +73,10 @@ def setup():
     # Fresh broadcaster per test so subscriber state doesn't leak.
     fake_broadcaster = ScanBroadcaster()
 
+    # Fake authenticated user injected into every scanner route that calls
+    # get_current_user. id=1 so repo scoping filters ScannerConfig.user_id == 1.
+    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
+
     # FastAPI needs the override to be a generator function itself (so it can
     # iterate yield/finally). A lambda wrapping a generator function returns
     # the generator OBJECT — which FastAPI then injects raw, breaking
@@ -88,6 +93,7 @@ def setup():
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_scheduler_service] = lambda: fake_scheduler
     app.dependency_overrides[get_broadcaster] = lambda: fake_broadcaster
+    app.dependency_overrides[get_current_user] = lambda: _fake_user
 
     client = TestClient(app)
     yield client, SessionLocal, fake_scheduler, fake_broadcaster
@@ -163,8 +169,9 @@ class TestConfigsCRUD:
     def test_list_all(self, setup):
         client, SessionLocal, _, _ = setup
         with SessionLocal() as s:
-            ScannerConfigRepository(s).create(name="a", universe_kind="sp500")
-            ScannerConfigRepository(s).create(name="b", universe_kind="nasdaq100")
+            # user_id=1 matches the fake authenticated user in the route.
+            ScannerConfigRepository(s).create(name="a", universe_kind="sp500", user_id=1)
+            ScannerConfigRepository(s).create(name="b", universe_kind="nasdaq100", user_id=1)
         r = client.get("/scanner/configs")
         assert r.status_code == 200
         assert len(r.json()) == 2
@@ -172,7 +179,7 @@ class TestConfigsCRUD:
     def test_update_reschedules(self, setup):
         client, SessionLocal, scheduler, _ = setup
         with SessionLocal() as s:
-            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500")
+            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500", user_id=1)
             cid = cfg.id
         r = client.patch(f"/scanner/configs/{cid}", json={"name": "renamed", "top_n": 30})
         assert r.status_code == 200
@@ -183,7 +190,7 @@ class TestConfigsCRUD:
     def test_delete_unregisters(self, setup):
         client, SessionLocal, scheduler, _ = setup
         with SessionLocal() as s:
-            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500")
+            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500", user_id=1)
             cid = cfg.id
         r = client.delete(f"/scanner/configs/{cid}")
         assert r.status_code == 204
@@ -223,7 +230,7 @@ class TestRunNow:
     def test_run_dispatches_and_returns_run_id(self, setup):
         client, SessionLocal, scheduler, _ = setup
         with SessionLocal() as s:
-            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500")
+            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500", user_id=1)
             cid = cfg.id
         # Configure stub to return a fake run_id quickly.
         scheduler.run_now.return_value = 42
@@ -245,7 +252,7 @@ class TestRunStatus:
     def test_get_run_and_entries(self, setup):
         client, SessionLocal, _, _ = setup
         with SessionLocal() as s:
-            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500")
+            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500", user_id=1)
             run = ScanRunRepository(s).create_pending(cfg.id)
             ScanRunRepository(s).mark_running(run.id, universe_size=10)
             WatchlistEntryRepository(s).bulk_insert(run.id, [
@@ -284,7 +291,7 @@ class TestRunQuotes:
 
     def _seed_run(self, SessionLocal, tickers: list[str]) -> int:
         with SessionLocal() as s:
-            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500")
+            cfg = ScannerConfigRepository(s).create(name="x", universe_kind="sp500", user_id=1)
             run = ScanRunRepository(s).create_pending(cfg.id)
             ScanRunRepository(s).mark_running(run.id, universe_size=len(tickers))
             rows = [

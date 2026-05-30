@@ -31,8 +31,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
-from app.backend.database.models import Base
+from app.backend.database.models import Base, User
 from app.backend.models.scanner_schemas import ScannerConfigCreateRequest
 from app.backend.repositories.watchlist_repository import UserWatchlistRepository
 from app.backend.services.scheduler_service import get_scheduler_service
@@ -86,8 +87,12 @@ def client():
     fake_scheduler.reschedule_config = MagicMock()
     fake_scheduler.unregister_config = MagicMock()
 
+    # Fake authenticated user (id=1 matches the watchlist seeded with user_id=1).
+    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_scheduler_service] = lambda: fake_scheduler
+    app.dependency_overrides[get_current_user] = lambda: _fake_user
 
     # Expose the session factory so tests can seed watchlist rows.
     client_obj = TestClient(app)

@@ -41,6 +41,7 @@ def db_session():
             universe="nasdaq100",
             model_name="gpt-4.1",
             model_provider="OpenAI",
+            user_id=1,
         )
     )
     session.commit()
@@ -75,6 +76,7 @@ class TestPipelineRunLifecycle:
             selected_analysts=["scanner_signal", "fundamentals_analyst"],
             top_n=5,
             universe="nasdaq100",
+            user_id=1,
         )
         assert run.id == "abc123"
         assert run.status == "PENDING"
@@ -90,13 +92,13 @@ class TestPipelineRunLifecycle:
         assert run.completed_at is None
 
     def test_mark_running_sets_started_at(self, runs):
-        runs.create_pending(run_id="r1", scan_date="2024-08-01", template="quick", selected_analysts=["scanner_signal"], top_n=1, universe="nasdaq100")
+        runs.create_pending(run_id="r1", scan_date="2024-08-01", template="quick", selected_analysts=["scanner_signal"], top_n=1, universe="nasdaq100", user_id=1)
         updated = runs.mark_running("r1")
         assert updated.status == "RUNNING"
         assert updated.started_at is not None
 
     def test_mark_complete_writes_blobs_and_duration(self, runs):
-        runs.create_pending(run_id="r1", scan_date="2024-08-01", template="quick", selected_analysts=["scanner_signal"], top_n=2, universe="nasdaq100")
+        runs.create_pending(run_id="r1", scan_date="2024-08-01", template="quick", selected_analysts=["scanner_signal"], top_n=2, universe="nasdaq100", user_id=1)
         runs.mark_running("r1")
         watchlist = [{"ticker": "AAPL", "rank": 1, "composite_score": 87.5}]
         decisions = {"AAPL": {"action": "buy", "quantity": 10}}
@@ -117,7 +119,7 @@ class TestPipelineRunLifecycle:
         assert updated.analyst_signals_json == signals
 
     def test_mark_error_truncates_long_messages(self, runs):
-        runs.create_pending(run_id="r1", scan_date="2024-08-01", template="quick", selected_analysts=["scanner_signal"], top_n=1, universe="nasdaq100")
+        runs.create_pending(run_id="r1", scan_date="2024-08-01", template="quick", selected_analysts=["scanner_signal"], top_n=1, universe="nasdaq100", user_id=1)
         big = "x" * 10_000
         updated = runs.mark_error("r1", big)
         assert updated.status == "ERROR"
@@ -143,7 +145,7 @@ class TestPipelineRunListing:
 
         base = datetime(2024, 8, 1, 10, 0, 0)
         for i, rid in enumerate(["a", "b", "c"]):
-            runs.create_pending(run_id=rid, scan_date="2024-08-01", template="quick", selected_analysts=["scanner_signal"], top_n=1, universe="nasdaq100")
+            runs.create_pending(run_id=rid, scan_date="2024-08-01", template="quick", selected_analysts=["scanner_signal"], top_n=1, universe="nasdaq100", user_id=1)
             db_session.query(PipelineRun).filter(PipelineRun.id == rid).update({"created_at": base + timedelta(seconds=i)})
         db_session.commit()
         listed = runs.list_runs()
@@ -152,14 +154,14 @@ class TestPipelineRunListing:
 
     def test_filter_by_template(self, runs):
         for i, tpl in enumerate(["quick", "balanced", "quick"]):
-            runs.create_pending(run_id=f"r{i}", scan_date="2024-08-01", template=tpl, selected_analysts=["scanner_signal"], top_n=1, universe="nasdaq100")
+            runs.create_pending(run_id=f"r{i}", scan_date="2024-08-01", template=tpl, selected_analysts=["scanner_signal"], top_n=1, universe="nasdaq100", user_id=1)
         quick_runs = runs.list_runs(template="quick")
         assert len(quick_runs) == 2
         assert all(r.template == "quick" for r in quick_runs)
 
     def test_filter_by_status(self, runs):
-        runs.create_pending(run_id="r1", scan_date="2024-08-01", template="quick", selected_analysts=[], top_n=1, universe="nasdaq100")
-        runs.create_pending(run_id="r2", scan_date="2024-08-01", template="quick", selected_analysts=[], top_n=1, universe="nasdaq100")
+        runs.create_pending(run_id="r1", scan_date="2024-08-01", template="quick", selected_analysts=[], top_n=1, universe="nasdaq100", user_id=1)
+        runs.create_pending(run_id="r2", scan_date="2024-08-01", template="quick", selected_analysts=[], top_n=1, universe="nasdaq100", user_id=1)
         runs.mark_complete("r1", watchlist=[], agent_decisions={}, analyst_signals={}, duration_seconds=1.0)
         complete = runs.list_runs(status="COMPLETE")
         pending = runs.list_runs(status="PENDING")
@@ -168,13 +170,13 @@ class TestPipelineRunListing:
 
     def test_filter_by_since_scan_date(self, runs):
         for sd, rid in [("2024-07-01", "old"), ("2024-08-01", "new")]:
-            runs.create_pending(run_id=rid, scan_date=sd, template="quick", selected_analysts=[], top_n=1, universe="nasdaq100")
+            runs.create_pending(run_id=rid, scan_date=sd, template="quick", selected_analysts=[], top_n=1, universe="nasdaq100", user_id=1)
         recent = runs.list_runs(since="2024-08-01")
         assert [r.id for r in recent] == ["new"]
 
     def test_limit_caps_results(self, runs):
         for i in range(5):
-            runs.create_pending(run_id=f"r{i}", scan_date="2024-08-01", template="quick", selected_analysts=[], top_n=1, universe="nasdaq100")
+            runs.create_pending(run_id=f"r{i}", scan_date="2024-08-01", template="quick", selected_analysts=[], top_n=1, universe="nasdaq100", user_id=1)
         assert len(runs.list_runs(limit=3)) == 3
 
 

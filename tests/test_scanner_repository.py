@@ -62,7 +62,7 @@ def entries(db_session):
 
 class TestScannerConfigRepository:
     def test_create_and_get(self, configs):
-        config = configs.create(name="nightly_sp500", universe_kind="sp500")
+        config = configs.create(name="nightly_sp500", universe_kind="sp500", user_id=1)
         assert config.id is not None
         assert config.name == "nightly_sp500"
         assert config.cron_expr == "0 21 * * 1-5"
@@ -74,21 +74,21 @@ class TestScannerConfigRepository:
         assert fetched.id == config.id
 
     def test_list_all_orders_by_recency(self, configs):
-        a = configs.create(name="a", universe_kind="sp500")
-        b = configs.create(name="b", universe_kind="russell3000")
+        a = configs.create(name="a", universe_kind="sp500", user_id=1)
+        b = configs.create(name="b", universe_kind="russell3000", user_id=1)
         ids = [c.id for c in configs.list_all()]
         # Both should be present; ordering is by updated_at desc then created_at desc
         assert set(ids) == {a.id, b.id}
 
     def test_list_enabled_only(self, configs):
-        a = configs.create(name="enabled", universe_kind="sp500", is_enabled=True)
-        b = configs.create(name="disabled", universe_kind="sp500", is_enabled=False)
+        a = configs.create(name="enabled", universe_kind="sp500", is_enabled=True, user_id=1)
+        b = configs.create(name="disabled", universe_kind="sp500", is_enabled=False, user_id=1)
         enabled_ids = [c.id for c in configs.list_all(enabled_only=True)]
         assert a.id in enabled_ids
         assert b.id not in enabled_ids
 
     def test_update_changes_fields(self, configs):
-        config = configs.create(name="orig", universe_kind="sp500")
+        config = configs.create(name="orig", universe_kind="sp500", user_id=1)
         updated = configs.update(config.id, name="renamed", top_n=50)
         assert updated.name == "renamed"
         assert updated.top_n == 50
@@ -99,7 +99,7 @@ class TestScannerConfigRepository:
         assert configs.update(9999, name="nope") is None
 
     def test_delete(self, configs):
-        config = configs.create(name="to_delete", universe_kind="sp500")
+        config = configs.create(name="to_delete", universe_kind="sp500", user_id=1)
         assert configs.delete(config.id) is True
         assert configs.get_by_id(config.id) is None
         # Second delete is a no-op
@@ -110,6 +110,7 @@ class TestScannerConfigRepository:
             name="my_watchlist",
             universe_kind="custom",
             universe_tickers=["AAPL", "MSFT"],
+            user_id=1,
         )
         assert config.universe_tickers == ["AAPL", "MSFT"]
 
@@ -121,7 +122,7 @@ class TestScannerConfigRepository:
 
 class TestScanRunRepository:
     def test_lifecycle_pending_running_complete(self, configs, runs):
-        cfg = configs.create(name="cfg", universe_kind="sp500")
+        cfg = configs.create(name="cfg", universe_kind="sp500", user_id=1)
 
         run = runs.create_pending(cfg.id)
         assert run.status == "PENDING"
@@ -139,7 +140,7 @@ class TestScanRunRepository:
         assert complete.completed_at is not None
 
     def test_mark_error_records_message(self, configs, runs):
-        cfg = configs.create(name="cfg", universe_kind="sp500")
+        cfg = configs.create(name="cfg", universe_kind="sp500", user_id=1)
         run = runs.create_pending(cfg.id)
         runs.mark_error(run.id, "FD 429 storm")
         err = runs.get_by_id(run.id)
@@ -148,7 +149,7 @@ class TestScanRunRepository:
         assert err.completed_at is not None
 
     def test_latest_for_config(self, configs, runs):
-        cfg = configs.create(name="cfg", universe_kind="sp500")
+        cfg = configs.create(name="cfg", universe_kind="sp500", user_id=1)
         r1 = runs.create_pending(cfg.id)
         r2 = runs.create_pending(cfg.id)
         latest = runs.get_latest_for_config(cfg.id)
@@ -156,7 +157,7 @@ class TestScanRunRepository:
         assert latest.id in {r1.id, r2.id}
 
     def test_list_running_only_returns_in_progress(self, configs, runs):
-        cfg = configs.create(name="cfg", universe_kind="sp500")
+        cfg = configs.create(name="cfg", universe_kind="sp500", user_id=1)
         r1 = runs.create_pending(cfg.id)
         r2 = runs.create_pending(cfg.id)
         runs.mark_running(r1.id)
@@ -174,7 +175,7 @@ class TestScanRunRepository:
 
 class TestWatchlistEntryRepository:
     def test_bulk_insert_and_list(self, configs, runs, entries):
-        cfg = configs.create(name="cfg", universe_kind="sp500")
+        cfg = configs.create(name="cfg", universe_kind="sp500", user_id=1)
         run = runs.create_pending(cfg.id)
 
         payload = [
@@ -210,7 +211,7 @@ class TestWatchlistEntryRepository:
         assert listed[0].triggers[0]["detector"] == "earnings_surprise"
 
     def test_empty_run_returns_no_entries(self, configs, runs, entries):
-        cfg = configs.create(name="cfg", universe_kind="sp500")
+        cfg = configs.create(name="cfg", universe_kind="sp500", user_id=1)
         run = runs.create_pending(cfg.id)
         assert entries.list_for_run(run.id) == []
 

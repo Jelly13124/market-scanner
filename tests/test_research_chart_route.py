@@ -65,6 +65,7 @@ def seeded_report(db_session):
             report_markdown="# NVDA",
             rendered_html="<html></html>",
             use_personas=False,
+            user_id=1,
         )
         s.add(row)
         s.commit()

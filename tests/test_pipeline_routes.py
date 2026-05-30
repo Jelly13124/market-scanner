@@ -69,6 +69,7 @@ def setup():
             universe="nasdaq100",
             model_name="gpt-4.1",
             model_provider="OpenAI",
+            user_id=1,
         )
     )
     s.commit()

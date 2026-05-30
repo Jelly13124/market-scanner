@@ -46,7 +46,7 @@ def _seed_scan_with_entries(session, *, n: int = 5) -> int:
     Tickers labeled T0, T1, ... TN-1 with rank == index+1 so the top-N
     slice is deterministic.
     """
-    cfg = ScannerConfig(name="t", universe_kind="sp500")
+    cfg = ScannerConfig(name="t", universe_kind="sp500", user_id=1)
     session.add(cfg)
     session.commit()
     run = ScanRun(config_id=cfg.id, status="COMPLETE")
@@ -116,7 +116,7 @@ class TestTopNLimit:
 
         result = run_auto_sop_for_scan(
             db_session, scan_run_id=scan_run_id,
-            top_n=3, use_personas=False,
+            top_n=3, use_personas=False, owner_user_id=1,
         )
         assert len(result) == 3
         # run_sop called exactly 3 times on the top-3 tickers by rank
@@ -150,7 +150,7 @@ class TestFailedSopDoesNotAbortLoop:
 
         result = run_auto_sop_for_scan(
             db_session, scan_run_id=scan_run_id,
-            top_n=3, use_personas=False,
+            top_n=3, use_personas=False, owner_user_id=1,
         )
         # T0 and T2 succeed, T1 fails -> 2 reports persisted
         assert len(result) == 2
@@ -186,7 +186,7 @@ class TestBundledDispatchFiresOnce:
         svc = ScannerService(session_factory=factory)
         # Call the hook directly — bypasses the scan-pipeline machinery.
         svc._run_auto_sop_followup(
-            scan_run_id=scan_run_id, top_n=2, use_personas=False,
+            scan_run_id=scan_run_id, top_n=2, use_personas=False, owner_user_id=1,
         )
 
         # One bundled dispatch call total

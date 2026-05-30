@@ -45,6 +45,7 @@ def seeded_run(session_factory):
             universe="nasdaq100", status="COMPLETE", duration_seconds=10.0,
             agent_decisions_json={"AAPL": {"action": "buy", "quantity": 1}},
             analyst_signals_json={},
+            user_id=1,
         )
         s.add(run)
         s.commit()

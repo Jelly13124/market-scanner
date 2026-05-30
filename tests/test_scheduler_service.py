@@ -75,9 +75,9 @@ class TestLifecycle:
 
     def test_start_registers_enabled_configs(self, svc, session_factory):
         with session_factory() as session:
-            ScannerConfigRepository(session).create(name="a", universe_kind="sp500", is_enabled=True)
-            ScannerConfigRepository(session).create(name="b", universe_kind="sp500", is_enabled=False)
-            ScannerConfigRepository(session).create(name="c", universe_kind="sp500", is_enabled=True)
+            ScannerConfigRepository(session).create(name="a", universe_kind="sp500", is_enabled=True, user_id=1)
+            ScannerConfigRepository(session).create(name="b", universe_kind="sp500", is_enabled=False, user_id=1)
+            ScannerConfigRepository(session).create(name="c", universe_kind="sp500", is_enabled=True, user_id=1)
         svc.start()
         # 2 enabled scanner configs + 1 singleton daily pipeline job + 1 daily research job + 1 screener snapshot job + 1 screener preset job
         assert svc._scheduler.add_job.call_count == 6
@@ -112,7 +112,7 @@ class TestRegister:
     def test_register_adds_job(self, svc, session_factory):
         with session_factory() as session:
             cfg = ScannerConfigRepository(session).create(
-                name="x", universe_kind="sp500", cron_expr="0 21 * * 1-5",
+                name="x", universe_kind="sp500", cron_expr="0 21 * * 1-5", user_id=1,
             )
         svc.register_config(cfg)
         assert svc._scheduler.add_job.called
@@ -125,7 +125,7 @@ class TestRegister:
     def test_register_disabled_unregisters(self, svc, session_factory):
         with session_factory() as session:
             cfg = ScannerConfigRepository(session).create(
-                name="x", universe_kind="sp500", is_enabled=False,
+                name="x", universe_kind="sp500", is_enabled=False, user_id=1,
             )
         svc.register_config(cfg)
         # Disabled config -> should call remove_job (idempotently), not add_job.
@@ -135,7 +135,7 @@ class TestRegister:
     def test_invalid_cron_raises(self, svc, session_factory):
         with session_factory() as session:
             cfg = ScannerConfigRepository(session).create(
-                name="x", universe_kind="sp500", cron_expr="this is not cron",
+                name="x", universe_kind="sp500", cron_expr="this is not cron", user_id=1,
             )
         with pytest.raises(ValueError, match="Invalid cron"):
             svc.register_config(cfg)
@@ -149,7 +149,7 @@ class TestRegister:
     def test_reschedule_is_register(self, svc, session_factory):
         with session_factory() as session:
             cfg = ScannerConfigRepository(session).create(
-                name="x", universe_kind="sp500", cron_expr="0 21 * * 1-5",
+                name="x", universe_kind="sp500", cron_expr="0 21 * * 1-5", user_id=1,
             )
         svc.reschedule_config(cfg)
         assert svc._scheduler.add_job.called
@@ -217,12 +217,16 @@ class TestTimezone:
 @pytest.fixture()
 def schedule_singleton(session_factory):
     """Seed the singleton pipeline_schedule row that production normally
-    gets from the Alembic migration."""
-    from app.backend.database.models import PipelineSchedule
+    gets from the Alembic migration. Also seeds a superuser (id=1) so the
+    cron's seed-owner resolution stamps the produced PipelineRun (required
+    now that pipeline_runs.user_id is NOT NULL)."""
+    from app.backend.database.models import PipelineSchedule, User
     with session_factory() as session:
+        session.add(User(id=1, email="owner@local", is_active=True, is_superuser=True))
         session.add(PipelineSchedule(
             id=1, enabled=False, top_n=5, template="balanced",
             universe="nasdaq100", model_name="gpt-4.1", model_provider="OpenAI",
+            user_id=1,
         ))
         session.commit()
     return session_factory
@@ -248,7 +252,7 @@ class TestDailyPipelineJob:
             session.add(PipelineSchedule(
                 id=1, enabled=True, top_n=5, template="bogus_template",
                 universe="nasdaq100", model_name="gpt-4.1",
-                model_provider="OpenAI",
+                model_provider="OpenAI", user_id=1,
             ))
             session.commit()
         with patch("v2.pipeline.run_pipeline") as mock_run:

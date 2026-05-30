@@ -53,6 +53,7 @@ def config(session_factory):
             universe_kind="custom",
             universe_tickers=["AAPL", "MSFT", "NVDA"],
             top_n=2,
+            user_id=1,
         )
         return cfg.id
 
@@ -194,6 +195,7 @@ class TestScannerServiceExecute:
                 universe_kind="custom",
                 universe_tickers=["AAPL"],
                 top_n=1,
+                user_id=1,
                 weights={
                     "enabled_detectors": ["earnings_surprise", "intraday_move"],
                 },

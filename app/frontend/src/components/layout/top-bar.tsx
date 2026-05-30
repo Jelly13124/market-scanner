@@ -1,3 +1,4 @@
+import { UserMenu } from '@/components/auth/user-menu';
 import { LanguageToggle } from '@/components/language-toggle';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -88,6 +89,9 @@ export function TopBar({
       >
         <Settings size={16} />
       </Button>
+
+      {/* Account menu (Wave 7 multi-tenant auth) */}
+      <UserMenu />
     </div>
   );
 } 

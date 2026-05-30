@@ -2,6 +2,7 @@
 // Mirrors the shape of services/pipeline-service.ts.
 
 import {
+  LiveQuoteRow,
   TickerSearchResult,
   UserWatchlist,
   UserWatchlistCreate,
@@ -85,6 +86,15 @@ export const watchlistService = {
       { method: 'DELETE' },
     );
     if (!r.ok) throw await _toError(r, 'removeTicker');
+    return r.json();
+  },
+
+  /** Live per-ticker market data for a watchlist. On-demand yfinance batch
+   *  fetch — slow (a few seconds), so callers should show a loading state.
+   *  Auth-scoped (token attached by the global fetch interceptor). */
+  async getWatchlistQuotes(id: number): Promise<LiveQuoteRow[]> {
+    const r = await fetch(`${API_BASE_URL}/watchlists/${id}/quotes`);
+    if (!r.ok) throw await _toError(r, 'getWatchlistQuotes');
     return r.json();
   },
 };

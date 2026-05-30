@@ -3,11 +3,12 @@ import { LabPanel } from '@/components/panels/lab/lab-panel';
 import { ReportsPanel } from '@/components/panels/reports/reports-panel';
 import { ScannerPanel } from '@/components/panels/scanner/scanner-panel';
 import { ScreenerTab } from '@/components/panels/screener/screener-tab';
+import { WatchlistTab } from '@/components/panels/watchlist/watchlist-tab';
 import { Settings } from '@/components/settings/settings';
 import { ReactNode, createElement } from 'react';
 
 export interface TabData {
-  type: 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports';
+  type: 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist';
   title: string;
   metadata?: Record<string, any>;
 }
@@ -34,6 +35,9 @@ export class TabService {
 
       case 'reports':
         return createElement(ReportsPanel, {});
+
+      case 'watchlist':
+        return createElement(WatchlistTab, {});
 
       default:
         throw new Error(`Unsupported tab type: ${(tabData as any).type}`);
@@ -99,6 +103,15 @@ export class TabService {
     };
   }
 
+  /** Open / focus the single Watchlist tab. */
+  static createWatchlistTab(): TabData & { content: ReactNode } {
+    return {
+      type: 'watchlist',
+      title: 'Watchlist',
+      content: TabService.createTabContent({ type: 'watchlist', title: 'Watchlist' }),
+    };
+  }
+
   // Restore tab content for persisted tabs (used when loading from localStorage)
   static restoreTabContent(tabData: TabData): ReactNode {
     return TabService.createTabContent(tabData);
@@ -124,6 +137,9 @@ export class TabService {
 
       case 'reports':
         return TabService.createReportsTab();
+
+      case 'watchlist':
+        return TabService.createWatchlistTab();
 
       default:
         throw new Error(`Cannot restore unsupported tab type: ${(savedTab as any).type}`);

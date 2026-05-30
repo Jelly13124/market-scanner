@@ -478,5 +478,39 @@
     "colId": "ID",
     "colTicker": "Ticker",
     "colDate": "Date"
+  },
+  "watchlist": {
+    "tab": {
+      "title": "Watchlist"
+    },
+    "openTooltip": "Open live watchlist",
+    "pickList": "Pick a watchlist",
+    "tickerCount_one": "{{count}} ticker",
+    "tickerCount_other": "{{count}} tickers",
+    "loadingQuotes": "Loading live data…",
+    "empty": "This list has no stocks yet. Add some from the Screener or sidebar.",
+    "noQuotes": "No live data yet.",
+    "loadListsFailed": "Failed to load watchlists",
+    "quotesFailed": "Failed to load live quotes",
+    "removeFailed": "Failed to remove {{ticker}}",
+    "refresh": {
+      "button": "Refresh",
+      "tooltip": "Re-fetch live quotes"
+    },
+    "col": {
+      "ticker": "Ticker",
+      "price": "Price",
+      "change": "Chg %",
+      "volume": "Vol",
+      "range": "Day range",
+      "actions": "Actions"
+    },
+    "analyze": {
+      "button": "Analyze",
+      "tooltip": "Analyze this stock (deep SOP report)"
+    },
+    "remove": {
+      "tooltip": "Remove from list"
+    }
   }
 }

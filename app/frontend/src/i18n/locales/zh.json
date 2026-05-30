@@ -478,5 +478,39 @@
     "colId": "编号",
     "colTicker": "代码",
     "colDate": "日期"
+  },
+  "watchlist": {
+    "tab": {
+      "title": "自选清单"
+    },
+    "openTooltip": "打开实时自选清单",
+    "pickList": "选择清单",
+    "tickerCount_one": "{{count}} 只",
+    "tickerCount_other": "{{count}} 只",
+    "loadingQuotes": "加载实时数据…",
+    "empty": "此清单暂无股票，去 Screener 或侧边栏添加",
+    "noQuotes": "暂无实时数据。",
+    "loadListsFailed": "加载自选清单失败",
+    "quotesFailed": "加载实时行情失败",
+    "removeFailed": "移除 {{ticker}} 失败",
+    "refresh": {
+      "button": "刷新",
+      "tooltip": "重新拉取实时行情"
+    },
+    "col": {
+      "ticker": "代码",
+      "price": "价格",
+      "change": "涨跌%",
+      "volume": "成交量",
+      "range": "日内区间",
+      "actions": "操作"
+    },
+    "analyze": {
+      "button": "分析",
+      "tooltip": "深度分析这只股票 (SOP 研报)"
+    },
+    "remove": {
+      "tooltip": "从清单移除"
+    }
   }
 }

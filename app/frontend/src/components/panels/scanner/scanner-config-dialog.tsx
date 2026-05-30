@@ -51,7 +51,6 @@ export function ScannerConfigDialog({
   onSaved,
 }: ScannerConfigDialogProps) {
   const [form, setForm] = useState<ScannerConfigCreateRequest>(DEFAULT_FORM);
-  const [customTickersText, setCustomTickersText] = useState('');
   const { t } = useTranslation();
   const [cronPreset, setCronPreset] = useState<string>('0 21 * * 1-5');
   const [submitting, setSubmitting] = useState(false);
@@ -83,12 +82,10 @@ export function ScannerConfigDialog({
         weights: editing.weights ?? undefined,
         user_watchlist_id: editing.user_watchlist_id ?? undefined,
       });
-      setCustomTickersText((editing.universe_tickers ?? []).join(', '));
       const preset = CRON_PRESETS.find((p) => p.expr === editing.cron_expr);
       setCronPreset(preset ? editing.cron_expr : 'custom');
     } else {
       setForm(DEFAULT_FORM);
-      setCustomTickersText('');
       setCronPreset(DEFAULT_FORM.cron_expr!);
     }
     setError(null);
@@ -197,15 +194,8 @@ export function ScannerConfigDialog({
       }
 
       const payload: ScannerConfigCreateRequest = { ...form };
-      if (form.universe_kind === 'custom') {
-        payload.universe_tickers = customTickersText
-          .split(/[,\s]+/)
-          .map((t) => t.trim().toUpperCase())
-          .filter(Boolean);
-      } else {
-        // Don't send custom tickers when not in custom mode — keeps backend tidy.
-        delete payload.universe_tickers;
-      }
+      // Manual ticker entry was removed from the UI; never send custom tickers.
+      delete payload.universe_tickers;
 
       // Phase 5C — watchlist kind requires a chosen UserWatchlist id. Mirror
       // the backend model_validator so the user sees the error inline rather
@@ -299,21 +289,6 @@ export function ScannerConfigDialog({
               ))}
             </select>
           </div>
-
-          {/* Custom tickers (only when kind=custom) */}
-          {form.universe_kind === 'custom' && (
-            <div className="space-y-1.5">
-              <label htmlFor="cfg-tickers" className="text-sm font-medium">{t('scanner.config.customTickers')}</label>
-              <textarea
-                id="cfg-tickers"
-                rows={3}
-                value={customTickersText}
-                onChange={(e) => setCustomTickersText(e.target.value)}
-                placeholder="AAPL, MSFT, NVDA, GOOGL, TSLA"
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono"
-              />
-            </div>
-          )}
 
           {/* User watchlist picker (Phase 5C — only when kind=watchlist) */}
           {form.universe_kind === 'watchlist' && (

@@ -6,6 +6,7 @@ import { LabAction } from './lab-action';
 import { ReportsAction } from './reports-action';
 import { ScannerAction } from './scanner-action';
 import { ScreenerAction } from './screener-action';
+import { WatchlistAction } from './watchlist-action';
 import { WatchlistSection } from './watchlist-section';
 
 interface LeftSidebarProps {
@@ -45,6 +46,8 @@ export function LeftSidebar({
       }}
     >
       <WatchlistSection />
+
+      <WatchlistAction />
 
       <ScreenerAction />
 

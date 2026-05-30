@@ -27,7 +27,6 @@ export const UNIVERSE_KIND_OPTIONS: { value: UniverseKind; label: string; descri
   { value: 'nasdaq100', label: 'NASDAQ 100', description: '~100 NASDAQ blue-chips' },
   { value: 'russell3000', label: 'Russell 3000', description: '~3000 US-listed stocks' },
   { value: 'all_us', label: 'All US Listed', description: '~6000-8000 NYSE + NASDAQ + AMEX' },
-  { value: 'custom', label: 'Custom Watchlist', description: 'Provide your own ticker list' },
   { value: 'watchlist', label: 'User watchlist', description: 'Pick a saved watchlist from the sidebar' },
   // Phase 8 A-share universes (sourced via mootdx)
   { value: 'sse50', label: 'SSE 50 / 上证 50', description: '~50 Shanghai blue-chips' },

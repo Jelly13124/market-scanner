@@ -55,9 +55,4 @@ export const researchService = {
     if (!r.ok) throw await _toError(r, 'getReport');
     return r.json();
   },
-
-  /** Returns the URL string for the HTML payload; consumers embed in an iframe. */
-  reportHtmlUrl(reportId: number): string {
-    return `${API_BASE_URL}/research/reports/${reportId}/html`;
-  },
 };

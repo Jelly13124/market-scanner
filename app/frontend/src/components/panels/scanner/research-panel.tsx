@@ -6,6 +6,7 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { useReportHtml } from '@/hooks/use-report-html';
 import { cn } from '@/lib/utils';
 import { researchService } from '@/services/research-service';
 import type {
@@ -30,6 +31,10 @@ export function ResearchPanel() {
 
   const [recent, setRecent] = useState<ResearchReportSummary[]>([]);
   const [listLoading, setListLoading] = useState(false);
+
+  // Fetch the report HTML with auth (via the global fetch interceptor) and
+  // render it from a blob URL — an iframe navigation wouldn't carry the token.
+  const { url: reportUrl, error: reportError } = useReportHtml(iframeReportId);
 
   const reloadList = useCallback(() => {
     setListLoading(true);
@@ -163,13 +168,19 @@ export function ResearchPanel() {
       {/* ---- HTML iframe ---- */}
       {iframeReportId != null && (
         <div className="border rounded overflow-hidden">
-          <iframe
-            key={iframeReportId}
-            src={researchService.reportHtmlUrl(iframeReportId)}
-            title={`Research report ${iframeReportId}`}
-            className="w-full"
-            style={{ height: 700, border: 0 }}
-          />
+          {reportError ? (
+            <div className="px-3 py-2 text-xs text-red-600">Failed to load report</div>
+          ) : reportUrl ? (
+            <iframe
+              key={reportUrl}
+              src={reportUrl}
+              title={`Research report ${iframeReportId}`}
+              className="w-full"
+              style={{ height: 700, border: 0 }}
+            />
+          ) : (
+            <div className="px-3 py-2 text-xs text-muted-foreground">Loading report…</div>
+          )}
         </div>
       )}
 

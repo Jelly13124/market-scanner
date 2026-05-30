@@ -61,11 +61,6 @@ export const analyzeService = {
     return r.json();
   },
 
-  /** Direct URL to the rendered HTML (iframe src). */
-  reportHtmlUrl(reportId: number): string {
-    return `${API_BASE_URL}/research/reports/${reportId}/html`;
-  },
-
   /** Delete a saved report. */
   async deleteReport(reportId: number): Promise<void> {
     const r = await fetch(`${API_BASE_URL}/research/reports/${reportId}`, {

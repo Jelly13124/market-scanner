@@ -15,6 +15,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
+import { useReportHtml } from '@/hooks/use-report-html';
 import { analyzeService } from '@/services/analyze-service';
 import { analyzeBus, type AnalyzeRequest as AnalyzeBusRequest } from '@/services/analyze-bus';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
@@ -141,10 +142,9 @@ export function AnalyzePanel() {
   const hasInput = canvasRef.current?.hasInputNode() ?? false;
   const sectionCount = cfg.included_sections.length;
 
-  const iframeSrc =
-    currentReportId != null
-      ? analyzeService.reportHtmlUrl(currentReportId)
-      : null;
+  // Fetch the report HTML with auth (via the global fetch interceptor) and
+  // open it from a blob URL — a window.open navigation wouldn't carry the token.
+  const { url: iframeSrc } = useReportHtml(currentReportId);
 
   const showLiveDetail =
     currentDetail != null && currentDetail.id === currentReportId;

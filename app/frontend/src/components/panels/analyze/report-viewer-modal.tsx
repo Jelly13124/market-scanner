@@ -10,7 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { analyzeService } from '@/services/analyze-service';
+import { useReportHtml } from '@/hooks/use-report-html';
 import { ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -22,7 +22,9 @@ interface ReportViewerModalProps {
 
 export function ReportViewerModal({ reportId, open, onOpenChange }: ReportViewerModalProps) {
   const { t } = useTranslation();
-  const src = reportId != null ? analyzeService.reportHtmlUrl(reportId) : null;
+  // Fetch the report HTML with auth (via the global fetch interceptor) and
+  // render it from a blob URL — an iframe navigation wouldn't carry the token.
+  const { url: src, error } = useReportHtml(reportId);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -43,13 +45,21 @@ export function ReportViewerModal({ reportId, open, onOpenChange }: ReportViewer
             </Button>
           )}
         </DialogHeader>
-        {src && (
+        {error ? (
+          <div className="flex-1 grid place-items-center text-xs text-red-600">
+            Failed to load report
+          </div>
+        ) : src ? (
           <iframe
             key={src}
             src={src}
             title={`report-${reportId}`}
             className="flex-1 w-full border-0 bg-white"
           />
+        ) : (
+          <div className="flex-1 grid place-items-center text-xs text-muted-foreground">
+            Loading report…
+          </div>
         )}
       </DialogContent>
     </Dialog>

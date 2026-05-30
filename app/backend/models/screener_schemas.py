@@ -63,6 +63,24 @@ class SnapshotRowOut(BaseModel):
     data_source: str | None = None
 
 
+class LiveQuoteRow(BaseModel):
+    """One live (on-demand) market quote for a watchlist ticker.
+
+    All numeric fields are nullable so the UI can render "—" when a symbol
+    has no data (``error`` populated in that case).
+    """
+
+    ticker: str
+    price: float | None = None
+    prev_close: float | None = None
+    change_pct: float | None = None
+    volume: int | None = None
+    day_open: float | None = None
+    day_high: float | None = None
+    day_low: float | None = None
+    error: str | None = None
+
+
 class ScreenerSnapshotResponse(BaseModel):
     rows: list[SnapshotRowOut]
     total_count: int

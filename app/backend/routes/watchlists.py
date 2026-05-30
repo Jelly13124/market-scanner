@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
 from app.backend.database.models import User
+from app.backend.models.screener_schemas import LiveQuoteRow
 from app.backend.models.watchlist_schemas import (
     TickerAddRequest,
     UserWatchlistCreate,
@@ -31,6 +32,7 @@ from app.backend.models.watchlist_schemas import (
     UserWatchlistUpdate,
 )
 from app.backend.repositories.watchlist_repository import UserWatchlistRepository
+from app.backend.services.live_quotes import fetch_live_quotes
 
 
 router = APIRouter(prefix="/watchlists")
@@ -119,3 +121,16 @@ def remove_ticker(watchlist_id: int, ticker: str, db: Session = Depends(get_db),
     if not row:
         raise HTTPException(404, f"no watchlist with id {watchlist_id}")
     return UserWatchlistResponse.model_validate(row)
+
+
+# ---------------------------------------------------------------------------
+# Live quotes (on-demand yfinance batch fetch)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{watchlist_id}/quotes", response_model=list[LiveQuoteRow])
+def get_watchlist_quotes(watchlist_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[LiveQuoteRow]:
+    wl = UserWatchlistRepository(db).get(watchlist_id, user_id=current_user.id)
+    if wl is None:
+        raise HTTPException(404, f"no watchlist with id {watchlist_id}")
+    return [LiveQuoteRow(**q) for q in fetch_live_quotes(list(wl.tickers or []))]

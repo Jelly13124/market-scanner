@@ -27,33 +27,11 @@ app = FastAPI(title="AI Hedge Fund API", description="Backend API for AI Hedge F
 Base.metadata.create_all(bind=engine)
 
 
-def _seed_pipeline_schedule_if_missing() -> None:
-    """Ensure the singleton pipeline_schedule row exists.
-
-    Alembic migration ``b3d8f1a2c9e4`` does this in environments that run
-    migrations. The dev/anaconda runtime relies on ``create_all`` (above)
-    for schema and this idempotent seed for the singleton row. Daily cron
-    stays OFF on first install so we don't surprise users with LLM cost
-    (implementation plan §Top risks).
-    """
-    from app.backend.database import SessionLocal
-    from app.backend.database.models import PipelineSchedule
-
-    db = SessionLocal()
-    try:
-        existing = db.query(PipelineSchedule).filter(PipelineSchedule.id == 1).first()
-        if existing is None:
-            db.add(PipelineSchedule(
-                id=1, enabled=False, top_n=5, template="balanced",
-                universe="nasdaq100", model_name="gpt-4.1", model_provider="OpenAI",
-            ))
-            db.commit()
-            logger.info("Seeded pipeline_schedule singleton row (cron disabled by default).")
-    finally:
-        db.close()
-
-
-_seed_pipeline_schedule_if_missing()
+# Wave 4 tenancy: ``pipeline_schedule`` is no longer a global id=1 singleton
+# — it is per-user. Each user's row is created lazily with defaults (cron
+# OFF) on first ``GET /pipeline/schedule`` via
+# ``PipelineScheduleRepository.get_or_create_for_user``; the daily cron does
+# the same for the seed owner. So there is nothing to seed at startup anymore.
 
 # Configure CORS
 app.add_middleware(

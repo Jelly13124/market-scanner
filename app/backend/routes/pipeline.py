@@ -6,14 +6,19 @@ Endpoints:
     GET    /pipeline/runs           list recent runs (paginated)
     GET    /pipeline/runs/{run_id}  full detail (watchlist + signals + decisions)
     GET    /pipeline/templates      analyst rosters + agent metadata
-    GET    /pipeline/schedule       singleton config for the daily cron job
-    PATCH  /pipeline/schedule       update the singleton
+    GET    /pipeline/schedule       caller's daily-cron config (created on first GET)
+    PATCH  /pipeline/schedule       update the caller's config
 
 POST /pipeline/run inserts a PENDING row and returns the run_id immediately;
 the actual orchestration runs in a FastAPI ``BackgroundTask`` that flips
 the row through RUNNING → COMPLETE/ERROR. ``run_pipeline`` is invoked via
 ``asyncio.to_thread`` because LangGraph + LLM SDK calls block the event
 loop otherwise (per implementation plan §Top risks).
+
+Wave 4 (Task 4.3): every endpoint requires a Bearer token. Runs are stamped
+with + scoped to the caller's ``user_id`` (cross-tenant get → 404). The
+``pipeline_schedule`` row is now per-user (it was a global id=1 singleton);
+GET/PATCH operate on the caller's own row, created lazily on first access.
 """
 
 from __future__ import annotations
@@ -26,7 +31,9 @@ import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import SessionLocal, get_db
+from app.backend.database.models import User
 from app.backend.models.pipeline_schemas import (
     AgentMetadata,
     PipelineRunDetail,
@@ -113,6 +120,7 @@ def trigger_run(
     req: RunPipelineRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> RunPipelineResponse:
     """Kick off a pipeline run; PENDING row is created synchronously, the
     actual orchestration runs in the background."""
@@ -122,10 +130,7 @@ def trigger_run(
     except ValueError as e:
         raise HTTPException(400, str(e))
 
-    template_name = (
-        req.template if req.template
-        else ("custom" if req.custom_analysts else DEFAULT_TEMPLATE)
-    )
+    template_name = req.template if req.template else ("custom" if req.custom_analysts else DEFAULT_TEMPLATE)
 
     run_id = uuid.uuid4().hex
     PipelineRunRepository(db).create_pending(
@@ -135,6 +140,7 @@ def trigger_run(
         selected_analysts=selected,
         top_n=req.top_n,
         universe=req.universe,
+        user_id=current_user.id,
     )
     background_tasks.add_task(_execute_run_in_background, run_id, req)
     return RunPipelineResponse(run_id=run_id, status=PipelineStatus.PENDING)
@@ -152,11 +158,13 @@ def list_runs(
     status: PipelineStatus | None = None,
     since: str | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[PipelineRunSummary]:
-    """List recent runs newest-first. Filters AND together; all optional."""
+    """List the caller's recent runs newest-first. Filters AND together; all optional."""
     if limit < 1 or limit > 200:
         raise HTTPException(400, "limit must be between 1 and 200")
     rows = PipelineRunRepository(db).list_runs(
+        user_id=current_user.id,
         limit=limit,
         template=template,
         status=status.value if status else None,
@@ -166,8 +174,12 @@ def list_runs(
 
 
 @router.get("/runs/{run_id}", response_model=PipelineRunDetail)
-def get_run(run_id: str, db: Session = Depends(get_db)) -> PipelineRunDetail:
-    row = PipelineRunRepository(db).get_by_id(run_id)
+def get_run(
+    run_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PipelineRunDetail:
+    row = PipelineRunRepository(db).get_by_id(run_id, user_id=current_user.id)
     if not row:
         raise HTTPException(404, f"No pipeline run with id {run_id}")
     return PipelineRunDetail(
@@ -209,10 +221,12 @@ def list_templates() -> TemplatesResponse:
 
 
 @router.get("/schedule", response_model=PipelineScheduleResponse)
-def get_schedule(db: Session = Depends(get_db)) -> PipelineScheduleResponse:
-    row = PipelineScheduleRepository(db).get()
-    if not row:
-        raise HTTPException(500, "pipeline_schedule singleton row missing — run migrations")
+def get_schedule(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> PipelineScheduleResponse:
+    # Per-user row, created with defaults (cron OFF) on first access.
+    row = PipelineScheduleRepository(db).get_or_create_for_user(current_user.id)
     return PipelineScheduleResponse.model_validate(row)
 
 
@@ -220,6 +234,7 @@ def get_schedule(db: Session = Depends(get_db)) -> PipelineScheduleResponse:
 def update_schedule(
     patch: PipelineScheduleUpdateRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> PipelineScheduleResponse:
     # Validate template name if changing.
     if patch.template is not None and patch.template not in TEMPLATES:
@@ -227,5 +242,5 @@ def update_schedule(
             400,
             f"unknown template {patch.template!r}; valid: {sorted(TEMPLATES)}",
         )
-    updated = PipelineScheduleRepository(db).update(**patch.model_dump(exclude_unset=True))
+    updated = PipelineScheduleRepository(db).update_for_user(current_user.id, **patch.model_dump(exclude_unset=True))
     return PipelineScheduleResponse.model_validate(updated)

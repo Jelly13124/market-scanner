@@ -185,17 +185,21 @@ class PipelineRun(Base):
 
 
 class PipelineSchedule(Base):
-    """Single-row config for the daily pipeline cron job.
+    """Per-user config for the daily pipeline cron job.
 
-    Repository upserts the row with id=1 (a hard-coded singleton). UI
-    edits go through ``GET /pipeline/schedule`` / ``PATCH``; the daily
-    scheduler job reads this row on every fire. Keeping it as a table
-    rather than a config file means we can hot-edit via the UI without
-    redeploying.
+    Wave 4 tenancy: this was a single-row id=1 singleton; it is now one row
+    per user (``user_id`` FK). The route creates each user's row lazily on
+    first ``GET /pipeline/schedule`` and the cron uses the seed owner's row.
+    Keeping it as a table rather than a config file means we can hot-edit
+    via the UI without redeploying.
     """
     __tablename__ = "pipeline_schedule"
 
-    id = Column(Integer, primary_key=True, default=1)
+    # Plain autoincrement PK. (Used to carry ``default=1`` for the singleton
+    # convention — removed in Wave 4 so per-user rows don't all collide on
+    # id=1. SQLite INTEGER PRIMARY KEY auto-increments natively; no DDL/
+    # migration change is needed — the existing column already supports it.)
+    id = Column(Integer, primary_key=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Opt-in switch — daily LLM cost is non-trivial, ship OFF by default

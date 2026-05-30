@@ -148,7 +148,9 @@ class SchedulerService:
 
         logger.info(
             "SchedulerService started (tz=%s); registered %d/%d enabled scanner configs + daily pipeline + daily research",
-            self._tz, registered, len(configs),
+            self._tz,
+            registered,
+            len(configs),
         )
 
     def shutdown(self, wait: bool = False) -> None:
@@ -224,11 +226,13 @@ class SchedulerService:
             replace_existing=True,
             max_instances=1,
             misfire_grace_time=300,  # 5 min — skip if we're more than 5 min late
-            coalesce=True,            # collapse missed fires into one
+            coalesce=True,  # collapse missed fires into one
         )
         logger.info(
             "Registered scanner job %s (cron=%r, tz=%s)",
-            job_id, config.cron_expr, self._tz,
+            job_id,
+            config.cron_expr,
+            self._tz,
         )
 
     def _run_job(self, config_id: int) -> None:
@@ -266,7 +270,9 @@ class SchedulerService:
         )
         logger.info(
             "Registered daily pipeline job %s (cron=%r, tz=%s)",
-            PIPELINE_JOB_ID, PIPELINE_CRON_EXPR, self._tz,
+            PIPELINE_JOB_ID,
+            PIPELINE_CRON_EXPR,
+            self._tz,
         )
 
     def _register_research_job(self) -> None:
@@ -281,7 +287,8 @@ class SchedulerService:
         )
         logger.info(
             "Registered research job (cron=%r, tz=%s)",
-            RESEARCH_CRON_EXPR, self._tz,
+            RESEARCH_CRON_EXPR,
+            self._tz,
         )
 
     def _register_snapshot_job(self) -> None:
@@ -297,7 +304,9 @@ class SchedulerService:
         )
         logger.info(
             "Registered cron job %s with expression %s (timezone=%s)",
-            SCREENER_SNAPSHOT_JOB_ID, SCREENER_SNAPSHOT_CRON_EXPR, self._tz,
+            SCREENER_SNAPSHOT_JOB_ID,
+            SCREENER_SNAPSHOT_CRON_EXPR,
+            self._tz,
         )
 
     def _register_preset_job(self) -> None:
@@ -313,22 +322,32 @@ class SchedulerService:
         )
         logger.info(
             "Registered cron job %s with expression %s (timezone=%s)",
-            SCREENER_PRESET_JOB_ID, SCREENER_PRESET_CRON_EXPR, self._tz,
+            SCREENER_PRESET_JOB_ID,
+            SCREENER_PRESET_CRON_EXPR,
+            self._tz,
         )
 
     def _run_pipeline_job(self) -> None:
         """Job body — invoked by APScheduler on a worker thread.
 
-        Reads the singleton ``pipeline_schedule`` row at fire-time, skips
-        cleanly when disabled, otherwise calls the orchestrator and
-        persists the result via ``PipelineRunRepository`` (same path as
-        the interactive POST /pipeline/run BackgroundTask).
+        Reads the pipeline schedule at fire-time, skips cleanly when
+        disabled, otherwise calls the orchestrator and persists the result
+        via ``PipelineRunRepository`` (same path as the interactive
+        POST /pipeline/run BackgroundTask).
+
+        Wave 4 tenancy: the schedule is now per-user. For now this single
+        daily cron operates on the SEED OWNER's schedule (superuser, lowest
+        id) and stamps the produced run with that owner's id. When no
+        superuser exists it falls back to the first schedule row (legacy
+        singleton) and an unowned run. Wave 6 makes the cron per-user so
+        each user's opt-in schedule fires independently.
         """
         # Lazy imports — scheduler module shouldn't drag in the v2 pipeline
         # package or the LLM stack at import time (tests routinely import
         # scheduler_service without LLM deps installed).
         import traceback
         import uuid
+        from app.backend.database.models import User as _User
         from app.backend.repositories.pipeline_repository import (
             PipelineRunRepository,
             PipelineScheduleRepository,
@@ -336,9 +355,14 @@ class SchedulerService:
         from v2.pipeline import run_pipeline, resolve_analysts
 
         with self._session_factory() as session:
-            cfg = PipelineScheduleRepository(session).get()
+            # Resolve the seed owner whose schedule/runs the cron uses.
+            seed_user = session.query(_User).filter(_User.is_superuser.is_(True)).order_by(_User.id.asc()).first()
+            owner_id = seed_user.id if seed_user is not None else None
+
+            sched_repo = PipelineScheduleRepository(session)
+            cfg = sched_repo.get_or_create_for_user(owner_id) if owner_id is not None else sched_repo.get()  # legacy fallback (no superuser yet)
             if cfg is None:
-                logger.warning("Daily pipeline: schedule singleton missing; skipping")
+                logger.warning("Daily pipeline: no schedule row; skipping")
                 return
             if not cfg.enabled:
                 logger.info("Daily pipeline: schedule disabled; skipping")
@@ -360,6 +384,7 @@ class SchedulerService:
                 selected_analysts=selected,
                 top_n=cfg.top_n,
                 universe=cfg.universe,
+                user_id=owner_id,
             )
             template = cfg.template
             top_n = cfg.top_n
@@ -370,8 +395,7 @@ class SchedulerService:
         # Run the pipeline in this thread — APScheduler already gave us a
         # worker thread. orchestrator + LangGraph + DeepSeek roundtrips
         # are all blocking but that's fine here.
-        logger.info("Daily pipeline %s: starting (template=%s, top_n=%d, universe=%s)",
-                    run_id, template, top_n, universe)
+        logger.info("Daily pipeline %s: starting (template=%s, top_n=%d, universe=%s)", run_id, template, top_n, universe)
 
         with self._session_factory() as session:
             PipelineRunRepository(session).mark_running(run_id)
@@ -389,7 +413,8 @@ class SchedulerService:
             logger.exception("Daily pipeline %s failed", run_id)
             with self._session_factory() as session:
                 PipelineRunRepository(session).mark_error(
-                    run_id, f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
+                    run_id,
+                    f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
                 )
             return
 
@@ -401,14 +426,14 @@ class SchedulerService:
                 analyst_signals=result.analyst_signals,
                 duration_seconds=result.duration_seconds,
             )
-        logger.info("Daily pipeline %s completed in %.1fs (status=%s)",
-                    run_id, result.duration_seconds, result.status)
+        logger.info("Daily pipeline %s completed in %.1fs (status=%s)", run_id, result.duration_seconds, result.status)
 
         # Fan out notifications. Dispatcher swallows handler exceptions
         # so a Resend hiccup never kills the cron; wrap once more here
         # to defend against dispatcher-init failure (lazy import).
         try:
             from app.backend.services.notifications import NotificationDispatcher
+
             NotificationDispatcher(self._session_factory).dispatch(run_id=run_id)
         except Exception:
             logger.exception("Daily pipeline %s: notification dispatch failed", run_id)
@@ -446,17 +471,9 @@ def _run_research_job_body() -> None:
     db = SessionLocal()
     try:
         # Resolve the seed superuser that owns cron-created reports.
-        seed_user = (
-            db.query(_User)
-            .filter(_User.is_superuser.is_(True))
-            .order_by(_User.id.asc())
-            .first()
-        )
+        seed_user = db.query(_User).filter(_User.is_superuser.is_(True)).order_by(_User.id.asc()).first()
         if seed_user is None:
-            _logger.warning(
-                "research cron: no superuser found; reports will be unowned (user_id=None). "
-                "Create a superuser account to fix this."
-            )
+            _logger.warning("research cron: no superuser found; reports will be unowned (user_id=None). " "Create a superuser account to fix this.")
             owner_id = None
         else:
             owner_id = seed_user.id
@@ -465,13 +482,11 @@ def _run_research_job_body() -> None:
         pipe_repo = PipelineRunRepository(db)
         recent = pipe_repo.list_runs(status="COMPLETE", since=today, limit=1)
         if not recent:
-            _logger.info(
-                "research cron: no legacy pipeline run for %s - skipping", today
-            )
+            _logger.info("research cron: no legacy pipeline run for %s - skipping", today)
             return
         latest = recent[0]
         tickers = []
-        for entry in (latest.watchlist_json or []):
+        for entry in latest.watchlist_json or []:
             t = entry.get("ticker") if isinstance(entry, dict) else None
             if t:
                 tickers.append(t)
@@ -497,9 +512,7 @@ def _run_research_job_body() -> None:
             try:
                 state = run_research(req)
             except Exception as e:
-                _logger.exception(
-                    "research cron: ticker %s failed: %s", ticker, e
-                )
+                _logger.exception("research cron: ticker %s failed: %s", ticker, e)
                 continue
             duration = time.monotonic() - t0
             state["rendered_html"] = render_html(state)
@@ -507,13 +520,9 @@ def _run_research_job_body() -> None:
             try:
                 research_repo.create_with_plan(report=r_kwargs, plan=p_kwargs, user_id=owner_id)
             except Exception as e:
-                _logger.exception(
-                    "research cron: persist failed for %s: %s", ticker, e
-                )
+                _logger.exception("research cron: persist failed for %s: %s", ticker, e)
                 continue
-            _logger.info(
-                "research cron: persisted report for %s (%.1fs)", ticker, duration
-            )
+            _logger.info("research cron: persisted report for %s (%.1fs)", ticker, duration)
     finally:
         db.close()
 
@@ -576,26 +585,17 @@ def _run_preset_job_body() -> None:
         for p in presets:
             try:
                 market = [p.market] if p.market else None
-                rows, total = screener.query(
-                    market=market, filters=p.filters_json or {},
-                    sort_by=p.sort_by, sort_dir=p.sort_dir, limit=200)
-                ScreenerPresetRepository(db).mark_run(
-                    p.id, match_count=total, when=_dt.now(_tz.utc))
+                rows, total = screener.query(market=market, filters=p.filters_json or {}, sort_by=p.sort_by, sort_dir=p.sort_dir, limit=200)
+                ScreenerPresetRepository(db).mark_run(p.id, match_count=total, when=_dt.now(_tz.utc))
                 if total > 0 and (p.notify_channels or []):
                     payload = {
                         "preset_id": p.id,
                         "preset_name": p.name,
                         "match_count": total,
-                        "snapshot_date": (rows[0].snapshot_date.isoformat()
-                                          if rows else _date.today().isoformat()),
-                        "rows": [{"ticker": r.ticker,
-                                  "price": str(r.price) if r.price is not None else None,
-                                  "pe_ttm": str(r.pe_ttm) if r.pe_ttm is not None else None,
-                                  "change_pct": str(r.change_pct) if r.change_pct is not None else None}
-                                 for r in rows[:25]],
+                        "snapshot_date": (rows[0].snapshot_date.isoformat() if rows else _date.today().isoformat()),
+                        "rows": [{"ticker": r.ticker, "price": str(r.price) if r.price is not None else None, "pe_ttm": str(r.pe_ttm) if r.pe_ttm is not None else None, "change_pct": str(r.change_pct) if r.change_pct is not None else None} for r in rows[:25]],
                     }
-                    dispatcher.dispatch_screener_match(payload=payload,
-                                                       event_type="screener.match")
+                    dispatcher.dispatch_screener_match(payload=payload, event_type="screener.match")
             except Exception as e:
                 logger.exception("preset %s failed: %s", getattr(p, "id", "?"), e)
     finally:

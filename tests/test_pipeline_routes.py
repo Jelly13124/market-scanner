@@ -22,8 +22,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
-from app.backend.database.models import Base, PipelineSchedule
+from app.backend.database.models import Base, PipelineSchedule, User
 from app.backend.repositories.pipeline_repository import PipelineRunRepository
 
 
@@ -59,10 +60,17 @@ def setup():
 
     # Seed singleton schedule row (alembic does this in production).
     s = SessionLocal()
-    s.add(PipelineSchedule(
-        id=1, enabled=False, top_n=5, template="balanced",
-        universe="nasdaq100", model_name="gpt-4.1", model_provider="OpenAI",
-    ))
+    s.add(
+        PipelineSchedule(
+            id=1,
+            enabled=False,
+            top_n=5,
+            template="balanced",
+            universe="nasdaq100",
+            model_name="gpt-4.1",
+            model_provider="OpenAI",
+        )
+    )
     s.commit()
     s.close()
 
@@ -77,6 +85,10 @@ def setup():
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    # Fake authenticated user (id=1) for every route that calls
+    # get_current_user. Runs/schedule are scoped to user_id == 1.
+    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
+    app.dependency_overrides[get_current_user] = lambda: _fake_user
     # The route also imports SessionLocal directly for the background task —
     # patch it to point at our in-memory engine so background work writes
     # to the same DB as the test.
@@ -113,6 +125,7 @@ class TestTemplatesEndpoint:
 def _fake_pipeline_result(**_ignored):
     """Stand-in for run_pipeline(...) — accepts any kwargs the route passes."""
     from v2.pipeline.orchestrator import PipelineResult
+
     return PipelineResult(
         run_id="ignored",
         scan_date="2024-08-01",
@@ -122,9 +135,7 @@ def _fake_pipeline_result(**_ignored):
         top_n=1,
         watchlist=[{"ticker": "AAPL", "rank": 1, "composite_score": 80.0}],
         agent_decisions={"AAPL": {"action": "hold", "quantity": 0}},
-        analyst_signals={"scanner_signal_agent": {"AAPL": {
-            "signal": "bullish", "confidence": 80, "reasoning": "x"
-        }}},
+        analyst_signals={"scanner_signal_agent": {"AAPL": {"signal": "bullish", "confidence": 80, "reasoning": "x"}}},
         duration_seconds=1.5,
         status="complete",
     )
@@ -133,10 +144,13 @@ def _fake_pipeline_result(**_ignored):
 class TestRunEndpoint:
     def test_rejects_both_template_and_custom(self, setup):
         client, _ = setup
-        r = client.post("/pipeline/run", json={
-            "template": "quick",
-            "custom_analysts": ["warren_buffett"],
-        })
+        r = client.post(
+            "/pipeline/run",
+            json={
+                "template": "quick",
+                "custom_analysts": ["warren_buffett"],
+            },
+        )
         assert r.status_code == 422  # Pydantic validation fires first
 
     def test_rejects_unknown_template_400_after_pydantic(self, setup):
@@ -149,12 +163,15 @@ class TestRunEndpoint:
     def test_run_returns_pending_immediately(self, setup):
         client, SessionLocal = setup
         with patch.object(_pipeline_mod, "run_pipeline", side_effect=_fake_pipeline_result):
-            r = client.post("/pipeline/run", json={
-                "universe": "custom",
-                "universe_tickers": ["AAPL"],
-                "template": "quick",
-                "top_n": 1,
-            })
+            r = client.post(
+                "/pipeline/run",
+                json={
+                    "universe": "custom",
+                    "universe_tickers": ["AAPL"],
+                    "template": "quick",
+                    "top_n": 1,
+                },
+            )
         assert r.status_code == 202
         body = r.json()
         assert body["status"] == "PENDING"
@@ -183,12 +200,15 @@ class TestRunEndpoint:
             raise RuntimeError("simulated provider failure")
 
         with patch.object(_pipeline_mod, "run_pipeline", side_effect=boom):
-            r = client.post("/pipeline/run", json={
-                "universe": "custom",
-                "universe_tickers": ["AAPL"],
-                "template": "quick",
-                "top_n": 1,
-            })
+            r = client.post(
+                "/pipeline/run",
+                json={
+                    "universe": "custom",
+                    "universe_tickers": ["AAPL"],
+                    "template": "quick",
+                    "top_n": 1,
+                },
+            )
         run_id = r.json()["run_id"]
 
         deadline = time.time() + 3.0
@@ -226,10 +246,16 @@ class TestRunsListing:
         client, SessionLocal = setup
         with SessionLocal() as db:
             repo = PipelineRunRepository(db)
+            # user_id=1 matches the fake authenticated user; the list route
+            # scopes by it.
             repo.create_pending(
-                run_id="aaa", scan_date="2024-08-01", template="quick",
-                selected_analysts=["scanner_signal"], top_n=1,
+                run_id="aaa",
+                scan_date="2024-08-01",
+                template="quick",
+                selected_analysts=["scanner_signal"],
+                top_n=1,
                 universe="nasdaq100",
+                user_id=1,
             )
         r = client.get("/pipeline/runs?limit=10")
         assert r.status_code == 200
@@ -245,7 +271,9 @@ class TestRunsListing:
 
 
 class TestScheduleEndpoint:
-    def test_get_returns_seeded_singleton(self, setup):
+    def test_get_creates_defaults_row_for_caller(self, setup):
+        # No row exists for user_id=1 yet → route lazily creates one with
+        # defaults (cron OFF, balanced template).
         client, _ = setup
         r = client.get("/pipeline/schedule")
         assert r.status_code == 200
@@ -255,8 +283,7 @@ class TestScheduleEndpoint:
 
     def test_patch_enables_and_changes_template(self, setup):
         client, _ = setup
-        r = client.patch("/pipeline/schedule",
-                         json={"enabled": True, "template": "quick"})
+        r = client.patch("/pipeline/schedule", json={"enabled": True, "template": "quick"})
         assert r.status_code == 200
         assert r.json()["enabled"] is True
         assert r.json()["template"] == "quick"

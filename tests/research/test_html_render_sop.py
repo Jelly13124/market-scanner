@@ -89,3 +89,24 @@ class TestRenderSop:
         html = render_sop(_report())
         # the objective scalar gets rendered somewhere (probably in the timestamp block)
         assert "medium_term" in html
+
+    def test_intraday_chart_img_rendered_when_present(self):
+        """Phase 10 Wave 2: the intraday data-URI in technical.structured
+        is emitted as an <img> with the 'Intraday K-line' caption."""
+        marker = "data:image/png;base64,INTRADAYMARKER"
+        sections = {"technical": _section(
+            "technical", markdown="## Technical Analysis\n\nbody.",
+            structured={"chart_kline_intraday_b64": marker},
+        )}
+        html = render_sop(_report(sections_override=sections))
+        assert marker in html
+        assert "Intraday K-line" in html
+
+    def test_intraday_chart_img_absent_when_key_missing(self):
+        """No intraday key -> no Intraday <img>/caption (gated objectives)."""
+        sections = {"technical": _section(
+            "technical", markdown="## Technical Analysis\n\nbody.",
+            structured={"chart_kline_daily_b64": "data:image/png;base64,DAILY"},
+        )}
+        html = render_sop(_report(sections_override=sections))
+        assert "Intraday K-line" not in html

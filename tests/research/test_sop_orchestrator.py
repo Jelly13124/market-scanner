@@ -13,10 +13,10 @@ from src.research.models import (
 from src.research.sop_orchestrator import run_sop
 
 
-def _req(use_personas=False, included=None):
+def _req(use_personas=False, included=None, objective="medium_term"):
     return AnalyzeRequest(
         ticker="NVDA",
-        objective="medium_term",
+        objective=objective,
         position_budget_usd=10000,
         already_holds=False,
         cost_basis_usd=None,
@@ -259,3 +259,117 @@ def test_router_not_called_when_personas_off():
         )
         run_sop(_req(use_personas=False))
         mock_router.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase 10 Wave 2: intraday K-line gating
+# ---------------------------------------------------------------------------
+
+
+def _empty_shared():
+    from src.research.shared_data import SharedData
+    return SharedData(
+        ticker="NVDA", scan_date="2026-05-22",
+        prices=[], financials=[], insider_trades=[], news=[],
+        analyst_actions=[], analyst_targets=None, earnings_history=[],
+        company_facts={}, sector_etf_prices=[], spy_prices=[],
+    )
+
+
+class _TechStub:
+    name = "technical"
+    supports_personas = []
+
+    def run(self, ctx):
+        return SectionPayload(
+            name="technical", markdown="## Technical Analysis\n\nbody.",
+            structured=None, skipped=False, persona_used=None,
+        )
+
+
+@patch("src.research.sop_orchestrator.fetch_shared_data")
+@patch("src.research.sop_orchestrator.SECTION_REGISTRY", new_callable=dict)
+@patch("src.research.sop_orchestrator.run_signal_backtest")
+@patch("src.research.sop_orchestrator.png_to_b64_uri", return_value="data:image/png;base64,AAA")
+@patch("src.research.sop_orchestrator.render_intraday_png", return_value=b"\x89PNG")
+@patch("src.research.sop_orchestrator.fetch_intraday_prices")
+def test_short_term_objective_fetches_and_adds_intraday(
+    mock_fetch_intraday, mock_render, mock_b64, mock_bt, mock_registry, mock_fetch,
+):
+    from v2.data.models import Price
+    mock_fetch.return_value = _empty_shared()
+    mock_bt.return_value = BacktestVerdict(
+        signal="x", window_start="x", window_end="x", n_signals=0,
+        win_rate_20d=None, avg_return_20d=None, t_stat=None,
+        significant=False, verdict="x",
+    )
+    mock_fetch_intraday.return_value = [
+        Price(open=1.0, high=2.0, low=0.5, close=1.5, volume=10, time="2026-05-29T09:30:00"),
+        Price(open=1.5, high=2.5, low=1.0, close=2.0, volume=20, time="2026-05-29T09:35:00"),
+    ]
+    mock_registry["technical"] = _TechStub()
+
+    report = run_sop(_req(included={"technical"}, objective="short_term"))
+
+    # Fetcher called with the short_term window (5d / 5m).
+    mock_fetch_intraday.assert_called_once()
+    _, kwargs = mock_fetch_intraday.call_args
+    assert kwargs.get("period") == "5d"
+    assert kwargs.get("interval") == "5m"
+
+    structured = report["sections"]["technical"].structured
+    assert isinstance(structured, dict)
+    assert structured.get("chart_kline_intraday_b64") == "data:image/png;base64,AAA"
+
+
+@patch("src.research.sop_orchestrator.fetch_shared_data")
+@patch("src.research.sop_orchestrator.SECTION_REGISTRY", new_callable=dict)
+@patch("src.research.sop_orchestrator.run_signal_backtest")
+@patch("src.research.sop_orchestrator.fetch_intraday_prices")
+def test_long_term_objective_does_not_fetch_intraday(
+    mock_fetch_intraday, mock_bt, mock_registry, mock_fetch,
+):
+    mock_fetch.return_value = _empty_shared()
+    mock_bt.return_value = BacktestVerdict(
+        signal="x", window_start="x", window_end="x", n_signals=0,
+        win_rate_20d=None, avg_return_20d=None, t_stat=None,
+        significant=False, verdict="x",
+    )
+    mock_registry["technical"] = _TechStub()
+
+    report = run_sop(_req(included={"technical"}, objective="long_term"))
+
+    # Non-qualifying objective: fetcher never called, key absent.
+    mock_fetch_intraday.assert_not_called()
+    structured = report["sections"]["technical"].structured
+    if isinstance(structured, dict):
+        assert "chart_kline_intraday_b64" not in structured
+
+
+@patch("src.research.sop_orchestrator.fetch_shared_data")
+@patch("src.research.sop_orchestrator.SECTION_REGISTRY", new_callable=dict)
+@patch("src.research.sop_orchestrator.run_signal_backtest")
+@patch("src.research.sop_orchestrator.png_to_b64_uri", return_value="data:image/png;base64,BBB")
+@patch("src.research.sop_orchestrator.render_intraday_png", return_value=b"\x89PNG")
+@patch("src.research.sop_orchestrator.fetch_intraday_prices")
+def test_earnings_review_uses_15m_window(
+    mock_fetch_intraday, mock_render, mock_b64, mock_bt, mock_registry, mock_fetch,
+):
+    mock_fetch.return_value = _empty_shared()
+    mock_bt.return_value = BacktestVerdict(
+        signal="x", window_start="x", window_end="x", n_signals=0,
+        win_rate_20d=None, avg_return_20d=None, t_stat=None,
+        significant=False, verdict="x",
+    )
+    # Empty intraday -> no chart, but fetch still invoked with the window.
+    mock_fetch_intraday.return_value = []
+    mock_registry["technical"] = _TechStub()
+
+    run_sop(_req(included={"technical"}, objective="earnings_review"))
+
+    mock_fetch_intraday.assert_called_once()
+    _, kwargs = mock_fetch_intraday.call_args
+    assert kwargs.get("period") == "1mo"
+    assert kwargs.get("interval") == "15m"
+    # Render skipped because the fetch returned no bars.
+    mock_render.assert_not_called()

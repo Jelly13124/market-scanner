@@ -266,7 +266,8 @@ def _technical_chart_imgs(payload, *, report_id: int | None) -> str:
 
       1. Daily K-line (candlestick + SMA + volume + RSI) — chart_kline_daily_b64
       2. Weekly K-line                                   — chart_kline_weekly_b64
-      3. Equity curve (backtest result)                  — chart_equity_curve_b64
+      3. Intraday K-line (short_term / earnings_review)  — chart_kline_intraday_b64
+      4. Equity curve (backtest result)                  — chart_equity_curve_b64
 
     Backwards-compat: if structured only has chart_equity_curve_b64
     (Phase 4-9 reports persisted before this rewrite), we still render
@@ -279,6 +280,7 @@ def _technical_chart_imgs(payload, *, report_id: int | None) -> str:
 
     daily = structured.get("chart_kline_daily_b64")
     weekly = structured.get("chart_kline_weekly_b64")
+    intraday = structured.get("chart_kline_intraday_b64")
     equity = structured.get("chart_equity_curve_b64")
 
     def _fig(src: str, alt: str, caption: str) -> str:
@@ -303,6 +305,13 @@ def _technical_chart_imgs(payload, *, report_id: int | None) -> str:
             "Weekly K-line",
             "Weekly candlestick (resampled to W-FRI) with SMA20/50/200 "
             "and longer-term support/resistance.",
+        ))
+    if intraday:
+        parts.append(_fig(
+            intraday,
+            "Intraday K-line",
+            "Intraday candlestick + volume (5-min bars for short-term "
+            "trades, 15-min for earnings review) — recent sessions only.",
         ))
     if equity:
         parts.append(_fig(

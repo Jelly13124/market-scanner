@@ -21,10 +21,12 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 
 from src.research.backtest_signal import run_signal_backtest
+from src.research.charts.intraday_fetch import fetch_intraday_prices
 from src.research.charts.render import (
     png_to_b64_uri,
     render_daily_kline_png,
     render_equity_curve_b64,
+    render_intraday_png,
     render_weekly_kline_png,
 )
 from src.research.models import (
@@ -53,6 +55,16 @@ _PARALLEL_SECTIONS = {
 
 # Tunable via env so we can throttle if DeepSeek / OpenAI starts 429-ing.
 _MAX_PARALLEL = int(os.environ.get("SOP_MAX_PARALLEL", "10"))
+
+# Phase 10 Wave 2: intraday K-line is only useful for short-horizon
+# objectives — see sop.md's "Technical Window Defaults" table. Maps the
+# qualifying objective to its (yfinance period, interval). All other
+# objectives skip the fetch entirely so the common report path isn't
+# slowed by a network round-trip.
+_INTRADAY_WINDOWS: dict[str, tuple[str, str]] = {
+    "short_term": ("5d", "5m"),
+    "earnings_review": ("1mo", "15m"),
+}
 
 
 def _persona_for(assignments: dict | None, section_name: str) -> str | None:
@@ -298,11 +310,36 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
             except Exception as e:
                 logger.exception("weekly K-line render failed: %s", e)
 
+        # Phase 10 Wave 2: intraday 5-min K-line, only for short-horizon
+        # objectives (short_term / earnings_review). Intraday bars aren't in
+        # shared.prices, so fetch on demand from yfinance — best-effort, so
+        # a non-US / older ticker simply yields an empty list → no chart.
+        chart_intraday_b64: str | None = None
+        intraday_window = _INTRADAY_WINDOWS.get(request.objective)
+        if intraday_window:
+            period, interval = intraday_window
+            try:
+                intraday_prices = fetch_intraday_prices(
+                    request.ticker, period=period, interval=interval
+                )
+                if intraday_prices:
+                    chart_intraday_b64 = png_to_b64_uri(
+                        render_intraday_png(
+                            intraday_prices, title=f"{request.ticker} Intraday"
+                        )
+                    )
+            except Exception as e:
+                logger.exception("intraday K-line render failed: %s", e)
+
         new_structured: dict | None
         if isinstance(tech.structured, dict):
             new_structured = dict(tech.structured)
         elif tech.structured is None:
-            new_structured = {} if (chart_b64 or chart_daily_b64 or chart_weekly_b64) else None
+            new_structured = (
+                {}
+                if (chart_b64 or chart_daily_b64 or chart_weekly_b64 or chart_intraday_b64)
+                else None
+            )
         else:
             new_structured = tech.structured  # keep non-dict structured as-is
         if isinstance(new_structured, dict):
@@ -312,6 +349,8 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
                 new_structured["chart_kline_daily_b64"] = chart_daily_b64
             if chart_weekly_b64:
                 new_structured["chart_kline_weekly_b64"] = chart_weekly_b64
+            if chart_intraday_b64:
+                new_structured["chart_kline_intraday_b64"] = chart_intraday_b64
 
         sections["technical"] = SectionPayload(
             name="technical",

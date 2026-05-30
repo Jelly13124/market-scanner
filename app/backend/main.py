@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 import asyncio
+import os
 
 from dotenv import load_dotenv
 
@@ -21,6 +22,14 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# JWT secret guard. The signing default lives in auth/security.py; here we just
+# warn (dev) or hard-fail (prod) when the operator hasn't overridden it via
+# JWT_SECRET, so an insecure default never silently ships to production.
+if not os.getenv("JWT_SECRET"):
+    logger.warning("JWT_SECRET not set — using an insecure dev default; set it before deploying.")
+    if os.getenv("ENVIRONMENT", "").lower() == "production":
+        raise RuntimeError("JWT_SECRET must be set in production")
+
 app = FastAPI(title="AI Hedge Fund API", description="Backend API for AI Hedge Fund", version="0.1.0")
 
 # Initialize database tables (this is safe to run multiple times)
@@ -33,10 +42,15 @@ Base.metadata.create_all(bind=engine)
 # ``PipelineScheduleRepository.get_or_create_for_user``; the daily cron does
 # the same for the seed owner. So there is nothing to seed at startup anymore.
 
-# Configure CORS
+# Configure CORS. Origins come from the comma-separated FRONTEND_ORIGINS env
+# var (so prod can point at its real domain) and default to the two localhost
+# dev URLs when unset. allow_credentials stays True (cookie/Bearer auth).
+_DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+_origins_env = os.getenv("FRONTEND_ORIGINS", "")
+allow_origins = [o.strip() for o in _origins_env.split(",") if o.strip()] or _DEFAULT_ORIGINS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],  # Frontend URLs
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

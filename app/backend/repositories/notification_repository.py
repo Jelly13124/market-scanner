@@ -3,6 +3,11 @@
 Same shape as ``pipeline_repository.py``: sync, Session-injected, one
 commit per write, no business logic. The dispatcher and routes call into
 these.
+
+Wave 4 (Task 4.3): HTTP-facing methods (create/get/list/update/delete)
+are scoped by ``user_id``.  ``list_enabled_for_event`` intentionally
+stays UNSCOPED so the dispatcher can see every user's active subscriptions
+when fanning out a cron event.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ class SubscriptionRepository:
         *,
         channel: str,
         target: str,
+        user_id: int,
         label: str | None = None,
         enabled: bool = True,
         event_type: str = "pipeline.completed",
@@ -41,24 +47,38 @@ class SubscriptionRepository:
             enabled=enabled,
             event_type=event_type,
             auth_header=auth_header,
+            user_id=user_id,
         )
         self.db.add(row)
         self.db.commit()
         self.db.refresh(row)
         return row
 
-    def get(self, sub_id: int) -> Optional[NotificationSubscription]:
+    def get(self, sub_id: int, *, user_id: int) -> Optional[NotificationSubscription]:
+        """Scoped lookup — returns None for cross-tenant access (404 in routes)."""
+        return (
+            self.db.query(NotificationSubscription)
+            .filter(
+                NotificationSubscription.id == sub_id,
+                NotificationSubscription.user_id == user_id,
+            )
+            .first()
+        )
+
+    def get_unscoped(self, sub_id: int) -> Optional[NotificationSubscription]:
+        """Unscoped lookup — for internal callers (dispatcher /test route)."""
         return (
             self.db.query(NotificationSubscription)
             .filter(NotificationSubscription.id == sub_id)
             .first()
         )
 
-    def list(self) -> list[NotificationSubscription]:
-        """All subs, newest-first. ``id`` is a stable tiebreaker because
+    def list(self, *, user_id: int) -> list[NotificationSubscription]:
+        """Caller's subs, newest-first. ``id`` is a stable tiebreaker because
         SQLite resolves ``created_at`` to seconds and bulk inserts collide."""
         return (
             self.db.query(NotificationSubscription)
+            .filter(NotificationSubscription.user_id == user_id)
             .order_by(
                 desc(NotificationSubscription.created_at),
                 desc(NotificationSubscription.id),
@@ -67,7 +87,12 @@ class SubscriptionRepository:
         )
 
     def list_enabled_for_event(self, event_type: str) -> list[NotificationSubscription]:
-        """Subs the dispatcher fans out to for a given event_type."""
+        """Subs the dispatcher fans out to for a given event_type.
+
+        INTENTIONALLY UNSCOPED — the dispatcher must fan out to ALL users'
+        active subscriptions when processing a cron event.  Do NOT add a
+        user_id filter here.
+        """
         return (
             self.db.query(NotificationSubscription)
             .filter(
@@ -78,9 +103,12 @@ class SubscriptionRepository:
             .all()
         )
 
-    def update(self, sub_id: int, **fields) -> Optional[NotificationSubscription]:
-        """Partial update. Unknown keys ignored. Returns None if not found."""
-        row = self.get(sub_id)
+    def update(
+        self, sub_id: int, *, user_id: int, **fields
+    ) -> Optional[NotificationSubscription]:
+        """Partial update, scoped to ``user_id``. Unknown keys ignored.
+        Returns None if not found or cross-tenant."""
+        row = self.get(sub_id, user_id=user_id)
         if not row:
             return None
         allowed = {"enabled", "target", "label", "auth_header", "event_type", "channel"}
@@ -91,8 +119,10 @@ class SubscriptionRepository:
         self.db.refresh(row)
         return row
 
-    def delete(self, sub_id: int) -> bool:
-        row = self.get(sub_id)
+    def delete(self, sub_id: int, *, user_id: int) -> bool:
+        """Delete scoped to ``user_id``. Returns False when not found or
+        cross-tenant."""
+        row = self.get(sub_id, user_id=user_id)
         if not row:
             return False
         self.db.delete(row)

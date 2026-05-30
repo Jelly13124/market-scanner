@@ -241,7 +241,7 @@ class NotificationDispatcher:
         NotificationDelivery) or None if the subscription doesn't exist.
         """
         with self._session_factory() as session:
-            sub = SubscriptionRepository(session).get(subscription_id)
+            sub = SubscriptionRepository(session).get_unscoped(subscription_id)
             if sub is None:
                 return None
             run = (

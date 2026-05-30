@@ -80,9 +80,9 @@ class TestDispatch:
     def test_fans_out_to_enabled_subs_only(self, session_factory, seeded_run):
         with session_factory() as s:
             subs = SubscriptionRepository(s)
-            sub1 = subs.create(channel="email", target="a@x.com", enabled=True)
-            sub2 = subs.create(channel="email", target="b@x.com", enabled=False)
-            sub3 = subs.create(channel="webhook", target="https://x", enabled=True)
+            sub1 = subs.create(channel="email", target="a@x.com", user_id=1, enabled=True)
+            sub2 = subs.create(channel="email", target="b@x.com", user_id=1, enabled=False)
+            sub3 = subs.create(channel="webhook", target="https://x", user_id=1, enabled=True)
             ids = (sub1.id, sub2.id, sub3.id)
 
         email = _ok_handler()
@@ -96,7 +96,7 @@ class TestDispatch:
 
     def test_records_attempt_per_subscription(self, session_factory, seeded_run):
         with session_factory() as s:
-            sub = SubscriptionRepository(s).create(channel="email", target="x@y.com")
+            sub = SubscriptionRepository(s).create(channel="email", target="x@y.com", user_id=1)
             sub_id = sub.id
 
         d = NotificationDispatcher(
@@ -114,7 +114,7 @@ class TestDispatch:
 
     def test_missing_run_skips_dispatch(self, session_factory):
         with session_factory() as s:
-            SubscriptionRepository(s).create(channel="email", target="x@y.com")
+            SubscriptionRepository(s).create(channel="email", target="x@y.com", user_id=1)
         email = _ok_handler()
         d = NotificationDispatcher(session_factory, email_handler=email)
         n = d.dispatch(run_id="nonexistent_run_id_xxxxxxxxxxxx")
@@ -123,7 +123,7 @@ class TestDispatch:
 
     def test_handler_exception_recorded_as_error(self, session_factory, seeded_run):
         with session_factory() as s:
-            sub = SubscriptionRepository(s).create(channel="email", target="x@y.com")
+            sub = SubscriptionRepository(s).create(channel="email", target="x@y.com", user_id=1)
             sub_id = sub.id
 
         bad = MagicMock()
@@ -140,7 +140,7 @@ class TestDispatch:
     def test_unknown_channel_recorded_as_error(self, session_factory, seeded_run):
         with session_factory() as s:
             sub = SubscriptionRepository(s).create(
-                channel="carrier-pigeon", target="coop", enabled=True,
+                channel="carrier-pigeon", target="coop", user_id=1, enabled=True,
             )
             sub_id = sub.id
         d = NotificationDispatcher(session_factory)
@@ -159,7 +159,7 @@ class TestDispatchTo:
 
     def test_uses_latest_run_when_run_id_omitted(self, session_factory, seeded_run):
         with session_factory() as s:
-            sub = SubscriptionRepository(s).create(channel="email", target="x@y.com")
+            sub = SubscriptionRepository(s).create(channel="email", target="x@y.com", user_id=1)
             sub_id = sub.id
         email = _ok_handler()
         d = NotificationDispatcher(session_factory, email_handler=email)
@@ -171,7 +171,7 @@ class TestDispatchTo:
 
     def test_synthetic_run_when_no_real_runs(self, session_factory):
         with session_factory() as s:
-            sub = SubscriptionRepository(s).create(channel="email", target="x@y.com")
+            sub = SubscriptionRepository(s).create(channel="email", target="x@y.com", user_id=1)
             sub_id = sub.id
         email = _ok_handler()
         d = NotificationDispatcher(session_factory, email_handler=email)
@@ -185,7 +185,7 @@ class TestDispatchTo:
         # so the user can validate config before enabling.
         with session_factory() as s:
             sub = SubscriptionRepository(s).create(
-                channel="email", target="x@y.com", enabled=False,
+                channel="email", target="x@y.com", user_id=1, enabled=False,
             )
             sub_id = sub.id
         d = NotificationDispatcher(session_factory, email_handler=_ok_handler())

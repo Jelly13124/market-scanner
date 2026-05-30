@@ -20,8 +20,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
-from app.backend.database.models import Base, PipelineRun
+from app.backend.database.models import Base, PipelineRun, User
 from app.backend.repositories.notification_repository import (
     DeliveryRepository,
     SubscriptionRepository,
@@ -69,6 +70,8 @@ def setup(monkeypatch):
     monkeypatch.setattr(disp_mod, "EmailHandler", lambda: fake_email)
     monkeypatch.setattr(disp_mod, "WebhookHandler", lambda: fake_webhook)
 
+    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
+
     app = FastAPI()
     app.include_router(notifications_router)
 
@@ -80,6 +83,7 @@ def setup(monkeypatch):
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_user] = lambda: _fake_user
     # /test route uses SessionLocal directly; patch the route module's
     # reference at import.
     _notif_mod.SessionLocal = SessionLocal

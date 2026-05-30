@@ -53,9 +53,12 @@ def deliveries(db_session):
 # ---------------------------------------------------------------------------
 
 
+_UID = 1  # stable fake user_id for repo unit tests
+
+
 class TestSubscriptionCRUD:
     def test_create_minimal_email_subscription(self, subs):
-        row = subs.create(channel="email", target="user@example.com")
+        row = subs.create(channel="email", target="user@example.com", user_id=_UID)
         assert row.id is not None
         assert row.enabled is True
         assert row.event_type == "pipeline.completed"
@@ -68,6 +71,7 @@ class TestSubscriptionCRUD:
         row = subs.create(
             channel="webhook",
             target="https://hooks.example.com/in/abc",
+            user_id=_UID,
             label="ops slack",
             auth_header="Bearer sekret",
         )
@@ -76,23 +80,31 @@ class TestSubscriptionCRUD:
         assert row.auth_header == "Bearer sekret"
 
     def test_create_disabled(self, subs):
-        row = subs.create(channel="email", target="x@y.com", enabled=False)
+        row = subs.create(channel="email", target="x@y.com", user_id=_UID, enabled=False)
         assert row.enabled is False
 
     def test_get_returns_none_for_missing_id(self, subs):
-        assert subs.get(9999) is None
+        assert subs.get(9999, user_id=_UID) is None
 
     def test_get_returns_row(self, subs):
-        created = subs.create(channel="email", target="x@y.com")
-        fetched = subs.get(created.id)
+        created = subs.create(channel="email", target="x@y.com", user_id=_UID)
+        fetched = subs.get(created.id, user_id=_UID)
         assert fetched is not None
         assert fetched.id == created.id
 
+    def test_get_wrong_user_returns_none(self, subs):
+        created = subs.create(channel="email", target="x@y.com", user_id=_UID)
+        assert subs.get(created.id, user_id=_UID + 1) is None
+
+    def test_get_unscoped_returns_any_user(self, subs):
+        created = subs.create(channel="email", target="x@y.com", user_id=_UID)
+        assert subs.get_unscoped(created.id) is not None
+
     def test_list_returns_newest_first(self, subs):
-        a = subs.create(channel="email", target="a@example.com")
-        b = subs.create(channel="email", target="b@example.com")
-        c = subs.create(channel="email", target="c@example.com")
-        ids = [r.id for r in subs.list()]
+        a = subs.create(channel="email", target="a@example.com", user_id=_UID)
+        b = subs.create(channel="email", target="b@example.com", user_id=_UID)
+        c = subs.create(channel="email", target="c@example.com", user_id=_UID)
+        ids = [r.id for r in subs.list(user_id=_UID)]
         # Newest-first by created_at — SQLite resolves to seconds though, so
         # fall back to id-desc when timestamps tie. Our repo orders by
         # created_at desc; ids should still come out reverse-creation.
@@ -100,9 +112,16 @@ class TestSubscriptionCRUD:
         assert ids[-1] == a.id
         assert b.id in ids
 
+    def test_list_only_shows_own_rows(self, subs):
+        subs.create(channel="email", target="a@x.com", user_id=_UID)
+        subs.create(channel="email", target="b@x.com", user_id=_UID + 1)
+        mine = subs.list(user_id=_UID)
+        assert len(mine) == 1
+        assert mine[0].target == "a@x.com"
+
     def test_update_modifies_fields(self, subs):
-        row = subs.create(channel="email", target="x@y.com", enabled=True)
-        updated = subs.update(row.id, enabled=False, label="renamed")
+        row = subs.create(channel="email", target="x@y.com", user_id=_UID, enabled=True)
+        updated = subs.update(row.id, user_id=_UID, enabled=False, label="renamed")
         assert updated is not None
         assert updated.enabled is False
         assert updated.label == "renamed"
@@ -110,40 +129,40 @@ class TestSubscriptionCRUD:
         assert updated.target == "x@y.com"
 
     def test_update_ignores_unknown_keys(self, subs):
-        row = subs.create(channel="email", target="x@y.com")
+        row = subs.create(channel="email", target="x@y.com", user_id=_UID)
         # ``id`` not in allowed set — should be ignored, not raise.
-        updated = subs.update(row.id, id=9999, enabled=False)
+        updated = subs.update(row.id, user_id=_UID, id=9999, enabled=False)
         assert updated.id == row.id
         assert updated.enabled is False
 
     def test_update_returns_none_for_missing_id(self, subs):
-        assert subs.update(9999, enabled=False) is None
+        assert subs.update(9999, user_id=_UID, enabled=False) is None
 
     def test_update_none_value_skipped(self, subs):
         # Patch semantics: explicit None should not overwrite existing value.
-        row = subs.create(channel="email", target="x@y.com", label="keep me")
-        updated = subs.update(row.id, label=None)
+        row = subs.create(channel="email", target="x@y.com", user_id=_UID, label="keep me")
+        updated = subs.update(row.id, user_id=_UID, label=None)
         assert updated.label == "keep me"
 
     def test_delete_removes_row(self, subs):
-        row = subs.create(channel="email", target="x@y.com")
-        assert subs.delete(row.id) is True
-        assert subs.get(row.id) is None
+        row = subs.create(channel="email", target="x@y.com", user_id=_UID)
+        assert subs.delete(row.id, user_id=_UID) is True
+        assert subs.get(row.id, user_id=_UID) is None
 
     def test_delete_returns_false_for_missing(self, subs):
-        assert subs.delete(9999) is False
+        assert subs.delete(9999, user_id=_UID) is False
 
 
 class TestListEnabledForEvent:
     def test_filters_by_enabled_and_event(self, subs):
         # Enabled, matches event → included
-        a = subs.create(channel="email", target="a@x.com", enabled=True)
+        a = subs.create(channel="email", target="a@x.com", user_id=_UID, enabled=True)
         # Disabled → excluded
-        subs.create(channel="email", target="b@x.com", enabled=False)
+        subs.create(channel="email", target="b@x.com", user_id=_UID, enabled=False)
         # Different event_type → excluded
-        subs.create(channel="email", target="c@x.com", enabled=True, event_type="other.event")
-        # Enabled + matching → included
-        d = subs.create(channel="webhook", target="https://x", enabled=True)
+        subs.create(channel="email", target="c@x.com", user_id=_UID, enabled=True, event_type="other.event")
+        # Enabled + matching (different user) → still included (unscoped)
+        d = subs.create(channel="webhook", target="https://x", user_id=_UID + 1, enabled=True)
 
         rows = subs.list_enabled_for_event("pipeline.completed")
         ids = [r.id for r in rows]
@@ -152,7 +171,7 @@ class TestListEnabledForEvent:
         assert len(ids) == 2
 
     def test_empty_when_no_matches(self, subs):
-        subs.create(channel="email", target="x@y.com", enabled=False)
+        subs.create(channel="email", target="x@y.com", user_id=_UID, enabled=False)
         assert subs.list_enabled_for_event("pipeline.completed") == []
 
 
@@ -163,7 +182,7 @@ class TestListEnabledForEvent:
 
 class TestDeliveryRecording:
     def test_record_ok_attempt(self, subs, deliveries):
-        sub = subs.create(channel="email", target="x@y.com")
+        sub = subs.create(channel="email", target="x@y.com", user_id=_UID)
         row = deliveries.record(
             subscription_id=sub.id, run_id="abc123",
             status="ok", http_code=200, latency_ms=412,
@@ -178,7 +197,7 @@ class TestDeliveryRecording:
         assert row.attempted_at is not None
 
     def test_record_error_attempt(self, subs, deliveries):
-        sub = subs.create(channel="webhook", target="https://x")
+        sub = subs.create(channel="webhook", target="https://x", user_id=_UID)
         row = deliveries.record(
             subscription_id=sub.id, run_id=None,
             status="error", http_code=500,
@@ -190,7 +209,7 @@ class TestDeliveryRecording:
         assert row.run_id is None
 
     def test_error_text_truncated(self, subs, deliveries):
-        sub = subs.create(channel="email", target="x@y.com")
+        sub = subs.create(channel="email", target="x@y.com", user_id=_UID)
         long_err = "x" * 5000
         row = deliveries.record(
             subscription_id=sub.id, run_id="r1",
@@ -200,7 +219,7 @@ class TestDeliveryRecording:
         assert row.error_text.endswith("…")
 
     def test_list_recent_newest_first(self, subs, deliveries):
-        sub = subs.create(channel="email", target="x@y.com")
+        sub = subs.create(channel="email", target="x@y.com", user_id=_UID)
         for i in range(5):
             deliveries.record(
                 subscription_id=sub.id, run_id=f"r{i}",
@@ -213,14 +232,14 @@ class TestDeliveryRecording:
         assert rows[-1].run_id == "r0"
 
     def test_list_recent_respects_limit(self, subs, deliveries):
-        sub = subs.create(channel="email", target="x@y.com")
+        sub = subs.create(channel="email", target="x@y.com", user_id=_UID)
         for i in range(10):
             deliveries.record(subscription_id=sub.id, run_id=f"r{i}", status="ok")
         assert len(deliveries.list_recent(sub.id, limit=3)) == 3
 
     def test_list_recent_filters_by_subscription(self, subs, deliveries):
-        s1 = subs.create(channel="email", target="a@x.com")
-        s2 = subs.create(channel="email", target="b@x.com")
+        s1 = subs.create(channel="email", target="a@x.com", user_id=_UID)
+        s2 = subs.create(channel="email", target="b@x.com", user_id=_UID)
         deliveries.record(subscription_id=s1.id, run_id="r1", status="ok")
         deliveries.record(subscription_id=s2.id, run_id="r2", status="ok")
         rows = deliveries.list_recent(s1.id)

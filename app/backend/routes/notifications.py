@@ -24,7 +24,9 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import SessionLocal, get_db
+from app.backend.database.models import User
 from app.backend.models.notification_schemas import (
     DeliveryResponse,
     NotificationChannel,
@@ -77,8 +79,11 @@ def _validate_target_for_channel(channel: str, target: str) -> None:
 
 
 @router.get("/subscriptions", response_model=list[SubscriptionResponse])
-def list_subscriptions(db: Session = Depends(get_db)) -> list[SubscriptionResponse]:
-    rows = SubscriptionRepository(db).list()
+def list_subscriptions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[SubscriptionResponse]:
+    rows = SubscriptionRepository(db).list(user_id=current_user.id)
     return [SubscriptionResponse.from_row(r) for r in rows]
 
 
@@ -86,6 +91,7 @@ def list_subscriptions(db: Session = Depends(get_db)) -> list[SubscriptionRespon
 def create_subscription(
     req: SubscriptionCreateRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> SubscriptionResponse:
     _validate_target_for_channel(req.channel.value, req.target)
     if req.channel == NotificationChannel.EMAIL and req.auth_header:
@@ -97,6 +103,7 @@ def create_subscription(
     row = SubscriptionRepository(db).create(
         channel=req.channel.value,
         target=req.target,
+        user_id=current_user.id,
         label=req.label,
         enabled=req.enabled,
         event_type=req.event_type,
@@ -106,8 +113,12 @@ def create_subscription(
 
 
 @router.get("/subscriptions/{sub_id}", response_model=SubscriptionResponse)
-def get_subscription(sub_id: int, db: Session = Depends(get_db)) -> SubscriptionResponse:
-    row = SubscriptionRepository(db).get(sub_id)
+def get_subscription(
+    sub_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> SubscriptionResponse:
+    row = SubscriptionRepository(db).get(sub_id, user_id=current_user.id)
     if not row:
         raise HTTPException(404, f"No subscription with id {sub_id}")
     return SubscriptionResponse.from_row(row)
@@ -118,21 +129,27 @@ def update_subscription(
     sub_id: int,
     patch: SubscriptionPatchRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> SubscriptionResponse:
-    existing = SubscriptionRepository(db).get(sub_id)
+    repo = SubscriptionRepository(db)
+    existing = repo.get(sub_id, user_id=current_user.id)
     if not existing:
         raise HTTPException(404, f"No subscription with id {sub_id}")
     # If target is being changed, re-validate against the (existing) channel.
     if patch.target is not None:
         _validate_target_for_channel(existing.channel, patch.target)
     fields = patch.model_dump(exclude_unset=True)
-    updated = SubscriptionRepository(db).update(sub_id, **fields)
+    updated = repo.update(sub_id, user_id=current_user.id, **fields)
     return SubscriptionResponse.from_row(updated)
 
 
 @router.delete("/subscriptions/{sub_id}")
-def delete_subscription(sub_id: int, db: Session = Depends(get_db)) -> Response:
-    ok = SubscriptionRepository(db).delete(sub_id)
+def delete_subscription(
+    sub_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    ok = SubscriptionRepository(db).delete(sub_id, user_id=current_user.id)
     if not ok:
         raise HTTPException(404, f"No subscription with id {sub_id}")
     return Response(status_code=204)
@@ -144,7 +161,10 @@ def delete_subscription(sub_id: int, db: Session = Depends(get_db)) -> Response:
 
 
 @router.post("/subscriptions/{sub_id}/test", response_model=DeliveryResponse)
-def test_subscription(sub_id: int) -> DeliveryResponse:
+def test_subscription(
+    sub_id: int,
+    current_user: User = Depends(get_current_user),
+) -> DeliveryResponse:
     """Fire a one-off send using the latest PipelineRun.
 
     Uses the same handler chain the cron uses, so seeing this succeed
@@ -156,7 +176,7 @@ def test_subscription(sub_id: int) -> DeliveryResponse:
     # sessions per write; we just need a sub existence check first.
     db = SessionLocal()
     try:
-        if SubscriptionRepository(db).get(sub_id) is None:
+        if SubscriptionRepository(db).get(sub_id, user_id=current_user.id) is None:
             raise HTTPException(404, f"No subscription with id {sub_id}")
     finally:
         db.close()
@@ -190,10 +210,11 @@ def list_deliveries(
     sub_id: int,
     limit: int = 20,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[DeliveryResponse]:
     if limit < 1 or limit > 200:
         raise HTTPException(400, "limit must be between 1 and 200")
-    if SubscriptionRepository(db).get(sub_id) is None:
+    if SubscriptionRepository(db).get(sub_id, user_id=current_user.id) is None:
         raise HTTPException(404, f"No subscription with id {sub_id}")
     rows = DeliveryRepository(db).list_recent(sub_id, limit=limit)
     return [DeliveryResponse.model_validate(r) for r in rows]

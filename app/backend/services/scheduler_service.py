@@ -341,6 +341,11 @@ class SchedulerService:
         superuser exists it falls back to the first schedule row (legacy
         singleton) and an unowned run. Wave 6 makes the cron per-user so
         each user's opt-in schedule fires independently.
+
+        Deferred dependency: per-user API-key usage is NOT yet wired — the
+        analyze/scan pipeline still reads provider keys from the host .env
+        (tracked separately). So this cron run currently uses HOST keys.
+        When key-wiring lands, skip users without keys + use each user's keys.
         """
         # Lazy imports — scheduler module shouldn't drag in the v2 pipeline
         # package or the LLM stack at import time (tests routinely import
@@ -460,6 +465,11 @@ def _run_research_job_body() -> None:
     (SELECT id FROM users WHERE is_superuser=1 ORDER BY id LIMIT 1).
     Wave 6 will make the cron per-user so each user's cron creates
     under their own id.
+
+    Deferred dependency: per-user API-key usage is NOT yet wired — the
+    research pipeline still reads provider/LLM keys from the host .env
+    (tracked separately). So this cron run currently uses HOST keys. When
+    key-wiring lands, skip users without keys + use each user's keys.
     """
     import time
     from datetime import date
@@ -574,7 +584,19 @@ def _run_snapshot_job_body() -> None:
 
 def _run_preset_job_body() -> None:
     """Run every schedule-enabled screener preset against the latest snapshot;
-    notify on non-empty matches. Per-preset failures log + continue."""
+    notify on non-empty matches. Per-preset failures log + continue.
+
+    Per-user tenancy: this is the one cron that iterates ALL users' enabled
+    presets (each user enabling a preset is their opt-in). A match notifies
+    only the matched preset's OWNER (``dispatch_screener_match(user_id=...)``
+    scopes the fan-out) — never another tenant.
+
+    Deferred dependency: per-user API-key usage is NOT yet wired. The
+    snapshot the presets query is built by the global snapshot cron using
+    HOST .env keys; presets only filter pre-built rows so they consume no
+    per-user keys today. When key-wiring lands and presets trigger any
+    paid per-user work, skip owners without keys + use each owner's keys.
+    """
     from datetime import date as _date, datetime as _dt, timezone as _tz
 
     db = SessionLocal()
@@ -595,7 +617,8 @@ def _run_preset_job_body() -> None:
                         "snapshot_date": (rows[0].snapshot_date.isoformat() if rows else _date.today().isoformat()),
                         "rows": [{"ticker": r.ticker, "price": str(r.price) if r.price is not None else None, "pe_ttm": str(r.pe_ttm) if r.pe_ttm is not None else None, "change_pct": str(r.change_pct) if r.change_pct is not None else None} for r in rows[:25]],
                     }
-                    dispatcher.dispatch_screener_match(payload=payload, event_type="screener.match")
+                    # Owner-scoped: notify only this preset's owner's channels.
+                    dispatcher.dispatch_screener_match(payload=payload, event_type="screener.match", user_id=p.user_id)
             except Exception as e:
                 logger.exception("preset %s failed: %s", getattr(p, "id", "?"), e)
     finally:

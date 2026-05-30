@@ -93,6 +93,45 @@ def test_dispatch_screener_match_returns_zero_when_no_subs():
     assert n == 0
 
 
+def test_dispatch_screener_match_with_owner_uses_scoped_lookup():
+    """Wave 6: passing user_id routes through the OWNER-SCOPED subscription
+    lookup, never the global one — so a preset match can't notify other
+    tenants' channels."""
+    from app.backend.services.notifications.dispatcher import NotificationDispatcher
+
+    email = MagicMock()
+    email.send.return_value = {
+        "status": "ok", "http_code": None, "error_text": None, "latency_ms": 1,
+    }
+    disp = NotificationDispatcher(
+        session_factory=MagicMock(),
+        email_handler=email,
+        webhook_handler=MagicMock(),
+    )
+    owner_sub = MagicMock(id=9, channel="email", event_type="screener.match")
+    with (
+        patch(
+            "app.backend.services.notifications.dispatcher.SubscriptionRepository"
+        ) as SR,
+        patch(
+            "app.backend.services.notifications.dispatcher._snapshot",
+            side_effect=lambda s: s,
+        ),
+        patch(
+            "app.backend.services.notifications.dispatcher.DeliveryRepository"
+        ),
+    ):
+        SR.return_value.list_enabled_for_event_and_user.return_value = [owner_sub]
+        n = disp.dispatch_screener_match(payload=_payload(), user_id=101)
+
+    assert n == 1
+    # Scoped path taken with the right owner; global path never touched.
+    SR.return_value.list_enabled_for_event_and_user.assert_called_once_with(
+        "screener.match", user_id=101
+    )
+    SR.return_value.list_enabled_for_event.assert_not_called()
+
+
 def test_existing_events_still_render():
     """Additive guard — pipeline + research renderers still import + run."""
     from app.backend.services.notifications.render import (

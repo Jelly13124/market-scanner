@@ -103,6 +103,28 @@ class SubscriptionRepository:
             .all()
         )
 
+    def list_enabled_for_event_and_user(
+        self, event_type: str, *, user_id: int
+    ) -> list[NotificationSubscription]:
+        """Owner-scoped variant of ``list_enabled_for_event``.
+
+        Used by per-user cron notifications (e.g. the screener-preset cron)
+        so a user's preset match only reaches THAT user's own channels —
+        never another tenant's subscriptions.  ``list_enabled_for_event``
+        stays unscoped for global pipeline events; this method is the
+        scoped path.
+        """
+        return (
+            self.db.query(NotificationSubscription)
+            .filter(
+                NotificationSubscription.enabled.is_(True),
+                NotificationSubscription.event_type == event_type,
+                NotificationSubscription.user_id == user_id,
+            )
+            .order_by(NotificationSubscription.id.asc())
+            .all()
+        )
+
     def update(
         self, sub_id: int, *, user_id: int, **fields
     ) -> Optional[NotificationSubscription]:

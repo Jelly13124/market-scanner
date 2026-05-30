@@ -196,12 +196,25 @@ class NotificationDispatcher:
         *,
         payload: dict,
         event_type: str = "screener.match",
+        user_id: int | None = None,
     ) -> int:
-        """Fan a screener preset match out to every enabled sub for
-        ``event_type``. ``payload`` is a plain dict (preset_name, match_count,
-        snapshot_date, rows). No PipelineRun involved."""
+        """Fan a screener preset match out to enabled subs for ``event_type``.
+
+        ``payload`` is a plain dict (preset_name, match_count, snapshot_date,
+        rows). No PipelineRun involved.
+
+        ``user_id`` scopes the fan-out to a single owner's subscriptions —
+        the preset cron passes the matched preset's owner so a user's match
+        never notifies another tenant. When ``None`` the fan-out is global
+        (legacy/test behaviour).
+        """
         with self._session_factory() as session:
-            subs = SubscriptionRepository(session).list_enabled_for_event(event_type)
+            repo = SubscriptionRepository(session)
+            subs = (
+                repo.list_enabled_for_event_and_user(event_type, user_id=user_id)
+                if user_id is not None
+                else repo.list_enabled_for_event(event_type)
+            )
             if not subs:
                 logger.debug(
                     "dispatch_screener_match: no enabled subscriptions for event %r",

@@ -13,7 +13,7 @@ class ApiKey(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # API key details
-    provider = Column(String(100), nullable=False, unique=True, index=True)  # e.g., "ANTHROPIC_API_KEY"
+    provider = Column(String(100), nullable=False, index=True)  # e.g., "ANTHROPIC_API_KEY"
     key_value = Column(Text, nullable=False)  # The actual API key (encrypted in production)
     is_active = Column(Boolean, default=True)  # Enable/disable without deletion
 
@@ -22,6 +22,8 @@ class ApiKey(Base):
     last_used = Column(DateTime(timezone=True), nullable=True)  # Track usage
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=True, index=True)
+
+    __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_api_key_user_provider"),)
 
 
 class ScannerConfig(Base):

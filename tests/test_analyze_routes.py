@@ -9,7 +9,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, StaticPool
 from sqlalchemy.orm import sessionmaker
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database.connection import Base, get_db
+from app.backend.database.models import User
 from app.backend.main import app
 from src.research.models import (
     AnalyzeRequest, AnalyzeReport, BacktestVerdict, SectionPayload,
@@ -34,7 +36,10 @@ def client():
         finally:
             s.close()
 
+    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
+
     app.dependency_overrides[get_db] = _override
+    app.dependency_overrides[get_current_user] = lambda: _fake_user
     yield TestClient(app)
     app.dependency_overrides.clear()
     engine.dispose()

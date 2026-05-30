@@ -43,28 +43,31 @@ def _analyze_report_kwargs(ticker="TSLA"):
     )
 
 
+_UID = 1  # stable fake user_id for repo unit tests
+
+
 class TestResearchReportDelete:
     def test_delete_existing_returns_true_and_row_gone(self, db_session):
         repo = ResearchReportRepository(db_session)
-        row = repo.create_analyze(report=_analyze_report_kwargs())
+        row = repo.create_analyze(report=_analyze_report_kwargs(), user_id=_UID)
         report_id = row.id
         assert report_id is not None
 
-        result = repo.delete(report_id)
+        result = repo.delete(report_id, user_id=_UID)
 
         assert result is True
-        assert repo.get_by_id(report_id) is None
+        assert repo.get_by_id(report_id, user_id=_UID) is None
 
     def test_delete_missing_returns_false(self, db_session):
         repo = ResearchReportRepository(db_session)
-        result = repo.delete(999999)
+        result = repo.delete(999999, user_id=_UID)
         assert result is False
 
     def test_delete_idempotent_second_call_returns_false(self, db_session):
         """Deleting the same id twice: first True, second False."""
         repo = ResearchReportRepository(db_session)
-        row = repo.create_analyze(report=_analyze_report_kwargs("NVDA"))
+        row = repo.create_analyze(report=_analyze_report_kwargs("NVDA"), user_id=_UID)
         report_id = row.id
 
-        assert repo.delete(report_id) is True
-        assert repo.delete(report_id) is False
+        assert repo.delete(report_id, user_id=_UID) is True
+        assert repo.delete(report_id, user_id=_UID) is False

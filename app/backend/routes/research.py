@@ -21,7 +21,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
+from app.backend.database.models import User
 from app.backend.models.research_schemas import (
     AnalyzeReportDetail,
     AnalyzeRunRequest,
@@ -99,6 +101,7 @@ def _detail_from_row_and_plan(report, plan) -> ResearchReportDetail:
 def trigger_run(
     req: ResearchRunRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ResearchReportDetail:
     """Run the research pipeline, persist the report + plan, return detail."""
     internal_req = _api_request_to_internal(req)
@@ -116,7 +119,7 @@ def trigger_run(
 
     report_kwargs, plan_kwargs = state_to_db_kwargs(state, duration_seconds=duration)
     repo = ResearchReportRepository(db)
-    report_row = repo.create_with_plan(report=report_kwargs, plan=plan_kwargs)
+    report_row = repo.create_with_plan(report=report_kwargs, plan=plan_kwargs, user_id=current_user.id)
     plan_row = repo.get_plan_for_report(report_row.id)
     return _detail_from_row_and_plan(report_row, plan_row)
 
@@ -127,10 +130,12 @@ def list_reports(
     scan_date: str | None = None,
     limit: int = 50,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> list[ResearchReportSummary]:
     if limit < 1 or limit > 200:
         raise HTTPException(400, "limit must be between 1 and 200")
     rows = ResearchReportRepository(db).list_reports(
+        user_id=current_user.id,
         ticker=ticker.upper() if ticker else None,
         scan_date=scan_date,
         limit=limit,
@@ -139,9 +144,13 @@ def list_reports(
 
 
 @router.get("/reports/{report_id}", response_model=ResearchReportDetail)
-def get_report(report_id: int, db: Session = Depends(get_db)) -> ResearchReportDetail:
+def get_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ResearchReportDetail:
     repo = ResearchReportRepository(db)
-    report = repo.get_by_id(report_id)
+    report = repo.get_by_id(report_id, user_id=current_user.id)
     if not report:
         raise HTTPException(404, f"No research report with id {report_id}")
     plan = repo.get_plan_for_report(report_id)
@@ -151,17 +160,25 @@ def get_report(report_id: int, db: Session = Depends(get_db)) -> ResearchReportD
 
 
 @router.get("/reports/{report_id}/html", response_class=HTMLResponse)
-def get_report_html(report_id: int, db: Session = Depends(get_db)) -> HTMLResponse:
-    report = ResearchReportRepository(db).get_by_id(report_id)
+def get_report_html(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> HTMLResponse:
+    report = ResearchReportRepository(db).get_by_id(report_id, user_id=current_user.id)
     if not report:
         raise HTTPException(404, f"No research report with id {report_id}")
     return HTMLResponse(content=report.rendered_html or "<html></html>")
 
 
 @router.delete("/reports/{report_id}", status_code=204)
-def delete_report(report_id: int, db: Session = Depends(get_db)) -> Response:
+def delete_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
     """Delete a saved report (used by the sidebar Recent Reports list)."""
-    if not ResearchReportRepository(db).delete(report_id):
+    if not ResearchReportRepository(db).delete(report_id, user_id=current_user.id):
         raise HTTPException(404, f"No research report with id {report_id}")
     return Response(status_code=204)
 
@@ -257,6 +274,7 @@ def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
 def trigger_analyze(
     req: AnalyzeRunRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> AnalyzeReportDetail:
     """Run the SOP pipeline, persist, return AnalyzeReportDetail.
 
@@ -314,7 +332,7 @@ def trigger_analyze(
         "sections_json": sections_json,
     }
     repo = ResearchReportRepository(db)
-    row = repo.create_analyze(report=report_kwargs)
+    row = repo.create_analyze(report=report_kwargs, user_id=current_user.id)
 
     # Re-render with the freshly-allocated report id so the K-line chart
     # <img> tag can point at /research/reports/{id}/chart/kline-daily.png.
@@ -357,7 +375,7 @@ def get_report_chart(
     if chart_type not in _CHART_TYPES:
         raise HTTPException(404, f"unknown chart type: {chart_type}")
 
-    report = ResearchReportRepository(db).get_by_id(report_id)
+    report = ResearchReportRepository(db).get_by_id_unscoped(report_id)
     if not report:
         raise HTTPException(404, f"No research report with id {report_id}")
 

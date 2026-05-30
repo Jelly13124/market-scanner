@@ -58,12 +58,16 @@ def _sample_plan_kwargs(report_id):
     )
 
 
+_UID = 1  # stable fake user_id for repo unit tests
+
+
 class TestResearchReportRepository:
     def test_create_returns_row_with_id(self, db_session):
         repo = ResearchReportRepository(db_session)
         row = repo.create_with_plan(
             report=_sample_row_kwargs(),
             plan=_sample_plan_kwargs(report_id=0),  # repo wires the FK
+            user_id=_UID,
         )
         assert row.id > 0
         assert row.ticker == "NVDA"
@@ -73,8 +77,9 @@ class TestResearchReportRepository:
         created = repo.create_with_plan(
             report=_sample_row_kwargs(),
             plan=_sample_plan_kwargs(report_id=0),
+            user_id=_UID,
         )
-        loaded = repo.get_by_id(created.id)
+        loaded = repo.get_by_id(created.id, user_id=_UID)
         assert loaded is not None
         assert loaded.ticker == "NVDA"
         # Plan accessible via separate query helper
@@ -84,21 +89,41 @@ class TestResearchReportRepository:
 
     def test_get_by_id_missing_returns_none(self, db_session):
         repo = ResearchReportRepository(db_session)
-        assert repo.get_by_id(99999) is None
+        assert repo.get_by_id(99999, user_id=_UID) is None
+
+    def test_get_by_id_wrong_user_returns_none(self, db_session):
+        repo = ResearchReportRepository(db_session)
+        row = repo.create_with_plan(
+            report=_sample_row_kwargs(),
+            plan=_sample_plan_kwargs(report_id=0),
+            user_id=_UID,
+        )
+        assert repo.get_by_id(row.id, user_id=_UID + 1) is None
+
+    def test_get_by_id_unscoped_returns_any_user(self, db_session):
+        repo = ResearchReportRepository(db_session)
+        row = repo.create_with_plan(
+            report=_sample_row_kwargs(),
+            plan=_sample_plan_kwargs(report_id=0),
+            user_id=_UID,
+        )
+        assert repo.get_by_id_unscoped(row.id) is not None
 
     def test_list_filters_by_ticker(self, db_session):
         repo = ResearchReportRepository(db_session)
         repo.create_with_plan(
             report=_sample_row_kwargs("NVDA"),
             plan=_sample_plan_kwargs(report_id=0),
+            user_id=_UID,
         )
         repo.create_with_plan(
             report=_sample_row_kwargs("AVGO"),
             plan=_sample_plan_kwargs(report_id=0),
+            user_id=_UID,
         )
-        nvda_rows = repo.list_reports(ticker="NVDA")
-        avgo_rows = repo.list_reports(ticker="AVGO")
-        all_rows = repo.list_reports()
+        nvda_rows = repo.list_reports(user_id=_UID, ticker="NVDA")
+        avgo_rows = repo.list_reports(user_id=_UID, ticker="AVGO")
+        all_rows = repo.list_reports(user_id=_UID)
         assert len(nvda_rows) == 1 and nvda_rows[0].ticker == "NVDA"
         assert len(avgo_rows) == 1 and avgo_rows[0].ticker == "AVGO"
         assert len(all_rows) == 2
@@ -108,12 +133,14 @@ class TestResearchReportRepository:
         repo.create_with_plan(
             report=_sample_row_kwargs("AAA"),
             plan=_sample_plan_kwargs(report_id=0),
+            user_id=_UID,
         )
         repo.create_with_plan(
             report=_sample_row_kwargs("BBB"),
             plan=_sample_plan_kwargs(report_id=0),
+            user_id=_UID,
         )
-        rows = repo.list_reports()
+        rows = repo.list_reports(user_id=_UID)
         # newest-first - BBB came second
         assert rows[0].ticker == "BBB"
 
@@ -123,8 +150,9 @@ class TestResearchReportRepository:
             repo.create_with_plan(
                 report=_sample_row_kwargs(f"T{i}"),
                 plan=_sample_plan_kwargs(report_id=0),
+                user_id=_UID,
             )
-        rows = repo.list_reports(limit=3)
+        rows = repo.list_reports(user_id=_UID, limit=3)
         assert len(rows) == 3
 
     def test_cascade_delete_removes_plan(self, db_session):
@@ -133,6 +161,7 @@ class TestResearchReportRepository:
         row = repo.create_with_plan(
             report=_sample_row_kwargs(),
             plan=_sample_plan_kwargs(report_id=0),
+            user_id=_UID,
         )
         report_id = row.id
         # Verify plan exists
@@ -144,4 +173,4 @@ class TestResearchReportRepository:
         # plan row may remain. Either is acceptable for v1 - production DB
         # (Postgres) honors the constraint regardless. Just check the
         # report itself is gone.
-        assert repo.get_by_id(report_id) is None
+        assert repo.get_by_id(report_id, user_id=_UID) is None

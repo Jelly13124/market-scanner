@@ -34,6 +34,8 @@ def run_auto_sop_for_scan(
     scan_run_id: int,
     top_n: int,
     use_personas: bool,
+    *,
+    owner_user_id: int | None = None,
 ) -> list[int]:
     """Run SOP on top-N watchlist entries for ``scan_run_id``.
 
@@ -115,18 +117,21 @@ def run_auto_sop_for_scan(
         )
 
         try:
-            row = repo.create_analyze(report={
-                "ticker": ticker,
-                "scan_date": today_iso,
-                "request_json": arq_dict,
-                "report_markdown": report_markdown,
-                "rendered_html": html,
-                "use_personas": use_personas,
-                "persona_assignments_json": report.get("persona_assignments"),
-                "duration_seconds": duration,
-                "analyze_request_json": arq_dict,
-                "sections_json": sections_json,
-            })
+            row = repo.create_analyze(
+                report={
+                    "ticker": ticker,
+                    "scan_date": today_iso,
+                    "request_json": arq_dict,
+                    "report_markdown": report_markdown,
+                    "rendered_html": html,
+                    "use_personas": use_personas,
+                    "persona_assignments_json": report.get("persona_assignments"),
+                    "duration_seconds": duration,
+                    "analyze_request_json": arq_dict,
+                    "sections_json": sections_json,
+                },
+                user_id=owner_user_id,
+            )
         except Exception as e:
             logger.exception("auto_sop: persist failed for %s: %s", ticker, e)
             continue

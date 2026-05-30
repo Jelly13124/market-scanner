@@ -555,7 +555,7 @@ class ScannerService:
         # the dispatcher pre-renders the bundled HTML.
         with self._session_factory() as session:
             repo = ResearchReportRepository(session)
-            reports = [repo.get_by_id(rid) for rid in report_ids]
+            reports = [repo.get_by_id_unscoped(rid) for rid in report_ids]
             reports = [r for r in reports if r is not None]
             # Detach by snapshotting the read-only fields the renderer needs;
             # the dispatcher will run in its own session that doesn't share

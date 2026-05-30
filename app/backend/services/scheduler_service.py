@@ -430,14 +430,37 @@ def _run_research_job_body() -> None:
     returns — Phase 3 v1 does NOT fall back to running its own scanner.
     That keeps the two cron jobs cleanly independent and limits cost
     surprises when the user has only the research cron enabled.
+
+    Wave 4 tenancy: reports are created under the seed superuser
+    (SELECT id FROM users WHERE is_superuser=1 ORDER BY id LIMIT 1).
+    Wave 6 will make the cron per-user so each user's cron creates
+    under their own id.
     """
     import time
     from datetime import date
+
+    from app.backend.database.models import User as _User
 
     _logger = logging.getLogger(__name__)
 
     db = SessionLocal()
     try:
+        # Resolve the seed superuser that owns cron-created reports.
+        seed_user = (
+            db.query(_User)
+            .filter(_User.is_superuser.is_(True))
+            .order_by(_User.id.asc())
+            .first()
+        )
+        if seed_user is None:
+            _logger.warning(
+                "research cron: no superuser found; reports will be unowned (user_id=None). "
+                "Create a superuser account to fix this."
+            )
+            owner_id = None
+        else:
+            owner_id = seed_user.id
+
         today = date.today().isoformat()
         pipe_repo = PipelineRunRepository(db)
         recent = pipe_repo.list_runs(status="COMPLETE", since=today, limit=1)
@@ -482,7 +505,7 @@ def _run_research_job_body() -> None:
             state["rendered_html"] = render_html(state)
             r_kwargs, p_kwargs = state_to_db_kwargs(state, duration_seconds=duration)
             try:
-                research_repo.create_with_plan(report=r_kwargs, plan=p_kwargs)
+                research_repo.create_with_plan(report=r_kwargs, plan=p_kwargs, user_id=owner_id)
             except Exception as e:
                 _logger.exception(
                     "research cron: persist failed for %s: %s", ticker, e

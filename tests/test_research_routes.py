@@ -10,8 +10,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.backend.auth.dependencies import get_current_user
 from app.backend.database.connection import Base, get_db
-from app.backend.database.models import ResearchReport, ResearchTradePlan
+from app.backend.database.models import ResearchReport, ResearchTradePlan, User
 from app.backend.main import app
 from src.research.models import (
     BacktestSummary, ResearchRequest, ResearchState, TradePlan,
@@ -37,7 +38,10 @@ def client():
         finally:
             s.close()
 
+    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
+
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = lambda: _fake_user
     yield TestClient(app)
     app.dependency_overrides.clear()
     engine.dispose()

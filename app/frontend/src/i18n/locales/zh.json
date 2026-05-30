@@ -52,7 +52,8 @@
     "errorInvalidInput": "请检查邮箱和密码（至少 8 个字符）。",
     "errorGeneric": "出现错误，请重试。",
     "account": "账户",
-    "logout": "退出登录"
+    "logout": "退出登录",
+    "admin": "管理员"
   },
   "tabBar": {
     "closeTab": "关闭标签页",

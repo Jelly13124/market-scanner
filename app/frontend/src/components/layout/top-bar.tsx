@@ -2,7 +2,7 @@ import { UserMenu } from '@/components/auth/user-menu';
 import { LanguageToggle } from '@/components/language-toggle';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { PanelBottom, PanelLeft, PanelRight, Settings } from 'lucide-react';
+import { PanelBottom, PanelLeft, PanelRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
 interface TopBarProps {
@@ -78,20 +78,8 @@ export function TopBar({
       {/* Language toggle (Phase 7 i18n) */}
       <LanguageToggle />
 
-      {/* Settings */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={onSettingsClick}
-        className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-ramp-grey-700 transition-colors"
-        aria-label={t('topBar.openSettings')}
-        title={`${t('topBar.openSettings')} (⌘,)`}
-      >
-        <Settings size={16} />
-      </Button>
-
-      {/* Account menu (Wave 7 multi-tenant auth) */}
-      <UserMenu />
+      {/* Account menu (Wave 7 multi-tenant auth) — Settings now lives inside */}
+      <UserMenu onSettingsClick={onSettingsClick} />
     </div>
   );
 } 

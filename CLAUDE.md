@@ -8,6 +8,10 @@ Behavioral guidelines + project-specific invariants for Claude sessions on this 
 
 These are the hard rules for working on this codebase. Skip these and things break.
 
+### Subagents (model policy)
+
+- **Every subagent runs on Opus 4.8.** Dispatch ALL agents — the Agent tool, subagent-driven-development implementers + reviewers, and workflow agents — with `model: opus` (= Claude Opus 4.8, the most capable). Do **NOT** downgrade to `sonnet`/`haiku` via a task-complexity heuristic; the user has decided agents use 4.8 for quality. Only deviate if the user explicitly asks for a different model on a specific task.
+
 ### Environment
 
 - **Python interpreter**: `C:\Users\Jerry\anaconda3\python.exe`. Poetry is NOT on PATH — invoke anaconda Python directly. Never assume `python`/`poetry` resolves correctly.

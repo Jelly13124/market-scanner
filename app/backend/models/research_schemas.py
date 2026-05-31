@@ -187,9 +187,16 @@ class BacktestVerdictAPI(BaseModel):
 
 class VerdictPayload(BaseModel):
     """The impatient-reader takeaway, lifted from the executive_summary
-    section: a 5-level call + 0-100 confidence + one-line rationale."""
+    section: a 5-level call + 0-100 confidence + one-line rationale.
+
+    ``stock_score`` is the conviction / setup-quality score (deterministic
+    weighted total from the conviction section), surfaced as the headline
+    number on the verdict card. ``confidence_score`` (how confident the LLM
+    is in the recommendation) is kept for old clients / reports that lack a
+    conviction section."""
     recommendation: Literal["strong_buy", "buy", "hold", "sell", "strong_sell"]
     confidence_score: int = Field(ge=0, le=100)
+    stock_score: int | None = Field(default=None, ge=0, le=100)
     one_liner: str = ""
 
 

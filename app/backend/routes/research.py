@@ -43,6 +43,7 @@ from src.research.html_render import render_html, render_sop
 from src.research.models import AnalyzeRequest, ResearchRequest, SECTION_ORDER
 from src.research.persist import state_to_db_kwargs
 from src.research.pipeline import run_research
+from src.research.sections.conviction import conviction_total_score
 from src.research.shared_data import fetch_shared_data
 from src.research.sop_orchestrator import run_sop
 
@@ -234,10 +235,12 @@ def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
         significant=bt.significant, verdict=bt.verdict,
     ) if bt is not None else None
 
-    # Lift the verdict (buy/sell/hold + confidence) out of the
-    # executive_summary section so the frontend can show a top-of-report card.
+    # Lift the verdict (buy/sell/hold + scores) out of the sections so the
+    # frontend can show a top-of-report card. The headline number is the
+    # conviction stock-score; confidence_score is kept as a fallback.
     verdict_api: VerdictPayload | None = None
-    exec_p = (report_dict.get("sections") or {}).get("executive_summary")
+    sections = report_dict.get("sections") or {}
+    exec_p = sections.get("executive_summary")
     exec_struct = getattr(exec_p, "structured", None)
     if isinstance(exec_struct, dict):
         rec = exec_struct.get("recommendation")
@@ -248,6 +251,7 @@ def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
             verdict_api = VerdictPayload(
                 recommendation=rec,
                 confidence_score=int(conf),
+                stock_score=conviction_total_score(sections.get("conviction")),
                 one_liner=exec_struct.get("overall_view") or "",
             )
 

@@ -26,7 +26,16 @@ export function VerdictCard({ verdict }: { verdict: VerdictPayload }) {
   const isZh = i18n.language === 'zh';
   const s = STYLE[verdict.recommendation] ?? STYLE.hold;
   const label = (isZh ? LABEL_ZH : LABEL_EN)[verdict.recommendation] ?? verdict.recommendation;
-  const conf = Math.max(0, Math.min(100, Math.round(verdict.confidence_score)));
+  // Headline metric: prefer the conviction stock-score; fall back to the
+  // recommendation confidence for old reports that lack a conviction section.
+  const useStockScore = verdict.stock_score != null;
+  const metricValue = Math.max(
+    0,
+    Math.min(100, Math.round(useStockScore ? (verdict.stock_score as number) : verdict.confidence_score)),
+  );
+  const metricLabel = useStockScore
+    ? (isZh ? '股票分数' : 'Stock Score')
+    : (isZh ? '置信度' : 'Confidence');
 
   return (
     <div className={cn('border-2 rounded-xl px-4 py-3 mb-3', s.bg)}>
@@ -39,13 +48,13 @@ export function VerdictCard({ verdict }: { verdict: VerdictPayload }) {
         </div>
         <div className="flex-1 min-w-[160px]">
           <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-            {isZh ? '置信度' : 'Confidence'}
+            {metricLabel}
           </div>
           <div className="flex items-center gap-2">
             <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-              <div className={cn('h-full', s.bar)} style={{ width: `${conf}%` }} />
+              <div className={cn('h-full', s.bar)} style={{ width: `${metricValue}%` }} />
             </div>
-            <strong className={s.color}>{conf}/100</strong>
+            <strong className={s.color}>{metricValue}/100</strong>
           </div>
         </div>
       </div>

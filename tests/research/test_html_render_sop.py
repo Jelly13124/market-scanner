@@ -110,3 +110,44 @@ class TestRenderSop:
         )}
         html = render_sop(_report(sections_override=sections))
         assert "Intraday K-line" not in html
+
+    def test_verdict_banner_shows_stock_score(self):
+        """Banner headline metric is the conviction stock-score labeled
+        'Stock Score' (not 'Confidence') when conviction is present."""
+        sections = {"executive_summary": _section(
+            "executive_summary", markdown="## Executive Summary\n\nbody.",
+            structured={
+                "recommendation": "buy", "confidence_score": 71,
+                "overall_view": "decent setup",
+            },
+        )}
+        html = render_sop(_report(score=53, sections_override=sections))
+        banner_start = html.find("Recommendation")
+        assert banner_start > 0
+        snippet = html[banner_start:banner_start + 1200]
+        assert "Stock Score" in snippet
+        assert "53/100" in snippet
+        # confidence value must NOT be the headline meter
+        assert "71/100" not in snippet
+
+    def test_verdict_banner_falls_back_to_confidence(self):
+        """No conviction section → banner falls back to confidence meter."""
+        sections = {
+            "executive_summary": _section(
+                "executive_summary", markdown="## Executive Summary\n\nbody.",
+                structured={
+                    "recommendation": "buy", "confidence_score": 71,
+                    "overall_view": "decent setup",
+                },
+            ),
+            # Overwrite conviction with a skipped/no-score section.
+            "conviction": _section(
+                "conviction", markdown="## Conviction\n\n_n/a_",
+                skipped=True, structured=None,
+            ),
+        }
+        html = render_sop(_report(sections_override=sections))
+        banner_start = html.find("Recommendation")
+        snippet = html[banner_start:banner_start + 1200]
+        assert "Confidence" in snippet
+        assert "71/100" in snippet

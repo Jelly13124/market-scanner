@@ -60,7 +60,10 @@ export type Recommendation =
 
 export interface VerdictPayload {
   recommendation: Recommendation;
-  confidence_score: number; // 0-100
+  confidence_score: number; // 0-100 — confidence in the recommendation
+  // Conviction / setup-quality score (0-100). Shown as the headline metric
+  // when present; null for old reports that predate the conviction section.
+  stock_score?: number | null;
   one_liner: string;
 }
 

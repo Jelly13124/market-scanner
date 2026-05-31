@@ -24,6 +24,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from src.research.models import AnalyzeReport, ResearchState
+from src.research.sections.conviction import conviction_total_score
 
 
 _TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -350,31 +351,44 @@ _VERDICT_LABEL_ZH = {
 }
 
 
-def _verdict_banner_html(exec_structured: dict, lang: str) -> str:
-    """Prominent buy/sell/hold + confidence banner for the top of the report.
-    Reads the executive_summary section's structured output."""
+def _verdict_banner_html(
+    exec_structured: dict, lang: str, stock_score: int | None = None
+) -> str:
+    """Prominent buy/sell/hold + score banner for the top of the report.
+
+    Reads the recommendation / one-liner from the executive_summary section's
+    structured output. The headline metric is the conviction stock-score when
+    available ("股票分数 / Stock Score"); otherwise it falls back to the
+    recommendation confidence ("置信度 / Confidence") so old reports without a
+    conviction section still render a meter."""
     rec = exec_structured.get("recommendation")
     if rec not in _VERDICT_STYLE:
         return ""
-    conf = exec_structured.get("confidence_score")
-    conf = int(conf) if isinstance(conf, (int, float)) else None
     one_liner = exec_structured.get("overall_view") or ""
 
     color, bg = _VERDICT_STYLE[rec]
     label = (_VERDICT_LABEL_ZH if lang == "zh" else _VERDICT_LABEL_EN)[rec]
-    conf_word = "置信度" if lang == "zh" else "Confidence"
     head_word = "投资建议" if lang == "zh" else "Recommendation"
 
+    # Prefer the stock-score; fall back to confidence for old reports.
+    if isinstance(stock_score, (int, float)):
+        meter_value: int | None = int(stock_score)
+        meter_word = "股票分数" if lang == "zh" else "Stock Score"
+    else:
+        conf = exec_structured.get("confidence_score")
+        meter_value = int(conf) if isinstance(conf, (int, float)) else None
+        meter_word = "置信度" if lang == "zh" else "Confidence"
+
     conf_html = ""
-    if conf is not None:
+    if meter_value is not None:
         conf_html = (
             f'<div style="flex:1;min-width:160px;">'
             f'<div style="font-size:0.75rem;color:#6b7280;text-transform:uppercase;'
-            f'letter-spacing:0.05em;">{conf_word}</div>'
+            f'letter-spacing:0.05em;">{meter_word}</div>'
             f'<div style="display:flex;align-items:center;gap:8px;">'
             f'<div style="flex:1;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;">'
-            f'<div style="width:{conf}%;height:100%;background:{color};"></div></div>'
-            f'<strong style="color:{color};">{conf}/100</strong></div></div>'
+            f'<div style="width:{meter_value}%;height:100%;background:{color};"></div></div>'
+            f'<strong style="color:{color};">{meter_value}/100</strong></div></div>'
         )
 
     return (
@@ -490,7 +504,9 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
     exec_p = sections.get("executive_summary")
     if exec_p and not exec_p.skipped and isinstance(exec_p.structured, dict):
         banner = _verdict_banner_html(
-            exec_p.structured, getattr(req, "report_language", "en")
+            exec_p.structured,
+            getattr(req, "report_language", "en"),
+            conviction_total_score(sections.get("conviction")),
         )
         if banner:
             html = html.replace("</header>", "</header>\n" + banner, 1)

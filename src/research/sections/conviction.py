@@ -43,6 +43,51 @@ _WEIGHTS = {
 }
 
 
+def conviction_total_score(conviction_section) -> int | None:
+    """Extract the 0-100 conviction / setup-quality score from a (stored or
+    live) conviction ``SectionPayload``.
+
+    The score is the deterministic ``sum(weight * score / 100)`` total that
+    :class:`ConvictionSection` persists in ``structured["total_score"]``. We
+    prefer that persisted value; if it is missing but the per-category scores
+    survive, we recompute it from the SAME weights/categories this module uses
+    (no forked weight table). Returns ``None`` when conviction is absent,
+    skipped, or unscorable so callers can fall back to confidence.
+    """
+    if conviction_section is None:
+        return None
+    if getattr(conviction_section, "skipped", False):
+        return None
+    structured = getattr(conviction_section, "structured", None)
+    if not isinstance(structured, dict):
+        return None
+
+    total = structured.get("total_score")
+    if isinstance(total, (int, float)):
+        return max(0, min(100, int(round(total))))
+
+    # Fallback: recompute from per-category scores using this module's weights.
+    categories = structured.get("categories")
+    if not isinstance(categories, list) or not categories:
+        return None
+    profile = structured.get("risk_profile")
+    weights = structured.get("weights")
+    if not (isinstance(weights, list) and len(weights) == len(_CATEGORIES)):
+        weights = _WEIGHTS.get(profile, _WEIGHTS["balanced"])
+    by_name = {
+        c.get("name"): c.get("score")
+        for c in categories
+        if isinstance(c, dict)
+    }
+    if not any(isinstance(by_name.get(slug), (int, float)) for slug in _CATEGORIES):
+        return None
+    recomputed = sum(
+        w * (by_name.get(slug) or 0) / 100
+        for w, slug in zip(weights, _CATEGORIES)
+    )
+    return max(0, min(100, int(round(recomputed))))
+
+
 class _CategoryScore(BaseModel):
     name: str
     score: int = Field(ge=0, le=100)

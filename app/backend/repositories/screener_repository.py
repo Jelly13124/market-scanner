@@ -10,10 +10,10 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, asdict
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Literal
 
-from sqlalchemy import and_, delete, desc, func, select
+from sqlalchemy import and_, case, delete, desc, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
@@ -21,6 +21,10 @@ from sqlalchemy.orm import Session
 from app.backend.database.models import TickerSnapshot
 
 logger = logging.getLogger(__name__)
+
+# change_pct is stored as Numeric(8, 4); report sector averages at the same
+# 4-decimal scale so SQLite's float AVG() doesn't leak precision artifacts.
+_CHANGE_PCT_Q = Decimal("0.0001")
 
 
 @dataclass
@@ -185,6 +189,97 @@ class ScreenerRepository:
         if market is not None:
             q = q.where(TickerSnapshot.market == market)
         return self.db.execute(q).scalar()
+
+    def sector_summary(self, market: str = "US") -> list[dict]:
+        """Per-sector aggregates for the latest snapshot of ``market``.
+
+        One GROUP BY for the per-sector counts/averages, plus a single
+        pass over the (ticker, sector, change_pct) rows in Python to pick
+        each sector's top gainer (max change_pct) and top loser (min).
+        The universe is ~500 rows, so the second pass is trivial and
+        avoids correlated-subquery / window-function dialect quirks.
+
+        ``avg_change_pct`` stays in the column's units (a fraction, e.g.
+        0.0263 = +2.63%). Returns ``[]`` when there's no snapshot for the
+        market or no rows carry a sector (e.g. CN). Sorted by
+        ``avg_change_pct`` descending (best-performing sector first).
+        """
+        latest = self.latest_snapshot_date(market=market)
+        if latest is None:
+            return []
+
+        has_sector = and_(
+            TickerSnapshot.market == market,
+            TickerSnapshot.snapshot_date == latest,
+            TickerSnapshot.sector.isnot(None),
+            TickerSnapshot.sector != "",
+        )
+
+        agg_rows = self.db.execute(
+            select(
+                TickerSnapshot.sector,
+                func.count().label("count"),
+                func.avg(TickerSnapshot.change_pct).label("avg_change_pct"),
+                func.sum(
+                    case((TickerSnapshot.change_pct > 0, 1), else_=0)
+                ).label("gainers"),
+                func.sum(
+                    case((TickerSnapshot.change_pct < 0, 1), else_=0)
+                ).label("losers"),
+                func.sum(TickerSnapshot.market_cap).label("total_market_cap"),
+            )
+            .where(has_sector)
+            .group_by(TickerSnapshot.sector)
+        ).all()
+        if not agg_rows:
+            return []
+
+        # Per-sector argmax / argmin for top mover / loser. Rows without a
+        # change_pct can't be the top gainer or loser, so skip them.
+        movers = self.db.execute(
+            select(
+                TickerSnapshot.sector,
+                TickerSnapshot.ticker,
+                TickerSnapshot.change_pct,
+            ).where(and_(has_sector, TickerSnapshot.change_pct.isnot(None)))
+        ).all()
+
+        top_gainer: dict[str, dict] = {}
+        top_loser: dict[str, dict] = {}
+        for sector, ticker, change_pct in movers:
+            mover = {"ticker": ticker, "change_pct": change_pct}
+            best = top_gainer.get(sector)
+            if best is None or change_pct > best["change_pct"]:
+                top_gainer[sector] = mover
+            worst = top_loser.get(sector)
+            if worst is None or change_pct < worst["change_pct"]:
+                top_loser[sector] = mover
+
+        summaries = [
+            {
+                "sector": r.sector,
+                "count": int(r.count),
+                # SQLite AVG() yields a float; quantize to change_pct's
+                # Numeric(8,4) scale so the reported fraction matches the
+                # column's stored precision instead of carrying float noise.
+                "avg_change_pct": (
+                    Decimal(str(r.avg_change_pct)).quantize(_CHANGE_PCT_Q, rounding=ROUND_HALF_UP)
+                    if r.avg_change_pct is not None
+                    else None
+                ),
+                "gainers": int(r.gainers or 0),
+                "losers": int(r.losers or 0),
+                "total_market_cap": r.total_market_cap,
+                "top_gainer": top_gainer.get(r.sector),
+                "top_loser": top_loser.get(r.sector),
+            }
+            for r in agg_rows
+        ]
+        summaries.sort(
+            key=lambda s: (s["avg_change_pct"] if s["avg_change_pct"] is not None else Decimal("-Infinity")),
+            reverse=True,
+        )
+        return summaries
 
     def query(
         self,

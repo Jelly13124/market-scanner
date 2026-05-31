@@ -81,6 +81,22 @@ class LiveQuoteRow(BaseModel):
     error: str | None = None
 
 
+class SectorMover(BaseModel):
+    ticker: str
+    change_pct: Decimal | None = None
+
+
+class SectorSummaryRow(BaseModel):
+    sector: str
+    count: int
+    avg_change_pct: Decimal | None = None
+    gainers: int
+    losers: int
+    total_market_cap: Decimal | None = None
+    top_gainer: SectorMover | None = None
+    top_loser: SectorMover | None = None
+
+
 class ScreenerSnapshotResponse(BaseModel):
     rows: list[SnapshotRowOut]
     total_count: int

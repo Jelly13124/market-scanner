@@ -3,6 +3,7 @@
   GET /screener/snapshot/latest    — filtered query (chip-driven)
   GET /screener/snapshot/columns   — static chip metadata
   GET /screener/snapshot/status    — last-built timestamp + per-market counts
+  GET /screener/sectors            — per-sector summary for the Sectors board
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from app.backend.models.screener_schemas import (
     ScreenerColumnMetadata,
     ScreenerSnapshotResponse,
     ScreenerStatusResponse,
+    SectorSummaryRow,
     SnapshotRefreshOut,
     SnapshotRefreshStateOut,
     SnapshotRowOut,
@@ -133,6 +135,15 @@ def get_snapshot_status(db: Session = Depends(get_db)) -> ScreenerStatusResponse
         row_count=row_count,
         by_market=by_market,
     )
+
+
+@router.get("/sectors", response_model=list[SectorSummaryRow])
+def get_sector_summary(
+    market: Annotated[str, Query(pattern="^(US|CN)$")] = "US",
+    db: Session = Depends(get_db),
+) -> list[SectorSummaryRow]:
+    """Per-sector summary of the latest snapshot — PUBLIC (global market data)."""
+    return [SectorSummaryRow(**r) for r in ScreenerRepository(db).sector_summary(market)]
 
 
 @router.post("/snapshot/refresh", response_model=SnapshotRefreshOut)

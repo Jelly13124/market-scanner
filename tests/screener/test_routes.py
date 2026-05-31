@@ -132,3 +132,56 @@ def test_get_latest_empty_db_returns_empty(client_and_db):
     r = client.get("/screener/snapshot/latest")
     assert r.status_code == 200
     assert r.json()["total_count"] == 0
+
+
+def test_get_sectors_public_no_auth(client_and_db):
+    """GET /screener/sectors is global market data — 200 without auth."""
+    client, TestingSession = client_and_db
+    db = TestingSession()
+    repo = ScreenerRepository(db)
+    # Add change_pct'd US rows across two sectors so the board has content.
+    repo.bulk_upsert([
+        SnapshotRow(ticker="NVDA", market="US", snapshot_date=date(2026, 5, 27),
+                    sector="Technology", change_pct=Decimal("0.04"),
+                    market_cap=Decimal("2.0e12"), data_source="yfinance"),
+        SnapshotRow(ticker="AMD", market="US", snapshot_date=date(2026, 5, 27),
+                    sector="Technology", change_pct=Decimal("-0.01"),
+                    market_cap=Decimal("3.0e11"), data_source="yfinance"),
+        SnapshotRow(ticker="XOM", market="US", snapshot_date=date(2026, 5, 27),
+                    sector="Energy", change_pct=Decimal("0.09"),
+                    market_cap=Decimal("5.0e11"), data_source="yfinance"),
+    ])
+    db.close()
+
+    r = client.get("/screener/sectors")  # no Authorization header
+    assert r.status_code == 200
+    body = r.json()
+    sectors = {row["sector"] for row in body}
+    assert {"Technology", "Energy"} <= sectors
+    # Energy (avg 0.09) sorts ahead of Technology (avg 0.015).
+    assert body[0]["sector"] == "Energy"
+    energy = body[0]
+    assert energy["count"] == 1
+    assert energy["top_gainer"]["ticker"] == "XOM"
+
+
+def test_get_sectors_cn_no_sectored_data_returns_empty(client_and_db):
+    """CN fixture rows carry a sector string here, but a market with no
+    sectored rows returns []. Delete the CN sector to prove exclusion."""
+    client, TestingSession = client_and_db
+    db = TestingSession()
+    from app.backend.database.models import TickerSnapshot
+    db.query(TickerSnapshot).filter(TickerSnapshot.market == "CN").update(
+        {TickerSnapshot.sector: None}
+    )
+    db.commit()
+    db.close()
+    r = client.get("/screener/sectors?market=CN")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+def test_get_sectors_invalid_market_returns_422(client_and_db):
+    client, _ = client_and_db
+    r = client.get("/screener/sectors?market=XX")
+    assert r.status_code == 422

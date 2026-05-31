@@ -171,3 +171,80 @@ def test_query_perf_1y_range_filter(repo):
     tickers = {r.ticker for r in rows}
     assert tickers == {"MID", "HIGH"}
     assert total == 2
+
+
+# ----- sector_summary --------------------------------------------------
+
+def _seed_sector_rows(repo):
+    """Two US sectors with clear top gainer/loser + one sector-less CN row.
+
+    Technology: avg change_pct = (0.05 + (-0.03) + 0.01) / 3 = 0.01
+    Energy:     avg change_pct = (0.08 + (-0.02)) / 2        = 0.03  (best)
+    """
+    repo.bulk_upsert([
+        # Technology
+        _row("AAPL", sector="Technology", change_pct=Decimal("0.05"),
+             market_cap=Decimal("3000000000")),
+        _row("MSFT", sector="Technology", change_pct=Decimal("-0.03"),
+             market_cap=Decimal("2000000000")),
+        _row("ORCL", sector="Technology", change_pct=Decimal("0.01"),
+             market_cap=Decimal("1000000000")),
+        # Energy
+        _row("XOM", sector="Energy", change_pct=Decimal("0.08"),
+             market_cap=Decimal("500000000")),
+        _row("CVX", sector="Energy", change_pct=Decimal("-0.02"),
+             market_cap=Decimal("400000000")),
+        # CN row with NULL sector — must be excluded entirely.
+        _row("600519.SH", market="CN", sector=None, change_pct=Decimal("0.04"),
+             market_cap=Decimal("2100000000")),
+    ])
+
+
+def test_sector_summary_groups_and_sorts(repo):
+    _seed_sector_rows(repo)
+    out = repo.sector_summary("US")
+
+    # Two US sectors, Energy first (higher avg_change_pct), CN row excluded.
+    assert [s["sector"] for s in out] == ["Energy", "Technology"]
+
+    energy = out[0]
+    assert energy["count"] == 2
+    assert energy["avg_change_pct"] == Decimal("0.03")
+    assert energy["gainers"] == 1
+    assert energy["losers"] == 1
+    assert energy["total_market_cap"] == Decimal("900000000")
+    assert energy["top_gainer"] == {"ticker": "XOM", "change_pct": Decimal("0.08")}
+    assert energy["top_loser"] == {"ticker": "CVX", "change_pct": Decimal("-0.02")}
+
+    tech = out[1]
+    assert tech["count"] == 3
+    assert tech["avg_change_pct"] == Decimal("0.01")
+    assert tech["gainers"] == 2          # AAPL, ORCL
+    assert tech["losers"] == 1           # MSFT
+    assert tech["total_market_cap"] == Decimal("6000000000")
+    assert tech["top_gainer"] == {"ticker": "AAPL", "change_pct": Decimal("0.05")}
+    assert tech["top_loser"] == {"ticker": "MSFT", "change_pct": Decimal("-0.03")}
+
+
+def test_sector_summary_uses_latest_date_only(repo):
+    """Older snapshot rows must not bleed into the aggregate."""
+    repo.bulk_upsert([
+        _row("AAPL", sector="Technology", snapshot_date=date(2026, 5, 26),
+             change_pct=Decimal("0.99")),
+        _row("AAPL", sector="Technology", snapshot_date=date(2026, 5, 27),
+             change_pct=Decimal("0.05")),
+    ])
+    out = repo.sector_summary("US")
+    assert len(out) == 1
+    assert out[0]["count"] == 1
+    assert out[0]["avg_change_pct"] == Decimal("0.05")
+
+
+def test_sector_summary_cn_no_sectors_returns_empty(repo):
+    """CN rows here carry no sector → no sectored data → []."""
+    _seed_sector_rows(repo)
+    assert repo.sector_summary("CN") == []
+
+
+def test_sector_summary_empty_db_returns_empty(repo):
+    assert repo.sector_summary("US") == []

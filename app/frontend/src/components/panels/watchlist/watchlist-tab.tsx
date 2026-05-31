@@ -34,11 +34,14 @@ import {
   TickerSearchResult,
   UserWatchlist,
 } from '@/types/watchlist';
-import { Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
+import {
+  ChevronLeft, ChevronRight, Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, X,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const DEBOUNCE_MS = 300;
+const PAGE_SIZE = 20;
 
 function fmtPrice(v: number | null): string {
   if (v === null || !isFinite(v)) return '—';
@@ -71,6 +74,7 @@ export function WatchlistTab() {
   const [lists, setLists] = useState<UserWatchlist[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [rows, setRows] = useState<LiveQuoteRow[]>([]);
+  const [page, setPage] = useState(0);
   const [loadingLists, setLoadingLists] = useState(false);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
 
@@ -137,6 +141,13 @@ export function WatchlistTab() {
     return () => window.removeEventListener('focus', onFocus);
   }, [selectedId, reloadLists, reloadQuotes]);
 
+  // Switching lists or a refresh (row count changes) should start back at page 1
+  // — and guarantees we never sit on a now-out-of-range page.
+  useEffect(() => { setPage(0); }, [selectedId, rows.length]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageRows = rows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
   async function handleRefresh() {
     if (selectedId === null) return;
     await Promise.all([reloadLists(), reloadQuotes(selectedId)]);
@@ -147,8 +158,14 @@ export function WatchlistTab() {
     try {
       const updated = await watchlistService.removeTicker(selectedId, ticker);
       setLists((prev) => prev.map((w) => (w.id === selectedId ? updated : w)));
-      // Drop the row immediately; the count comes from the updated list.
-      setRows((prev) => prev.filter((r) => r.ticker !== ticker));
+      // Drop the row immediately; the count comes from the updated list. If that
+      // empties the current page, clamp back to the last page that still has rows.
+      setRows((prev) => {
+        const next = prev.filter((r) => r.ticker !== ticker);
+        const lastPage = Math.max(0, Math.ceil(next.length / PAGE_SIZE) - 1);
+        setPage((p) => Math.min(p, lastPage));
+        return next;
+      });
     } catch (e) {
       console.error('removeTicker failed', e);
       error(t('watchlist.removeFailed', 'Failed to remove {{ticker}}', { ticker }));
@@ -354,7 +371,7 @@ export function WatchlistTab() {
                     </TableCell>
                   </TableRow>
                 )}
-                {rows.map((r) => {
+                {pageRows.map((r) => {
                   const chg = r.change_pct;
                   return (
                     <TableRow key={r.ticker}>
@@ -399,6 +416,35 @@ export function WatchlistTab() {
                 })}
               </TableBody>
             </Table>
+            {rows.length > PAGE_SIZE && (
+              <div className="flex items-center justify-center gap-2 border-t px-2 py-1.5">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setPage((p) => p - 1)}
+                  disabled={page === 0}
+                  aria-label={t('screener.page.prev', 'Previous page')}
+                >
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {t('screener.page.label', 'Page {{page}} / {{pages}} · {{total}} total', {
+                    page: page + 1, pages: totalPages, total: rows.length,
+                  })}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={page >= totalPages - 1}
+                  aria-label={t('screener.page.next', 'Next page')}
+                >
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>

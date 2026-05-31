@@ -2873,3 +2873,4 @@ Decisions (findings): stock score = the conviction (综合评分 53/100) score, 
 - scanner-eval B1: detector_scorecard — replay each detector over a regime (clamped decision, unclamped outcome), interestingness vs random + dir-alpha, CSV. TDD green.
 - scanner-eval B2: signal_ic — weekly cross-sectional rank-IC per signal x regime (clamped value, unclamped forward return), DATA-LIMITED via usable-coverage. TDD green.
 - scanner-eval B3: report renderer + verdict logic (KEEP/WATCH/CUT/DATA-LIMITED/INVERTED), interestingness-primary, Phase-3 block. TDD green.
+- scanner-eval C1: historical_events — reuse YFinanceClient for earnings+analyst history, best-effort insider/news/financials, budget-aware enrich_bundle. TDD mocked, green.

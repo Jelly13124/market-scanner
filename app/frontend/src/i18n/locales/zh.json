@@ -512,5 +512,19 @@
     "remove": {
       "tooltip": "从清单移除"
     }
+  },
+  "sectors": {
+    "tab": {
+      "title": "板块"
+    },
+    "openTooltip": "打开板块面板",
+    "asOf": "数据截至最新快照 · 美股",
+    "empty": "暂无板块数据（需先有快照）",
+    "stats": "{{count}} 只 · {{gainers}}↑ {{losers}}↓",
+    "cardTooltip": "打开 Screener 并筛选 {{sector}}",
+    "refresh": {
+      "button": "刷新",
+      "tooltip": "重新拉取板块表现"
+    }
   }
 }

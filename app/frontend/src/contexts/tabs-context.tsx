@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 // Define tab types
-export type TabType = 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist';
+export type TabType = 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist' | 'sectors';
 
 export interface Tab {
   id: string;
@@ -85,6 +85,10 @@ export function TabsProvider({ children }: TabsProviderProps) {
     if (type === 'watchlist') {
       // Single watchlist tab — selected list is tracked inside the panel.
       return 'watchlist';
+    }
+    if (type === 'sectors') {
+      // Single sectors board tab.
+      return 'sectors';
     }
     return `${type}-${Date.now()}`;
   }, []);

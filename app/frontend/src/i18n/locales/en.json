@@ -512,5 +512,19 @@
     "remove": {
       "tooltip": "Remove from list"
     }
+  },
+  "sectors": {
+    "tab": {
+      "title": "Sectors"
+    },
+    "openTooltip": "Open sector board",
+    "asOf": "as of latest snapshot · US",
+    "empty": "No sector data yet (build a snapshot first).",
+    "stats": "{{count}} · {{gainers}}↑ {{losers}}↓",
+    "cardTooltip": "Open Screener filtered to {{sector}}",
+    "refresh": {
+      "button": "Refresh",
+      "tooltip": "Re-fetch sector performance"
+    }
   }
 }

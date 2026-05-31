@@ -20,10 +20,15 @@ export interface AnalyzeRequest {
 
 type Listener = (req: AnalyzeRequest) => void;
 type VoidListener = () => void;
+type SectorListener = (sector: string) => void;
 
 let pending: AnalyzeRequest | null = null;
 const listeners = new Set<Listener>();
 const createdListeners = new Set<VoidListener>();
+
+// --- "filter the Screener to this sector" channel (Sectors board → Screener) ---
+let pendingSector: string | null = null;
+const sectorListeners = new Set<SectorListener>();
 
 export const analyzeBus = {
   /** Queue a ticker for analysis and notify any mounted Analyze panel. */
@@ -57,3 +62,26 @@ export const analyzeBus = {
     return () => createdListeners.delete(l);
   },
 };
+
+/**
+ * Queue a sector and notify any mounted Screener tab to filter to it.
+ * Mirrors requestAnalyze: if the Screener is already mounted its subscriber
+ * fires immediately; if it's opening fresh it reads takePendingScreenerSectorFilter().
+ */
+export function requestScreenerSectorFilter(sector: string): void {
+  pendingSector = sector;
+  sectorListeners.forEach((l) => l(sector));
+}
+
+/** Read + clear the queued sector (used by the Screener tab on fresh mount). */
+export function takePendingScreenerSectorFilter(): string | null {
+  const s = pendingSector;
+  pendingSector = null;
+  return s;
+}
+
+/** Subscribe a mounted Screener tab. Returns an unsubscribe fn. */
+export function subscribeScreenerSectorFilter(cb: SectorListener): () => void {
+  sectorListeners.add(cb);
+  return () => sectorListeners.delete(cb);
+}

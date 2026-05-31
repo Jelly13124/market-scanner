@@ -5,6 +5,9 @@ import {
 import { useToastManager } from '@/hooks/use-toast-manager';
 import { cn } from '@/lib/utils';
 import {
+  subscribeScreenerSectorFilter, takePendingScreenerSectorFilter,
+} from '@/services/analyze-bus';
+import {
   getColumnMetadata, getLatestSnapshot, getSnapshotStatus,
   getSnapshotRefreshState, triggerSnapshotRefresh,
 } from '@/services/screener-service';
@@ -49,6 +52,20 @@ export function ScreenerTab() {
       .then((s) => { if (alive) setStatus(s); })
       .catch(console.error);
     return () => { alive = false; };
+  }, []);
+
+  // Cross-tab "filter to this sector" requests from the Sectors board. The
+  // sector chip's filter_key is `sector_in`, and the backend sector strings
+  // (e.g. "Technology") ARE the chip option values, so they match 1:1.
+  useEffect(() => {
+    const applySector = (sector: string) => {
+      setMarket('US');
+      setFilterValues((prev) => ({ ...prev, sector_in: [sector] }));
+    };
+    // Picks up a sector requested before this tab mounted.
+    const queued = takePendingScreenerSectorFilter();
+    if (queued) applySector(queued);
+    return subscribeScreenerSectorFilter(applySector);
   }, []);
 
   useEffect(() => {

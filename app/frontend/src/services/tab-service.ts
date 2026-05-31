@@ -3,12 +3,13 @@ import { LabPanel } from '@/components/panels/lab/lab-panel';
 import { ReportsPanel } from '@/components/panels/reports/reports-panel';
 import { ScannerPanel } from '@/components/panels/scanner/scanner-panel';
 import { ScreenerTab } from '@/components/panels/screener/screener-tab';
+import { SectorsTab } from '@/components/panels/sectors/sectors-tab';
 import { WatchlistTab } from '@/components/panels/watchlist/watchlist-tab';
 import { Settings } from '@/components/settings/settings';
 import { ReactNode, createElement } from 'react';
 
 export interface TabData {
-  type: 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist';
+  type: 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist' | 'sectors';
   title: string;
   metadata?: Record<string, any>;
 }
@@ -38,6 +39,9 @@ export class TabService {
 
       case 'watchlist':
         return createElement(WatchlistTab, {});
+
+      case 'sectors':
+        return createElement(SectorsTab, {});
 
       default:
         throw new Error(`Unsupported tab type: ${(tabData as any).type}`);
@@ -112,6 +116,15 @@ export class TabService {
     };
   }
 
+  /** Open / focus the single Sectors board tab. */
+  static createSectorsTab(): TabData & { content: ReactNode } {
+    return {
+      type: 'sectors',
+      title: 'Sectors',
+      content: TabService.createTabContent({ type: 'sectors', title: 'Sectors' }),
+    };
+  }
+
   // Restore tab content for persisted tabs (used when loading from localStorage)
   static restoreTabContent(tabData: TabData): ReactNode {
     return TabService.createTabContent(tabData);
@@ -140,6 +153,9 @@ export class TabService {
 
       case 'watchlist':
         return TabService.createWatchlistTab();
+
+      case 'sectors':
+        return TabService.createSectorsTab();
 
       default:
         throw new Error(`Cannot restore unsupported tab type: ${(savedTab as any).type}`);

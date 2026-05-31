@@ -64,6 +64,23 @@ export interface ScreenerStatusResponse {
   by_market: Record<string, number>;
 }
 
+export interface SectorMover {
+  ticker: string;
+  change_pct: string | null;
+}
+
+export interface SectorSummaryRow {
+  sector: string;
+  count: number;
+  /** A FRACTION, e.g. "0.0263" = +2.63% → multiply by 100 to display. */
+  avg_change_pct: string | null;
+  gainers: number;
+  losers: number;
+  total_market_cap: string | null;
+  top_gainer: SectorMover | null;
+  top_loser: SectorMover | null;
+}
+
 export interface SnapshotRefreshState {
   running: boolean;
   market: string | null;

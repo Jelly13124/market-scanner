@@ -5,6 +5,7 @@ import {
   ScreenerStatusResponse,
   ChipValues,
   ScreenerPreset,
+  SectorSummaryRow,
   SnapshotRefreshResult,
   SnapshotRefreshState,
 } from '@/types/screener';
@@ -56,6 +57,13 @@ export async function getColumnMetadata(): Promise<ColumnMetadataResponse> {
 export async function getSnapshotStatus(): Promise<ScreenerStatusResponse> {
   const res = await fetch(`${API_BASE}/screener/snapshot/status`);
   if (!res.ok) throw new Error(`screener status failed: ${res.status}`);
+  return res.json();
+}
+
+/** Per-sector aggregate performance for the Sectors board (latest snapshot). */
+export async function getSectorSummary(market = 'US'): Promise<SectorSummaryRow[]> {
+  const res = await fetch(`${API_BASE}/screener/sectors?market=${market}`);
+  if (!res.ok) throw new Error(`screener sectors failed: ${res.status}`);
   return res.json();
 }
 

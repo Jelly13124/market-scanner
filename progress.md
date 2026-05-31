@@ -2864,3 +2864,7 @@ All 4 tasks complete + committed. spec: docs/superpowers/specs/2026-05-31-overni
 4. **Stock score replaces confidence** (7e0a0d1) — `VerdictPayload.stock_score` = the conviction total_score (shared helper `conviction_total_score()`); `_report_to_detail` + `_verdict_banner_html` populate it; verdict-card + report banner show "股票分数 / Stock Score" (fallback to 置信度/Confidence for old reports). +5 backend tests.
 
 Decisions (findings): stock score = the conviction (综合评分 53/100) score, NOT confidence — confirmed with the user. Batch settings via a pick-once dialog. Pagination 20/page everywhere. Batch capped at 20 (LLM-cost guard). Backend restarted for Task 4. Left on the branch (NOT merged). Final verify: see the controller run.
+
+## Session — 2026-05-31 (scanner-eval Wave A — Task A1)
+
+- scanner-eval A1: evaluate_detector now emits abs-move interestingness metrics (abs_mean_fired/baseline, interestingness_diff/_t). TDD green.

@@ -73,6 +73,19 @@ def evaluate_detector(
         if denom_sq > 0.0:
             t_stat = diff / math.sqrt(denom_sq)
 
+    abs_fired = [abs(x) for x in fire_returns]
+    abs_base = [abs(x) for x in baseline_returns]
+    abs_mean_fired = float(np.mean(abs_fired)) if abs_fired else 0.0
+    abs_mean_baseline = float(np.mean(abs_base)) if abs_base else 0.0
+    interestingness_diff = abs_mean_fired - abs_mean_baseline
+    interestingness_t = 0.0
+    if len(abs_fired) >= 2 and len(abs_base) >= 2:
+        vA = float(np.var(abs_fired, ddof=1))
+        vB = float(np.var(abs_base, ddof=1))
+        denom_sq = vA / len(abs_fired) + vB / len(abs_base)
+        if denom_sq > 0.0:
+            interestingness_t = interestingness_diff / math.sqrt(denom_sq)
+
     return {
         "n_fired": n_fired,
         "mean_fwd_return": mean_fwd,
@@ -80,6 +93,10 @@ def evaluate_detector(
         "diff": diff,
         "t_stat": t_stat,
         "horizon": horizon,
+        "abs_mean_fired": abs_mean_fired,
+        "abs_mean_baseline": abs_mean_baseline,
+        "interestingness_diff": interestingness_diff,
+        "interestingness_t": interestingness_t,
     }
 
 

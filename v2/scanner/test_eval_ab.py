@@ -82,7 +82,7 @@ class TestEvaluateDetector:
             baseline_returns=baseline_returns,
             horizon=20,
         )
-        assert self.REQUIRED_KEYS == set(result.keys())
+        assert self.REQUIRED_KEYS <= set(result.keys())
         assert result["n_fired"] == 3
         assert abs(result["mean_fwd_return"] - 0.05) < 1e-9
         assert abs(result["baseline_mean"] - 0.0) < 1e-9
@@ -125,6 +125,28 @@ class TestEvaluateDetector:
             horizon=20,
         )
         assert result["t_stat"] == 0.0 or isinstance(result["t_stat"], float)
+
+    def test_interestingness_metrics_present(self):
+        out = evaluate_detector(
+            fire_returns=[0.10, -0.08, 0.06],            # big moves, mixed sign
+            baseline_returns=[0.01, -0.01, 0.00, 0.02],  # quiet
+            horizon=5,
+        )
+        # existing signed keys still present and unchanged
+        assert "mean_fwd_return" in out and "t_stat" in out and "diff" in out
+        # NEW interestingness keys: |moves| of fired vs baseline
+        assert out["abs_mean_fired"] == pytest.approx((0.10 + 0.08 + 0.06) / 3)
+        assert out["abs_mean_baseline"] == pytest.approx((0.01 + 0.01 + 0.00 + 0.02) / 4)
+        assert out["interestingness_diff"] == pytest.approx(
+            out["abs_mean_fired"] - out["abs_mean_baseline"])
+        assert out["interestingness_t"] > 0   # fired |moves| clearly larger → positive Welch t
+
+    def test_interestingness_empty_arrays_safe(self):
+        out = evaluate_detector(fire_returns=[], baseline_returns=[], horizon=5)
+        assert out["abs_mean_fired"] == 0.0
+        assert out["abs_mean_baseline"] == 0.0
+        assert out["interestingness_diff"] == 0.0
+        assert out["interestingness_t"] == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -190,7 +212,7 @@ class TestRunAb:
         )
 
         required_keys = {"n_fired", "mean_fwd_return", "baseline_mean", "diff", "t_stat", "horizon"}
-        assert required_keys == set(result.keys())
+        assert required_keys <= set(result.keys())
         assert result["n_fired"] == 2
         assert result["horizon"] == 20
 

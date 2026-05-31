@@ -2868,3 +2868,4 @@ Decisions (findings): stock score = the conviction (综合评分 53/100) score, 
 ## Session — 2026-05-31 (scanner-eval Wave A — Task A1)
 
 - scanner-eval A1: evaluate_detector now emits abs-move interestingness metrics (abs_mean_fired/baseline, interestingness_diff/_t). TDD green.
+- scanner-eval A2: CachedAsOfClient — fetch-once per ticker, serves DataClient protocol clamped to <=asof (60d fundamental lag). No-lookahead unit-tested.

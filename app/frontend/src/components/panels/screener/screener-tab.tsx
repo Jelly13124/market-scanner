@@ -15,7 +15,7 @@ import {
   ChipValues, ColumnMetadata, Market,
   ScreenerPreset, ScreenerSnapshotResponse, ScreenerStatusResponse, SnapshotRow,
 } from '@/types/screener';
-import { RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { EmptyState } from './empty-state';
@@ -23,6 +23,8 @@ import { FilterChipBar } from './filter-chip-bar';
 import { PresetBar } from './preset-bar';
 import { SnapshotTable } from './snapshot-table';
 import { StatusBar } from './status-bar';
+
+const PAGE_SIZE = 20;
 
 export function ScreenerTab() {
   const { t } = useTranslation();
@@ -33,6 +35,7 @@ export function ScreenerTab() {
   const [filterValues, setFilterValues] = useState<ChipValues>({});
   const [sortBy, setSortBy] = useState('market_cap');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [page, setPage] = useState(0);
   const [response, setResponse] = useState<ScreenerSnapshotResponse | null>(null);
   const [status, setStatus] = useState<ScreenerStatusResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -68,21 +71,27 @@ export function ScreenerTab() {
     return subscribeScreenerSectorFilter(applySector);
   }, []);
 
+  // A new query (market/sort/filter) should start back at page 1.
+  // Note: `page` is intentionally NOT a dep — that would defeat paging.
+  useEffect(() => { setPage(0); }, [market, sortBy, sortDir, filterValues]);
+
   useEffect(() => {
     let alive = true;
     setLoading(true);
     getLatestSnapshot({
-      market, sort_by: sortBy, sort_dir: sortDir, limit: 200,
+      market, sort_by: sortBy, sort_dir: sortDir,
+      limit: PAGE_SIZE, offset: page * PAGE_SIZE,
       filters: filterValues,
     })
       .then((r) => { if (alive) setResponse(r); })
       .catch(console.error)
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, [market, sortBy, sortDir, filterValues, reloadKey]);
+  }, [market, sortBy, sortDir, filterValues, page, reloadKey]);
 
   const rows: SnapshotRow[] = response?.rows ?? [];
   const totalCount = response?.total_count ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const hasAnySnapshot = useMemo(
     () => (status?.row_count ?? 0) > 0, [status]);
 
@@ -200,7 +209,7 @@ export function ScreenerTab() {
         />
       )}
 
-      <StatusBar status={status} matchCount={rows.length} totalCount={totalCount} />
+      <StatusBar status={status} matchCount={totalCount} />
 
       <div className="flex-1 overflow-auto px-2 pb-2">
         {!hasAnySnapshot
@@ -208,6 +217,36 @@ export function ScreenerTab() {
           : <SnapshotTable rows={rows} sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
         }
       </div>
+
+      {hasAnySnapshot && totalCount > 0 && (
+        <div className="flex items-center justify-center gap-2 border-t px-2 py-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={() => setPage((p) => p - 1)}
+            disabled={page === 0}
+            aria-label={t('screener.page.prev', 'Previous page')}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Button>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {t('screener.page.label', 'Page {{page}} / {{pages}} · {{total}} total', {
+              page: page + 1, pages: totalPages, total: totalCount,
+            })}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page >= totalPages - 1}
+            aria-label={t('screener.page.next', 'Next page')}
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

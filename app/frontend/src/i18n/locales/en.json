@@ -418,6 +418,11 @@
       "matched": "Matched",
       "data_as_of": "Data as of"
     },
+    "page": {
+      "label": "Page {{page}} / {{pages}} · {{total}} total",
+      "prev": "Previous page",
+      "next": "Next page"
+    },
     "empty": {
       "title": "No snapshot yet",
       "body": "Snapshot runs nightly at 22:00 ET. Check back tomorrow."

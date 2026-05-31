@@ -335,6 +335,11 @@ def _repo_root() -> Path:
 def main(argv=None):
     from datetime import datetime
 
+    from dotenv import load_dotenv
+
+    # API keys (EODHD/FINNHUB) live in .env at repo root; load before building clients.
+    load_dotenv()
+
     parser = argparse.ArgumentParser(description="Run the scanner detector/signal usefulness evaluation (3 fail-soft phases).")
     parser.add_argument("--universe", default="nasdaq100_sp500", help="Universe kind to evaluate.")
     parser.add_argument("--max-tickers", type=int, default=None, help="Cap the universe to the first N tickers.")

@@ -1,6 +1,6 @@
-// Small button in the left sidebar that opens / focuses the Watchlist tab
-// (live per-ticker market data). Distinct from WatchlistSection, which manages
-// the saved lists themselves.
+// Small button in the left sidebar that opens / focuses the Watchlist tab,
+// where all watchlist management (create / search-add / rename / delete) and
+// live per-ticker market data now live.
 
 import { Button } from '@/components/ui/button';
 import { useTabsContext } from '@/contexts/tabs-context';

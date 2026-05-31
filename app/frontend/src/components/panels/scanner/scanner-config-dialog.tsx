@@ -298,7 +298,7 @@ export function ScannerConfigDialog({
                 <div className="text-sm text-muted-foreground">Loading watchlists…</div>
               ) : userWatchlists.length === 0 ? (
                 <div className="text-sm text-muted-foreground">
-                  No saved watchlists. Create one in the left sidebar first.
+                  No saved watchlists. Create one in the Watchlist tab first.
                 </div>
               ) : (
                 <select

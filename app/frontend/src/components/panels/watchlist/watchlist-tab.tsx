@@ -1,10 +1,12 @@
-// Dedicated Watchlist tab — live per-ticker market data for a saved list.
+// Dedicated Watchlist tab — full management + live per-ticker market data.
 //
-// Header: pick which of the user's watchlists to view + a Refresh button +
-// the selected list's ticker count. Body: a Screener-style table of live
-// quotes (price / change% / volume / day range) fetched on demand from
-// GET /watchlists/{id}/quotes. The fetch is slow (yfinance batch), so we
-// show a spinner while loading.
+// Header/toolbar: pick which of the user's watchlists to view, + New / Rename /
+// Delete the selected list, a search-to-add bar, the selected list's ticker
+// count, and a Refresh button. Body: a Screener-style table of live quotes
+// (price / change% / volume / day range) fetched on demand from
+// GET /watchlists/{id}/quotes. The fetch is slow (yfinance batch), so we show a
+// spinner while loading. This tab is the single source of truth for watchlist
+// management — the old left-sidebar section was removed.
 
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -12,16 +14,31 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useRequestAnalyze } from '@/hooks/use-request-analyze';
 import { useToastManager } from '@/hooks/use-toast-manager';
 import { cn } from '@/lib/utils';
-import { watchlistService } from '@/services/watchlist-service';
-import { LiveQuoteRow, UserWatchlist } from '@/types/watchlist';
-import { Loader2, RefreshCw, Sparkles, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { tickerService, watchlistService } from '@/services/watchlist-service';
+import {
+  LiveQuoteRow,
+  TickerSearchResult,
+  UserWatchlist,
+} from '@/types/watchlist';
+import { Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+const DEBOUNCE_MS = 300;
 
 function fmtPrice(v: number | null): string {
   if (v === null || !isFinite(v)) return '—';
@@ -48,7 +65,7 @@ function fmtRange(low: number | null, high: number | null): string {
 
 export function WatchlistTab() {
   const { t } = useTranslation();
-  const { error } = useToastManager();
+  const { success, error } = useToastManager();
   const requestAnalyze = useRequestAnalyze();
 
   const [lists, setLists] = useState<UserWatchlist[]>([]);
@@ -56,6 +73,11 @@ export function WatchlistTab() {
   const [rows, setRows] = useState<LiveQuoteRow[]>([]);
   const [loadingLists, setLoadingLists] = useState(false);
   const [loadingQuotes, setLoadingQuotes] = useState(false);
+
+  const [createOpen, setCreateOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [renaming, setRenaming] = useState<UserWatchlist | null>(null);
+  const [deleting, setDeleting] = useState<UserWatchlist | null>(null);
 
   const selected = lists.find((w) => w.id === selectedId) ?? null;
 
@@ -108,11 +130,10 @@ export function WatchlistTab() {
     };
   }, [selectedId, error, t]);
 
-  async function handleRefresh() {
-    if (selectedId === null) return;
+  async function refetchQuotes(id: number) {
     setLoadingQuotes(true);
     try {
-      const q = await watchlistService.getWatchlistQuotes(selectedId);
+      const q = await watchlistService.getWatchlistQuotes(id);
       setRows(q);
     } catch (e) {
       console.error('getWatchlistQuotes failed', e);
@@ -120,6 +141,11 @@ export function WatchlistTab() {
     } finally {
       setLoadingQuotes(false);
     }
+  }
+
+  async function handleRefresh() {
+    if (selectedId === null) return;
+    await refetchQuotes(selectedId);
   }
 
   async function handleRemove(ticker: string) {
@@ -135,10 +161,66 @@ export function WatchlistTab() {
     }
   }
 
+  // Add a ticker to the currently-selected list, then re-fetch quotes so the
+  // new row shows up with live data.
+  async function handleAddTicker(ticker: string) {
+    if (selectedId === null) return;
+    const updated = await watchlistService.addTicker(selectedId, ticker);
+    setLists((prev) => prev.map((w) => (w.id === selectedId ? updated : w)));
+    await refetchQuotes(selectedId);
+  }
+
+  async function handleCreate(name: string) {
+    setCreating(true);
+    try {
+      const created = await watchlistService.create({ name });
+      setLists((prev) => [...prev, created]);
+      setSelectedId(created.id);
+      success(t('watchlist.created', 'Created "{{name}}"', { name: created.name }));
+      setCreateOpen(false);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      error(t('watchlist.createFailed', 'Failed to create: {{msg}}', { msg }));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleRename(id: number, name: string) {
+    try {
+      const updated = await watchlistService.update(id, { name });
+      setLists((prev) => prev.map((w) => (w.id === id ? updated : w)));
+      success(t('watchlist.renamed', 'Renamed to "{{name}}"', { name: updated.name }));
+      setRenaming(null);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      error(t('watchlist.renameFailed', 'Rename failed: {{msg}}', { msg }));
+    }
+  }
+
+  async function handleDelete(target: UserWatchlist) {
+    try {
+      await watchlistService.delete(target.id);
+      const remaining = lists.filter((w) => w.id !== target.id);
+      setLists(remaining);
+      if (selectedId === target.id) {
+        setSelectedId(remaining.length > 0 ? remaining[0].id : null);
+      }
+      success(t('watchlist.deleted', 'Deleted "{{name}}"', { name: target.name }));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      error(t('watchlist.deleteFailed', 'Delete failed: {{msg}}', { msg }));
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  const noLists = !loadingLists && lists.length === 0;
+
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-2 pt-2">
+      {/* Header / toolbar */}
+      <div className="flex flex-wrap items-center gap-2 px-2 pt-2">
         <div className="text-sm font-semibold">{t('watchlist.tab.title', 'Watchlist')}</div>
         <Select
           value={selectedId !== null ? String(selectedId) : undefined}
@@ -162,11 +244,44 @@ export function WatchlistTab() {
             ))}
           </SelectContent>
         </Select>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1 text-xs"
+          onClick={() => setCreateOpen(true)}
+          title={t('watchlist.newTooltip', 'Create a new watchlist')}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {t('watchlist.new', 'New')}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-primary hover-bg"
+          onClick={() => selected && setRenaming(selected)}
+          disabled={!selected}
+          title={t('watchlist.renameTooltip', 'Rename this watchlist')}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-red-500 hover-bg"
+          onClick={() => selected && setDeleting(selected)}
+          disabled={!selected}
+          title={t('watchlist.deleteTooltip', 'Delete this watchlist')}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+
         {selected && (
           <Badge variant="outline" className="h-5 text-[10px]">
             {t('watchlist.tickerCount', '{{count}} tickers', { count: selected.tickers.length })}
           </Badge>
         )}
+
         <Button
           variant="outline"
           size="sm"
@@ -180,16 +295,37 @@ export function WatchlistTab() {
         </Button>
       </div>
 
+      {/* Search-to-add bar (only meaningful when a list is selected) */}
+      {selected && (
+        <div className="px-2 pt-2">
+          <AddTickerAutocomplete
+            existingTickers={selected.tickers}
+            onAdd={handleAddTicker}
+            onError={(msg) => error(msg)}
+          />
+        </div>
+      )}
+
       {/* Body */}
       <div className="flex-1 overflow-auto px-2 py-2">
-        {loadingQuotes ? (
+        {noLists ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+            <div className="text-sm text-muted-foreground">
+              {t('watchlist.noLists', 'No watchlists yet — click + New to create one.')}
+            </div>
+            <Button size="sm" className="gap-1" onClick={() => setCreateOpen(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              {t('watchlist.new', 'New')}
+            </Button>
+          </div>
+        ) : loadingQuotes ? (
           <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground py-12">
             <Loader2 className="h-4 w-4 animate-spin" />
             {t('watchlist.loadingQuotes', '加载实时数据…')}
           </div>
         ) : selected && selected.tickers.length === 0 ? (
           <div className="text-center text-sm text-muted-foreground py-12">
-            {t('watchlist.empty', '此清单暂无股票，去 Screener 或侧边栏添加')}
+            {t('watchlist.empty', '此清单暂无股票，用上面的搜索添加')}
           </div>
         ) : (
           <div className="border rounded-md overflow-x-auto">
@@ -272,6 +408,290 @@ export function WatchlistTab() {
           </div>
         )}
       </div>
+
+      {/* Create dialog */}
+      <WatchlistCreateDialog
+        isOpen={createOpen}
+        isLoading={creating}
+        onClose={() => setCreateOpen(false)}
+        onCreate={handleCreate}
+      />
+
+      {/* Rename dialog */}
+      {renaming && (
+        <WatchlistRenameDialog
+          watchlist={renaming}
+          onClose={() => setRenaming(null)}
+          onRename={handleRename}
+        />
+      )}
+
+      {/* Delete confirm */}
+      {deleting && (
+        <Dialog open onOpenChange={(open) => !open && setDeleting(null)}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>
+                {t('watchlist.deleteConfirm', 'Delete watchlist "{{name}}"?', { name: deleting.name })}
+              </DialogTitle>
+              <DialogDescription>
+                {t('watchlist.tickerCount', '{{count}} tickers', { count: deleting.tickers.length })}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDeleting(null)}>
+                {t('common.cancel', 'Cancel')}
+              </Button>
+              <Button variant="destructive" onClick={() => handleDelete(deleting)}>
+                {t('common.delete', 'Delete')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AddTickerAutocomplete — debounced search + result dropdown.
+// Picking a result adds the ticker to the currently-selected list.
+// ---------------------------------------------------------------------------
+
+interface AddTickerAutocompleteProps {
+  existingTickers: string[];
+  onAdd: (ticker: string) => Promise<void>;
+  onError: (msg: string) => void;
+}
+
+function AddTickerAutocomplete({
+  existingTickers,
+  onAdd,
+  onError,
+}: AddTickerAutocompleteProps) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState<TickerSearchResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const { t } = useTranslation();
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const r = await tickerService.search(query);
+        // Filter out already-added tickers so user can't double-add.
+        const filtered = r.filter((x) => !existingTickers.includes(x.ticker));
+        setResults(filtered);
+      } catch (e) {
+        console.error('ticker search failed', e);
+        setResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, DEBOUNCE_MS);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query, existingTickers]);
+
+  const handleSelect = async (ticker: string) => {
+    try {
+      await onAdd(ticker);
+      setQuery('');
+      setShowDropdown(false);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      onError(t('watchlist.addFailed', 'Add {{ticker}} failed: {{msg}}', { ticker, msg }));
+    }
+  };
+
+  return (
+    <div ref={containerRef} className="relative">
+      <Input
+        type="text"
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setShowDropdown(true);
+        }}
+        onFocus={() => setShowDropdown(true)}
+        placeholder={t('watchlist.searchPlaceholder', 'Search a stock to add to this list…')}
+        className="h-8 text-xs"
+      />
+      {showDropdown && (
+        <div className="absolute left-0 right-0 top-full mt-1 z-10 max-h-48 overflow-y-auto rounded-md border border-border bg-popover shadow-md">
+          {isSearching && (
+            <div className="px-2 py-1 text-xs text-muted-foreground">
+              {t('watchlist.searching', 'Searching…')}
+            </div>
+          )}
+          {!isSearching && results.length === 0 && (
+            <div className="px-2 py-1 text-xs text-muted-foreground">
+              {t('watchlist.noMatches', 'No matches.')}
+            </div>
+          )}
+          {!isSearching &&
+            results.map((r) => (
+              <button
+                key={r.ticker}
+                onClick={() => handleSelect(r.ticker)}
+                className="w-full px-2 py-1 text-left text-xs font-mono hover:bg-accent"
+              >
+                {r.ticker}
+                {r.name && (
+                  <span className="ml-2 text-muted-foreground">{r.name}</span>
+                )}
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Create dialog
+// ---------------------------------------------------------------------------
+
+interface WatchlistCreateDialogProps {
+  isOpen: boolean;
+  isLoading: boolean;
+  onClose: () => void;
+  onCreate: (name: string) => Promise<void>;
+}
+
+function WatchlistCreateDialog({
+  isOpen,
+  isLoading,
+  onClose,
+  onCreate,
+}: WatchlistCreateDialogProps) {
+  const [name, setName] = useState('');
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    if (isOpen) setName('');
+  }, [isOpen]);
+
+  const submit = () => {
+    if (!name.trim()) return;
+    onCreate(name.trim());
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>{t('sidebar.newWatchlist', 'New watchlist')}</DialogTitle>
+          <DialogDescription>
+            {t('watchlist.createDescription', 'Give the list a name. You can add tickers next.')}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2 py-2">
+          <label htmlFor="wl-name" className="text-sm font-medium">
+            {t('common.name', 'Name')}
+          </label>
+          <Input
+            id="wl-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && name.trim()) submit();
+            }}
+            placeholder={t('sidebarDialogs.watchlistNamePlaceholder', 'My Mega-caps')}
+            autoFocus
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button onClick={submit} disabled={isLoading || !name.trim()}>
+            {isLoading ? t('common.loading', 'Creating...') : t('common.create', 'Create')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rename dialog
+// ---------------------------------------------------------------------------
+
+interface WatchlistRenameDialogProps {
+  watchlist: UserWatchlist;
+  onClose: () => void;
+  onRename: (id: number, name: string) => Promise<void>;
+}
+
+function WatchlistRenameDialog({
+  watchlist,
+  onClose,
+  onRename,
+}: WatchlistRenameDialogProps) {
+  const [name, setName] = useState(watchlist.name);
+  const [isLoading, setIsLoading] = useState(false);
+  const { t } = useTranslation();
+
+  const submit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === watchlist.name) {
+      onClose();
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await onRename(watchlist.id, trimmed);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-[425px]">
+        <DialogHeader>
+          <DialogTitle>{t('common.rename', 'Rename')} "{watchlist.name}"</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-2 py-2">
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit();
+            }}
+            autoFocus
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            {t('common.cancel', 'Cancel')}
+          </Button>
+          <Button onClick={submit} disabled={isLoading || !name.trim()}>
+            {isLoading ? t('lab.specJson.saving', 'Saving...') : t('common.save', 'Save')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

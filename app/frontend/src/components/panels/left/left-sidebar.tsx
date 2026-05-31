@@ -8,7 +8,6 @@ import { ScannerAction } from './scanner-action';
 import { ScreenerAction } from './screener-action';
 import { SectorsAction } from './sectors-action';
 import { WatchlistAction } from './watchlist-action';
-import { WatchlistSection } from './watchlist-section';
 
 interface LeftSidebarProps {
   children?: ReactNode;
@@ -46,8 +45,6 @@ export function LeftSidebar({
         width: `${width}px`
       }}
     >
-      <WatchlistSection />
-
       <WatchlistAction />
 
       <ScreenerAction />

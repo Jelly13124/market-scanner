@@ -35,7 +35,7 @@ import {
   UserWatchlist,
 } from '@/types/watchlist';
 import { Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const DEBOUNCE_MS = 300;
@@ -81,56 +81,23 @@ export function WatchlistTab() {
 
   const selected = lists.find((w) => w.id === selectedId) ?? null;
 
-  // Load the user's watchlists once on mount; default to the first.
-  useEffect(() => {
-    let alive = true;
+  // (Re)load the user's watchlists; default the selection to the first list
+  // when nothing is selected yet. Stable so window-focus can re-pull it.
+  const reloadLists = useCallback(async () => {
     setLoadingLists(true);
-    watchlistService
-      .list()
-      .then((wls) => {
-        if (!alive) return;
-        setLists(wls);
-        if (wls.length > 0) setSelectedId((cur) => cur ?? wls[0].id);
-      })
-      .catch((e) => {
-        console.error('listWatchlists failed', e);
-        if (alive) error(t('watchlist.loadListsFailed', 'Failed to load watchlists'));
-      })
-      .finally(() => {
-        if (alive) setLoadingLists(false);
-      });
-    return () => {
-      alive = false;
-    };
+    try {
+      const wls = await watchlistService.list();
+      setLists(wls);
+      if (wls.length > 0) setSelectedId((cur) => cur ?? wls[0].id);
+    } catch (e) {
+      console.error('listWatchlists failed', e);
+      error(t('watchlist.loadListsFailed', 'Failed to load watchlists'));
+    } finally {
+      setLoadingLists(false);
+    }
   }, [error, t]);
 
-  // Fetch live quotes whenever the selected list changes.
-  useEffect(() => {
-    if (selectedId === null) {
-      setRows([]);
-      return;
-    }
-    let alive = true;
-    setLoadingQuotes(true);
-    setRows([]);
-    watchlistService
-      .getWatchlistQuotes(selectedId)
-      .then((q) => {
-        if (alive) setRows(q);
-      })
-      .catch((e) => {
-        console.error('getWatchlistQuotes failed', e);
-        if (alive) error(t('watchlist.quotesFailed', 'Failed to load live quotes'));
-      })
-      .finally(() => {
-        if (alive) setLoadingQuotes(false);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [selectedId, error, t]);
-
-  async function refetchQuotes(id: number) {
+  const reloadQuotes = useCallback(async (id: number) => {
     setLoadingQuotes(true);
     try {
       const q = await watchlistService.getWatchlistQuotes(id);
@@ -141,11 +108,38 @@ export function WatchlistTab() {
     } finally {
       setLoadingQuotes(false);
     }
-  }
+  }, [error, t]);
+
+  // Load the user's watchlists once on mount.
+  useEffect(() => {
+    reloadLists();
+  }, [reloadLists]);
+
+  // Fetch live quotes whenever the selected list changes.
+  useEffect(() => {
+    if (selectedId === null) {
+      setRows([]);
+      return;
+    }
+    setRows([]);
+    reloadQuotes(selectedId);
+  }, [selectedId, reloadQuotes]);
+
+  // Refresh on window focus: tickers added elsewhere (e.g. the Screener) while
+  // this persistent tab was mounted won't show until we re-pull. Lightweight —
+  // refresh-on-focus only, no polling.
+  useEffect(() => {
+    const onFocus = () => {
+      reloadLists();
+      if (selectedId !== null) reloadQuotes(selectedId);
+    };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [selectedId, reloadLists, reloadQuotes]);
 
   async function handleRefresh() {
     if (selectedId === null) return;
-    await refetchQuotes(selectedId);
+    await Promise.all([reloadLists(), reloadQuotes(selectedId)]);
   }
 
   async function handleRemove(ticker: string) {
@@ -167,7 +161,7 @@ export function WatchlistTab() {
     if (selectedId === null) return;
     const updated = await watchlistService.addTicker(selectedId, ticker);
     setLists((prev) => prev.map((w) => (w.id === selectedId ? updated : w)));
-    await refetchQuotes(selectedId);
+    await reloadQuotes(selectedId);
   }
 
   async function handleCreate(name: string) {

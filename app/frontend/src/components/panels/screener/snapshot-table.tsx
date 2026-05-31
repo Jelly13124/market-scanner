@@ -6,6 +6,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -284,6 +285,8 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
   const [dialogOpen, setDialogOpen] = useState(false);
   const [watchlists, setWatchlists] = useState<UserWatchlist[]>([]);
   const [loadingWl, setLoadingWl] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [creatingWl, setCreatingWl] = useState(false);
 
   const activeCols = GROUPS[group].map((k) => COL_MAP[k]);
 
@@ -308,6 +311,7 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
 
   async function openDialog() {
     setDialogOpen(true);
+    setNewListName('');
     setLoadingWl(true);
     try {
       const wls = await watchlistService.list();
@@ -334,6 +338,20 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
     }
     setSelected(new Set());
     setDialogOpen(false);
+  }
+
+  async function handleCreateAndAdd() {
+    const name = newListName.trim();
+    if (!name || creatingWl) return;
+    setCreatingWl(true);
+    try {
+      const wl = await watchlistService.create({ name });
+      await handlePickWatchlist(wl);
+    } catch {
+      error(t('screener.bulk.createFailed', 'Failed to create watchlist'));
+    } finally {
+      setCreatingWl(false);
+    }
   }
 
   return (
@@ -448,7 +466,7 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
             )}
             {!loadingWl && watchlists.length === 0 && (
               <p className="text-sm text-muted-foreground py-4 text-center">
-                {t('screener.bulk.noLists', 'No watchlists yet. Create one in the sidebar.')}
+                {t('screener.bulk.noListsCreate', 'No watchlists yet — create one below.')}
               </p>
             )}
             {!loadingWl && watchlists.map((wl) => (
@@ -461,6 +479,26 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
                 <Badge variant="outline" className="h-5 text-[10px]">{wl.tickers.length}</Badge>
               </button>
             ))}
+          </div>
+          <div className="flex items-center gap-2 border-t pt-3">
+            <Input
+              value={newListName}
+              onChange={(e) => setNewListName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleCreateAndAdd();
+              }}
+              placeholder={t('screener.bulk.newListPlaceholder', 'New watchlist name…')}
+              className="h-8 text-sm"
+              disabled={creatingWl}
+            />
+            <Button
+              size="sm"
+              className="h-8 shrink-0 text-xs"
+              onClick={handleCreateAndAdd}
+              disabled={creatingWl || !newListName.trim()}
+            >
+              {t('screener.bulk.createAndAdd', 'Create & add')}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

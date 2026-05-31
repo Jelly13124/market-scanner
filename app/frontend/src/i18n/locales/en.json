@@ -449,6 +449,18 @@
       "button": "Analyze",
       "tooltip": "Analyze this stock (deep SOP report)"
     },
+    "bulk": {
+      "add": "Add {{count}} to watchlist",
+      "dialogTitle": "Add to watchlist",
+      "dialogDesc": "Select a watchlist to add the {{count}} selected ticker(s).",
+      "loading": "Loading…",
+      "noListsCreate": "No watchlists yet — create one below.",
+      "newListPlaceholder": "New watchlist name…",
+      "createAndAdd": "Create & add",
+      "createFailed": "Failed to create watchlist",
+      "added": "Added {{n}} to {{name}}",
+      "addFailed": "{{n}} ticker(s) failed to add"
+    },
     "presets": {
       "save": "Save preset",
       "save_title": "Save preset",

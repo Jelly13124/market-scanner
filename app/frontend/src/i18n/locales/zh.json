@@ -449,6 +449,18 @@
       "button": "分析",
       "tooltip": "深度分析这只股票 (SOP 研报)"
     },
+    "bulk": {
+      "add": "加入自选 ({{count}})",
+      "dialogTitle": "加入自选清单",
+      "dialogDesc": "选择一个清单，加入已选的 {{count}} 只股票。",
+      "loading": "加载中…",
+      "noListsCreate": "还没有自选清单 — 在下方新建一个。",
+      "newListPlaceholder": "新建清单名称…",
+      "createAndAdd": "创建并加入",
+      "createFailed": "创建清单失败",
+      "added": "已将 {{n}} 只加入 {{name}}",
+      "addFailed": "{{n}} 只股票加入失败"
+    },
     "presets": {
       "save": "保存预设",
       "save_title": "保存预设",

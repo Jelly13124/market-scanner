@@ -2,6 +2,7 @@
 // Sortable by rank, ticker, score, direction. Triggers rendered as badges.
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Table,
   TableBody,
@@ -18,9 +19,11 @@ import type {
   TriggerPayload,
   WatchlistEntryResponse,
 } from '@/types/scanner';
-import { ArrowDown, ArrowUp, Minus } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Minus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+
+const PAGE_SIZE = 20;
 
 interface WatchlistTableProps {
   entries: WatchlistEntryResponse[];
@@ -134,7 +137,15 @@ export function WatchlistTable({ entries, runId, onTickerClick }: WatchlistTable
   const [desc, setDesc] = useState(false);
   const [quotes, setQuotes] = useState<QuotesByTicker | null>(null);
   const [quotesLoading, setQuotesLoading] = useState(false);
+  const [page, setPage] = useState(0);
   const { t } = useTranslation();
+
+  // Switching to a different scan run (or a re-run that changes the row count)
+  // should start back at page 1 — and guarantees we never sit on a now
+  // out-of-range page.
+  useEffect(() => {
+    setPage(0);
+  }, [runId, entries.length]);
 
   // Fetch live quotes once entries land and we have a runId. Reset when
   // either changes (new run → discard old prices).
@@ -213,6 +224,9 @@ export function WatchlistTable({ entries, runId, onTickerClick }: WatchlistTable
     return desc ? -cmp : cmp;
   });
 
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
+  const paged = sorted.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
   if (entries.length === 0) {
     return (
       <div className="text-center text-sm text-muted-foreground py-12">
@@ -248,7 +262,7 @@ export function WatchlistTable({ entries, runId, onTickerClick }: WatchlistTable
           </TableRow>
         </TableHeader>
         <TableBody>
-          {sorted.map((entry) => {
+          {paged.map((entry) => {
             const quote = quotes?.[entry.ticker];
             const price = quote?.current_price;
             const pct = quote?.percent_change;
@@ -307,6 +321,35 @@ export function WatchlistTable({ entries, runId, onTickerClick }: WatchlistTable
           })}
         </TableBody>
       </Table>
+      {sorted.length > PAGE_SIZE && (
+        <div className="flex items-center justify-center gap-2 border-t px-2 py-1.5">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={() => setPage((p) => p - 1)}
+            disabled={page === 0}
+            aria-label={t('screener.page.prev', 'Previous page')}
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+          </Button>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {t('screener.page.label', 'Page {{page}} / {{pages}} · {{total}} total', {
+              page: page + 1, pages: totalPages, total: sorted.length,
+            })}
+          </span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs"
+            onClick={() => setPage((p) => p + 1)}
+            disabled={page >= totalPages - 1}
+            aria-label={t('screener.page.next', 'Next page')}
+          >
+            <ChevronRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

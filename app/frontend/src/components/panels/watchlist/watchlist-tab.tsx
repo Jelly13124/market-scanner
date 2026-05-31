@@ -11,8 +11,10 @@
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { BatchReportDialog } from '@/components/panels/analyze/batch-report-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -83,6 +85,10 @@ export function WatchlistTab() {
   const [renaming, setRenaming] = useState<UserWatchlist | null>(null);
   const [deleting, setDeleting] = useState<UserWatchlist | null>(null);
 
+  // Multi-select for batch reports (mirrors the Screener's selection pattern).
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [batchOpen, setBatchOpen] = useState(false);
+
   const selected = lists.find((w) => w.id === selectedId) ?? null;
 
   // (Re)load the user's watchlists; default the selection to the first list
@@ -142,11 +148,28 @@ export function WatchlistTab() {
   }, [selectedId, reloadLists, reloadQuotes]);
 
   // Switching lists or a refresh (row count changes) should start back at page 1
-  // — and guarantees we never sit on a now-out-of-range page.
-  useEffect(() => { setPage(0); }, [selectedId, rows.length]);
+  // — and guarantees we never sit on a now-out-of-range page. Also clear any
+  // multi-select so a stale pick can't leak into a different list.
+  useEffect(() => { setPage(0); setPicked(new Set()); }, [selectedId, rows.length]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const pageRows = rows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  // Select-all spans every row (all pages), mirroring the Screener.
+  const allPicked = rows.length > 0 && rows.every((r) => picked.has(r.ticker));
+
+  function togglePickAll(checked: boolean) {
+    setPicked(checked ? new Set(rows.map((r) => r.ticker)) : new Set());
+  }
+
+  function togglePickOne(ticker: string, checked: boolean) {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(ticker);
+      else next.delete(ticker);
+      return next;
+    });
+  }
 
   async function handleRefresh() {
     if (selectedId === null) return;
@@ -164,6 +187,12 @@ export function WatchlistTab() {
         const next = prev.filter((r) => r.ticker !== ticker);
         const lastPage = Math.max(0, Math.ceil(next.length / PAGE_SIZE) - 1);
         setPage((p) => Math.min(p, lastPage));
+        return next;
+      });
+      setPicked((prev) => {
+        if (!prev.has(ticker)) return prev;
+        const next = new Set(prev);
+        next.delete(ticker);
         return next;
       });
     } catch (e) {
@@ -293,10 +322,21 @@ export function WatchlistTab() {
           </Badge>
         )}
 
+        {picked.size > 0 && (
+          <Button
+            variant="default"
+            size="sm"
+            className="ml-auto h-8 text-xs"
+            onClick={() => setBatchOpen(true)}
+          >
+            {t('analyze.batch.button', 'Batch report ({{count}})', { count: picked.size })}
+          </Button>
+        )}
+
         <Button
           variant="outline"
           size="sm"
-          className="ml-auto h-8 gap-1 text-xs"
+          className={cn('h-8 gap-1 text-xs', picked.size === 0 && 'ml-auto')}
           onClick={handleRefresh}
           disabled={loadingQuotes || selectedId === null}
           title={t('watchlist.refresh.tooltip', 'Re-fetch live quotes')}
@@ -343,6 +383,12 @@ export function WatchlistTab() {
             <Table className="text-xs">
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-8">
+                    <Checkbox
+                      checked={allPicked}
+                      onCheckedChange={(v) => togglePickAll(!!v)}
+                    />
+                  </TableHead>
                   <TableHead className="text-left whitespace-nowrap">
                     {t('watchlist.col.ticker', '代码')}
                   </TableHead>
@@ -366,7 +412,7 @@ export function WatchlistTab() {
               <TableBody>
                 {rows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-6">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
                       {t('watchlist.noQuotes', 'No live data yet.')}
                     </TableCell>
                   </TableRow>
@@ -375,6 +421,12 @@ export function WatchlistTab() {
                   const chg = r.change_pct;
                   return (
                     <TableRow key={r.ticker}>
+                      <TableCell className="w-8">
+                        <Checkbox
+                          checked={picked.has(r.ticker)}
+                          onCheckedChange={(v) => togglePickOne(r.ticker, !!v)}
+                        />
+                      </TableCell>
                       <TableCell className="font-mono font-semibold">{r.ticker}</TableCell>
                       <TableCell className="text-right">{fmtPrice(r.price)}</TableCell>
                       <TableCell
@@ -448,6 +500,15 @@ export function WatchlistTab() {
           </div>
         )}
       </div>
+
+      {/* Batch report dialog — runs a report per selected ticker */}
+      <BatchReportDialog
+        open={batchOpen}
+        onOpenChange={setBatchOpen}
+        tickers={Array.from(picked)}
+        defaultMarket="us"
+        onStarted={() => setPicked(new Set())}
+      />
 
       {/* Create dialog */}
       <WatchlistCreateDialog

@@ -165,6 +165,15 @@
       "us": "美股",
       "cn": "A股"
     },
+    "batch": {
+      "button": "批量跑报告 ({{count}})",
+      "dialogTitle": "批量跑报告",
+      "dialogDesc": "为每只选中的股票生成一份深度研报。每份约 1-2 分钟，完成后会出现在最近报告中。",
+      "run": "跑 {{count}} 个报告",
+      "capNote": "最多 {{cap}} 只 — 仅运行前 {{cap}} 只。",
+      "progress": "批量分析 {{done}}/{{total}}（失败 {{failed}}）",
+      "done": "批量完成 — {{done}}/{{total}} 份报告就绪（失败 {{failed}}）"
+    },
     "section": {
       "persona": "人格",
       "objective_persona": "客观",

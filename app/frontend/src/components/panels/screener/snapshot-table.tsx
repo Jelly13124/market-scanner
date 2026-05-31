@@ -10,9 +10,11 @@ import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
+import { BatchReportDialog } from '@/components/panels/analyze/batch-report-dialog';
 import { useRequestAnalyze } from '@/hooks/use-request-analyze';
 import { useToastManager } from '@/hooks/use-toast-manager';
 import { cn } from '@/lib/utils';
+import type { Market } from '@/types/analyze';
 import { SnapshotRow } from '@/types/screener';
 import { UserWatchlist } from '@/types/watchlist';
 import { watchlistService } from '@/services/watchlist-service';
@@ -283,6 +285,7 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
   const [group, setGroup] = useState<GroupKey>('overview');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [batchOpen, setBatchOpen] = useState(false);
   const [watchlists, setWatchlists] = useState<UserWatchlist[]>([]);
   const [loadingWl, setLoadingWl] = useState(false);
   const [newListName, setNewListName] = useState('');
@@ -291,6 +294,12 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
   const activeCols = GROUPS[group].map((k) => COL_MAP[k]);
 
   const allSelected = rows.length > 0 && rows.every((r) => selected.has(r.ticker));
+
+  // Default the batch dialog's market: if every selected row is a CN ticker
+  // use 'cn', otherwise 'us'. Rows can be mixed; the user can still override.
+  const selectedRows = rows.filter((r) => selected.has(r.ticker));
+  const batchDefaultMarket: Market =
+    selectedRows.length > 0 && selectedRows.every((r) => r.market === 'CN') ? 'cn' : 'us';
 
   function toggleAll(checked: boolean) {
     if (checked) {
@@ -371,14 +380,24 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
           </TabsList>
         </Tabs>
         {selected.size > 0 && (
-          <Button
-            size="sm"
-            variant="secondary"
-            className="ml-auto h-8 text-xs"
-            onClick={openDialog}
-          >
-            {t('screener.bulk.add', 'Add {{count}} to watchlist', { count: selected.size })}
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              className="h-8 text-xs"
+              onClick={() => setBatchOpen(true)}
+            >
+              {t('analyze.batch.button', 'Batch report ({{count}})', { count: selected.size })}
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-8 text-xs"
+              onClick={openDialog}
+            >
+              {t('screener.bulk.add', 'Add {{count}} to watchlist', { count: selected.size })}
+            </Button>
+          </div>
         )}
       </div>
       <div className="border rounded-md overflow-x-auto">
@@ -449,6 +468,14 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
           </TableBody>
         </Table>
       </div>
+
+      <BatchReportDialog
+        open={batchOpen}
+        onOpenChange={setBatchOpen}
+        tickers={Array.from(selected)}
+        defaultMarket={batchDefaultMarket}
+        onStarted={() => setSelected(new Set())}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-sm">

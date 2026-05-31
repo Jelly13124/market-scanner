@@ -165,6 +165,15 @@
       "us": "US",
       "cn": "A股"
     },
+    "batch": {
+      "button": "Batch report ({{count}})",
+      "dialogTitle": "Batch report",
+      "dialogDesc": "Run a deep analysis report for each selected ticker. Each takes ~1-2 min and streams into Recent Reports.",
+      "run": "Run {{count}} reports",
+      "capNote": "At most {{cap}} at a time — only the first {{cap}} will run.",
+      "progress": "Batch analysis {{done}}/{{total}} (failed {{failed}})",
+      "done": "Batch done — {{done}}/{{total}} reports ready (failed {{failed}})"
+    },
     "section": {
       "persona": "Persona",
       "objective_persona": "objective",

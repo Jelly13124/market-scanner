@@ -139,9 +139,23 @@ def get_models_list():
     ]
 
 
-def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = None) -> ChatOpenAI | ChatGroq | ChatOllama | GigaChat | None:
+def _resolve_key(api_keys, env_name, allow_env_fallback):
+    """Resolve a provider key from the caller-supplied dict, only falling
+    back to the process env when ``allow_env_fallback`` is True.
+
+    This is the multi-tenant safety gate: on a user path the caller passes
+    ``allow_env_fallback=False`` so a partial/empty user dict can never
+    silently reach the host's env key.
+    """
+    key = (api_keys or {}).get(env_name)
+    if not key and allow_env_fallback:
+        key = os.getenv(env_name)
+    return key
+
+
+def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = None, allow_env_fallback: bool = True) -> ChatOpenAI | ChatGroq | ChatOllama | GigaChat | None:
     if model_provider == ModelProvider.GROQ:
-        api_key = (api_keys or {}).get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
+        api_key = _resolve_key(api_keys, "GROQ_API_KEY", allow_env_fallback)
         if not api_key:
             # Print error to console
             print(f"API Key Error: Please make sure GROQ_API_KEY is set in your .env file or provided via API keys.")
@@ -149,7 +163,7 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
         return ChatGroq(model=model_name, api_key=api_key)
     elif model_provider == ModelProvider.OPENAI:
         # Get and validate API key
-        api_key = (api_keys or {}).get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+        api_key = _resolve_key(api_keys, "OPENAI_API_KEY", allow_env_fallback)
         base_url = os.getenv("OPENAI_API_BASE")
         if not api_key:
             # Print error to console
@@ -157,19 +171,19 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
             raise ValueError("OpenAI API key not found.  Please make sure OPENAI_API_KEY is set in your .env file or provided via API keys.")
         return ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url)
     elif model_provider == ModelProvider.ANTHROPIC:
-        api_key = (api_keys or {}).get("ANTHROPIC_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+        api_key = _resolve_key(api_keys, "ANTHROPIC_API_KEY", allow_env_fallback)
         if not api_key:
             print(f"API Key Error: Please make sure ANTHROPIC_API_KEY is set in your .env file or provided via API keys.")
             raise ValueError("Anthropic API key not found.  Please make sure ANTHROPIC_API_KEY is set in your .env file or provided via API keys.")
         return ChatAnthropic(model=model_name, api_key=api_key)
     elif model_provider == ModelProvider.DEEPSEEK:
-        api_key = (api_keys or {}).get("DEEPSEEK_API_KEY") or os.getenv("DEEPSEEK_API_KEY")
+        api_key = _resolve_key(api_keys, "DEEPSEEK_API_KEY", allow_env_fallback)
         if not api_key:
             print(f"API Key Error: Please make sure DEEPSEEK_API_KEY is set in your .env file or provided via API keys.")
             raise ValueError("DeepSeek API key not found.  Please make sure DEEPSEEK_API_KEY is set in your .env file or provided via API keys.")
         return ChatDeepSeek(model=model_name, api_key=api_key)
     elif model_provider == ModelProvider.GOOGLE:
-        api_key = (api_keys or {}).get("GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        api_key = _resolve_key(api_keys, "GOOGLE_API_KEY", allow_env_fallback)
         if not api_key:
             print(f"API Key Error: Please make sure GOOGLE_API_KEY is set in your .env file or provided via API keys.")
             raise ValueError("Google API key not found.  Please make sure GOOGLE_API_KEY is set in your .env file or provided via API keys.")
@@ -184,7 +198,7 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
             base_url=base_url,
         )
     elif model_provider == ModelProvider.OPENROUTER:
-        api_key = (api_keys or {}).get("OPENROUTER_API_KEY") or os.getenv("OPENROUTER_API_KEY")
+        api_key = _resolve_key(api_keys, "OPENROUTER_API_KEY", allow_env_fallback)
         if not api_key:
             print(f"API Key Error: Please make sure OPENROUTER_API_KEY is set in your .env file or provided via API keys.")
             raise ValueError("OpenRouter API key not found. Please make sure OPENROUTER_API_KEY is set in your .env file or provided via API keys.")
@@ -205,8 +219,8 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
             }
         )
     elif model_provider == ModelProvider.KIMI:
-        api_key = (api_keys or {}).get("MOONSHOT_API_KEY") or os.getenv("MOONSHOT_API_KEY") \
-            or (api_keys or {}).get("KIMI_API_KEY") or os.getenv("KIMI_API_KEY")
+        api_key = _resolve_key(api_keys, "MOONSHOT_API_KEY", allow_env_fallback) \
+            or _resolve_key(api_keys, "KIMI_API_KEY", allow_env_fallback)
         if not api_key:
             print(f"API Key Error: Please make sure MOONSHOT_API_KEY (or KIMI_API_KEY) is set in your .env file or provided via API keys.")
             raise ValueError("Kimi API key not found. Please make sure MOONSHOT_API_KEY (or KIMI_API_KEY) is set in your .env file or provided via API keys.")
@@ -215,16 +229,18 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
         base_url = os.getenv("MOONSHOT_BASE_URL") or os.getenv("KIMI_BASE_URL") or "https://api.moonshot.ai/v1"
         return ChatOpenAI(model=model_name, api_key=api_key, base_url=base_url)
     elif model_provider == ModelProvider.XAI:
-        api_key = (api_keys or {}).get("XAI_API_KEY") or os.getenv("XAI_API_KEY")
+        api_key = _resolve_key(api_keys, "XAI_API_KEY", allow_env_fallback)
         if not api_key:
             print(f"API Key Error: Please make sure XAI_API_KEY is set in your .env file or provided via API keys.")
             raise ValueError("xAI API key not found. Please make sure XAI_API_KEY is set in your .env file or provided via API keys.")
         return ChatXAI(model=model_name, api_key=api_key)
     elif model_provider == ModelProvider.GIGACHAT:
-        if os.getenv("GIGACHAT_USER") or os.getenv("GIGACHAT_PASSWORD"):
+        if allow_env_fallback and (os.getenv("GIGACHAT_USER") or os.getenv("GIGACHAT_PASSWORD")):
             return GigaChat(model=model_name)
-        else: 
-            api_key = (api_keys or {}).get("GIGACHAT_API_KEY") or os.getenv("GIGACHAT_API_KEY") or os.getenv("GIGACHAT_CREDENTIALS")
+        else:
+            api_key = _resolve_key(api_keys, "GIGACHAT_API_KEY", allow_env_fallback)
+            if not api_key and allow_env_fallback:
+                api_key = os.getenv("GIGACHAT_CREDENTIALS")
             if not api_key:
                 print("API Key Error: Please make sure api_keys is set in your .env file or provided via API keys.")
                 raise ValueError("GigaChat API key not found. Please make sure GIGACHAT_API_KEY is set in your .env file or provided via API keys.")

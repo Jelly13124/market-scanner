@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import logging
 import asyncio
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -21,6 +24,38 @@ load_dotenv()
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def mount_spa(app, dist_dir: Path) -> None:
+    """Serve a built Vite SPA from FastAPI (single-origin deploy).
+
+    Mounts ``dist_dir/assets`` under ``/assets`` and registers a catch-all that
+    returns ``index.html`` for any path not already claimed by an API router.
+    Because FastAPI matches routes in registration order, this MUST be called
+    AFTER ``app.include_router(api_router)`` so API routes win and are never
+    shadowed by the SPA fallback.
+
+    No-op when no build is present (dev / tests): if ``dist_dir`` is missing or
+    has no ``index.html``, nothing is mounted and the app stays API-only.
+    """
+    if not dist_dir.is_dir() or not (dist_dir / "index.html").exists():
+        return  # no build present (dev/tests) -> skip, API-only
+
+    assets = dist_dir / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+
+    index = dist_dir / "index.html"
+
+    # "/" -> index.html
+    @app.get("/")
+    def _spa_root():
+        return FileResponse(str(index))
+
+    # client-side route -> index.html. API routes (registered earlier) already won.
+    @app.get("/{full_path:path}")
+    def _spa(full_path: str):
+        return FileResponse(str(index))
 
 # JWT secret guard. The signing default lives in auth/security.py; here we just
 # warn (dev) or hard-fail (prod) when the operator hasn't overridden it via
@@ -58,6 +93,11 @@ app.add_middleware(
 
 # Include all routes
 app.include_router(api_router)
+
+# Serve the built SPA (single-origin deploy): index at "/", hashed assets under
+# "/assets", catch-all for client-side routes. Registered LAST so API routes
+# above always win. No-op when no build is present (dev/tests).
+mount_spa(app, Path(os.getenv("FRONTEND_DIST", "app/frontend/dist")))
 
 # Wire the scanner pipeline: broadcaster -> service -> scheduler. Module-level so
 # routes can grab the scheduler via Depends(get_scheduler_service).

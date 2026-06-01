@@ -2890,3 +2890,7 @@ Decisions (findings): stock score = the conviction (综合评分 53/100) score, 
 - scanner-eval round2 M2: eval_corroboration — bucket fires by n_triggered (1/2/3+), interestingness + dir-alpha vs random + same-dir split. TDD offline green.
 - scanner-eval round2 M3: eval_threshold_sweep — fire_rate vs interestingness curve + pick_knee decision rule. TDD offline green.
 - per-user-keys V1: full backend suite green; report-isolation tests adapted to B2 superuser gate (promote A for legacy /research/run setup; B stays normal → isolation assertions intact).
+
+## Session — 2026-06-01 (deploy P2 — single-origin SPA)
+
+- deploy P2-A1: FastAPI serves the built SPA (index + /assets + catch-all), API stays at root; no-op when no build present. TDD green.

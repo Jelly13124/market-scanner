@@ -185,6 +185,42 @@ def test_verdicts_ignore_20d_rows():
     assert idx["signals"]["dl_sig"] == "DATA-LIMITED"
 
 
+def test_int_horizon_rows_not_collapsed_to_data_limited():
+    """Regression: signal_ic once emitted an INT horizon (5) while the report
+    filtered rows on the string '5d' — so every signal silently collapsed to
+    DATA-LIMITED. _norm_horizon must treat int 5 / '5' / '5d' identically, both
+    in the verdict and in the rendered tables."""
+    int_keep_sig = []
+    int_keep_det = []
+    for rname, rlabel in zip(_REGIME_NAMES, _REGIME_LABELS):
+        int_keep_sig.append({
+            "signal": "int_sig", "regime": rname, "regime_label": rlabel,
+            "horizon": 5,  # INT, not "5d"
+            "mean_ic": 0.05, "ic_t": 3.0, "n_dates": 10, "coverage": 0.9,
+        })
+        int_keep_det.append({
+            "detector": "int_det", "regime": rname, "regime_label": rlabel,
+            "horizon": 5,  # INT, not "5d"
+            "n_fired": 40, "coverage": 0.9,
+            "interestingness_diff": 0.03, "interestingness_t": 3.0,
+            "abs_mean_fired": 0.05, "abs_mean_baseline": 0.02,
+            "signed_mean_fired": 0.01, "dir_alpha_mean": 0.001, "dir_alpha_t": 1.5,
+        })
+
+    assert classify_signal_verdict(int_keep_sig) == "KEEP"
+    assert classify_detector_verdict(int_keep_det) == "KEEP"
+
+    idx = build_verdict_index(int_keep_det, int_keep_sig)
+    assert idx["signals"]["int_sig"] == "KEEP"
+    assert idx["detectors"]["int_det"] == "KEEP"
+
+    # And the rendered tables must show the real cell (n_dates), not an empty "—".
+    md = render_report(detector_rows=int_keep_det, signal_rows=int_keep_sig,
+                       regimes=_REGIMES, phase3=None)
+    assert "int_sig" in md and "int_det" in md
+    assert "/ 10" in md  # the signal's n_dates rendered → row was found, not dropped
+
+
 def _render_kwargs(phase3=None):
     return dict(
         detector_rows=KEEP_DET + CUT_DET + DATA_LIMITED_DET,

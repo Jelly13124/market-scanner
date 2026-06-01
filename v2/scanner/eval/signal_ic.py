@@ -191,7 +191,9 @@ def score_signal(
                 "signal": signal.name,
                 "regime": regime.name,
                 "regime_label": regime.label,
-                "horizon": h,
+                # "<n>d" string to match detector_scorecard + report's PRIMARY_HORIZON
+                # filter (an int here silently collapsed every signal to DATA-LIMITED).
+                "horizon": f"{h}d",
                 "mean_ic": mean_ic,
                 "ic_t": ic_t,
                 "n_dates": n_dates,

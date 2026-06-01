@@ -133,8 +133,8 @@ def test_perfect_factor_ic_near_plus_one():
     sig = _FakeSignal(lambda t, d: float(_k_of(t)))
     rows = score_signal(sig, _regime(), bundles)
     by_h = {r["horizon"]: r for r in rows}
-    assert set(by_h) == {5, 20}
-    r5 = by_h[5]
+    assert set(by_h) == {"5d", "20d"}
+    r5 = by_h["5d"]
     assert r5["mean_ic"] > 0.9
     assert r5["n_dates"] >= 1
     assert r5["coverage"] == 1.0
@@ -150,7 +150,7 @@ def test_negated_factor_ic_near_minus_one():
     sig = _FakeSignal(lambda t, d: -float(_k_of(t)))
     rows = score_signal(sig, _regime(), bundles)
     by_h = {r["horizon"]: r for r in rows}
-    assert by_h[5]["mean_ic"] < -0.9
+    assert by_h["5d"]["mean_ic"] < -0.9
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +166,7 @@ def test_shuffled_factor_ic_near_zero():
     sig = _FakeSignal(lambda t, d: float(perm[_k_of(t)]))
     rows = score_signal(sig, _regime(), bundles)
     by_h = {r["horizon"]: r for r in rows}
-    assert abs(by_h[5]["mean_ic"]) < 0.5
+    assert abs(by_h["5d"]["mean_ic"]) < 0.5
 
 
 # ---------------------------------------------------------------------------

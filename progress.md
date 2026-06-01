@@ -2881,3 +2881,4 @@ Decisions (findings): stock score = the conviction (综合评分 53/100) score, 
 
 - scanner-eval round2 M1: eval_volume_confirm — split intraday_move fires by volume-z, interestingness vs random per bucket. TDD offline green.
 - scanner-eval round2 M2: eval_corroboration — bucket fires by n_triggered (1/2/3+), interestingness + dir-alpha vs random + same-dir split. TDD offline green.
+- scanner-eval round2 M3: eval_threshold_sweep — fire_rate vs interestingness curve + pick_knee decision rule. TDD offline green.

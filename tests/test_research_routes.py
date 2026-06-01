@@ -38,7 +38,40 @@ def client():
         finally:
             s.close()
 
-    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
+    # Superuser: the legacy /research/run route is now superuser-only (regular
+    # users get 403). These pre-existing route tests exercise the run path, so
+    # the acting user must be a superuser to reach run_research.
+    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=True)
+
+    app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = lambda: _fake_user
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+    engine.dispose()
+
+
+@pytest.fixture
+def client_non_superuser():
+    """Same harness as `client` but the acting user is a NON-superuser, used
+    to assert the legacy /research/run gate (403)."""
+    from sqlalchemy.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+
+    def _override_get_db():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    _fake_user = User(id=2, email="user@test.com", is_active=True, is_superuser=False)
 
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_current_user] = lambda: _fake_user
@@ -96,6 +129,27 @@ class TestPostRun:
         r2 = client.get(f"/research/reports/{report_id}")
         assert r2.status_code == 200
         assert r2.json()["ticker"] == "NVDA"
+
+
+class TestLegacyRunGate:
+    """The legacy /research/run route is superuser-only (the legacy pipeline is
+    NOT wired for per-user keys, so a regular user would leak the host's keys)."""
+
+    def test_legacy_run_forbidden_for_non_superuser(self, client_non_superuser):
+        resp = client_non_superuser.post("/research/run", json={"ticker": "NVDA"})
+        assert resp.status_code == 403, resp.text
+        assert "/research/analyze" in resp.json()["detail"]
+
+    @patch("app.backend.routes.research.run_research")
+    @patch("app.backend.routes.research.render_html")
+    def test_legacy_run_allowed_for_superuser(self, mock_render, mock_run, client):
+        # `client` fixture acts as a superuser; the gate must pass through to
+        # run_research (mocked so it does not actually execute the pipeline).
+        mock_run.return_value = _fake_state("NVDA")
+        mock_render.return_value = "<html></html>"
+        resp = client.post("/research/run", json={"ticker": "NVDA"})
+        assert resp.status_code != 403, resp.text
+        assert mock_run.called
 
 
 class TestListReports:

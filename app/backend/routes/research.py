@@ -107,6 +107,15 @@ def trigger_run(
     current_user: User = Depends(get_current_user),
 ) -> ResearchReportDetail:
     """Run the research pipeline, persist the report + plan, return detail."""
+    # The legacy pipeline (src/research/pipeline.py + modules) is NOT wired for
+    # per-user keys and would fall back to the host's .env keys — a host-key
+    # leak for a normal user. Gate it to superusers (seed/admin) only; everyone
+    # else uses the per-user-key-wired /research/analyze route.
+    if not current_user.is_superuser:
+        raise HTTPException(
+            status_code=403,
+            detail="The legacy /research/run endpoint is deprecated for regular users — use /research/analyze.",
+        )
     internal_req = _api_request_to_internal(req)
     t0 = time.monotonic()
     try:

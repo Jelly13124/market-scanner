@@ -39,7 +39,10 @@ def client():
         finally:
             s.close()
 
-    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
+    # Superuser: the legacy /research/run route is superuser-only (regular users
+    # get 403). This end-to-end flow exercises run → list → detail → html, so the
+    # acting user must be a superuser to reach the run path.
+    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=True)
 
     app.dependency_overrides[get_db] = _override_get_db
     app.dependency_overrides[get_current_user] = lambda: _fake_user

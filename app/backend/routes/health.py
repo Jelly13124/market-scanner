@@ -6,9 +6,15 @@ import json
 router = APIRouter()
 
 
-@router.get("/")
-async def root():
-    return {"message": "Welcome to Quant Lab API"}
+@router.get("/health")
+async def health():
+    """Lightweight liveness probe (used by the Fly health check). Fast + JSON.
+
+    The bare ``/`` is intentionally NOT a route here: in a single-origin deploy
+    the SPA owns ``/`` (see ``mount_spa`` in main.py). ``/ping`` is a 5s SSE
+    stream — not suitable for a health check.
+    """
+    return {"status": "ok"}
 
 
 @router.get("/tier")

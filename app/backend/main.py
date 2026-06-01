@@ -33,11 +33,12 @@ logger = logging.getLogger(__name__)
 def mount_spa(app, dist_dir: Path) -> None:
     """Serve a built Vite SPA from FastAPI (single-origin deploy).
 
-    Mounts ``dist_dir/assets`` under ``/assets`` and registers a catch-all that
-    returns ``index.html`` for any path not already claimed by an API router.
-    Because FastAPI matches routes in registration order, this MUST be called
-    AFTER ``app.include_router(api_router)`` so API routes win and are never
-    shadowed by the SPA fallback.
+    Mounts ``dist_dir/assets`` under ``/assets``, serves ``index.html`` at ``/``,
+    and adds a 404 handler that returns ``index.html`` for unmatched browser
+    navigations (client-side routing). Using a 404 handler — NOT a greedy
+    ``/{path:path}`` catch-all — means matched API routes (including trailing-slash
+    collection redirects like ``/api-keys`` -> ``/api-keys/``) are never shadowed.
+    Call AFTER ``app.include_router(api_router)``.
 
     No-op when no build is present (dev / tests): if ``dist_dir`` is missing or
     has no ``index.html``, nothing is mounted and the app stays API-only.
@@ -51,15 +52,27 @@ def mount_spa(app, dist_dir: Path) -> None:
 
     index = dist_dir / "index.html"
 
-    # "/" -> index.html
+    # "/" -> index.html. The API welcome route was moved to /health, so root is
+    # free for the SPA.
     @app.get("/")
     def _spa_root():
         return FileResponse(str(index))
 
-    # client-side route -> index.html. API routes (registered earlier) already won.
-    @app.get("/{full_path:path}")
-    def _spa(full_path: str):
-        return FileResponse(str(index))
+    # SPA client-side routing via a 404 HANDLER (NOT a greedy catch-all route).
+    # A greedy ``/{path:path}`` route shadows matched API routes — in particular
+    # the trailing-slash collection redirects (e.g. GET /api-keys -> /api-keys/),
+    # which would return the SPA HTML instead of the API. A 404 handler only fires
+    # when nothing else matched: a browser navigation (GET + Accept: text/html) to
+    # an unknown path gets index.html for client-side routing, while XHR/JSON
+    # requests keep their normal 404.
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+    from fastapi.exception_handlers import http_exception_handler
+
+    @app.exception_handler(StarletteHTTPException)
+    async def _spa_fallback(request, exc):
+        if exc.status_code == 404 and request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+            return FileResponse(str(index))
+        return await http_exception_handler(request, exc)
 
 # JWT secret guard. The signing default lives in auth/security.py; here we just
 # warn (dev) or hard-fail (prod) when the operator hasn't overridden it via

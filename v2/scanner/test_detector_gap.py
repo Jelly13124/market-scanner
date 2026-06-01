@@ -138,9 +138,21 @@ class TestGapDetector:
         assert trig.triggered is True
         assert trig.severity_z <= 8.0
 
-    def test_registration_in_all_detectors(self):
-        """gap must appear in ALL_DETECTORS and DETECTOR_METADATA."""
-        from v2.scanner.detectors import ALL_DETECTORS, DETECTOR_METADATA
+    def test_retired_from_all_detectors(self):
+        """gap was RETIRED 2026-06-01 (round-2): its z-scoring is broken (a 5σ
+        threshold still fires ~49% of bear ticker-days) and interestingness is
+        negative at every swept threshold — see findings_scanner_round2.md.
+        Unregistered from ALL_DETECTORS + DETECTOR_METADATA, but the class stays
+        importable and the name is accepted by config validators (RETIRED_DETECTORS)
+        so old saved configs still load."""
+        from v2.scanner.detectors import (
+            ALL_DETECTORS,
+            DETECTOR_METADATA,
+            RETIRED_DETECTORS,
+            GapDetector,
+        )
         names = [c().name for c in ALL_DETECTORS]
-        assert "gap" in names
-        assert "gap" in DETECTOR_METADATA
+        assert "gap" not in names
+        assert "gap" not in DETECTOR_METADATA
+        assert "gap" in RETIRED_DETECTORS
+        assert GapDetector().name == "gap"  # still importable

@@ -32,17 +32,20 @@ ALL_DETECTORS: tuple[type[EventDetector], ...] = (
     TargetPriceChangeDetector,
     BollingerSqueezeDetector,
     RsiDivergenceDetector,
-    GapDetector,
     MaCrossDetector,
-    # UNREGISTERED 2026-06-01 as net-counterproductive pre-filters per the
-    # regime-segmented eval (findings_scanner_eval.md). Their flagged events had
-    # significantly NEGATIVE interestingness-vs-random — i.e. they flag stocks
-    # that then move LESS than a random pick, worst in the bear regime:
+    # UNREGISTERED 2026-06-01 as net-counterproductive / broken pre-filters per the
+    # regime-segmented eval (findings_scanner_eval.md + findings_scanner_round2.md).
+    # Flagged events had significantly NEGATIVE interestingness-vs-random — they flag
+    # stocks that then move LESS than a random pick, worst in the bear regime:
     #   * HighBreakoutDetector   (high_breakout,        t=-4.2 / -4.4)
     #   * OBVDivergenceDetector  (obv_divergence,       t=-4.3 / -2.4)
     #   * NewsSentimentShiftDetector (news_sentiment_shift, t=-5.0 — also the
     #       long-planned removal as sentiment moves to the LLM agent layer)
     #   * VolumeAnomalyDetector  (price_volume_anomaly, flat-day volume ≈0/neg)
+    #   * GapDetector (gap) — RETIRED 2026-06-01 (round-2): z-scoring is BROKEN (a
+    #       5σ threshold still fires on ~49% of bear ticker-days), interestingness
+    #       negative at every swept threshold 3.0–5.0σ. No sane threshold exists.
+    #       See findings_scanner_round2.md.
     # Classes remain importable + re-registerable (files retained); drop them
     # back into this tuple + DETECTOR_METADATA to re-enable.
     #
@@ -118,16 +121,6 @@ DETECTOR_METADATA: dict[str, dict] = {
             "BUT RSI at that low is higher. Severity = RSI gap / 10, capped at 8."
         ),
     },
-    "gap": {
-        "label": "Gap Up/Down",
-        "default_mult": 1.00,
-        "description": (
-            "Today's open gaps ≥3σ from yesterday's close relative to the trailing "
-            "60-bar gap distribution. Bullish on gap-up, bearish on gap-down. "
-            "Severity z clamped to [0, 8]. Std floor 0.003 (30 bps) prevents "
-            "denominator collapse on ultra-stable overnight opens."
-        ),
-    },
     "ma_cross": {
         "label": "Golden/Death Cross",
         "default_mult": 1.00,
@@ -164,6 +157,7 @@ RETIRED_DETECTORS: frozenset[str] = frozenset(
         "obv_divergence",
         "news_sentiment_shift",
         "price_volume_anomaly",
+        "gap",
     }
 )
 

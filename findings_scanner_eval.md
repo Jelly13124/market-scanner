@@ -1,6 +1,6 @@
 # Scanner detector & signal usefulness — evaluation report
 
-Regime-segmented usefulness study over `nasdaq100_sp500`. Primary axis is **interestingness vs random** (does it flag bigger movers than random); directional alpha / IC is secondary colour. Generated at: 2026-05-31T05:54.
+Regime-segmented usefulness study over `nasdaq100_sp500 (80-ticker subset)`. Primary axis is **interestingness vs random** (does it flag bigger movers than random); directional alpha / IC is secondary colour. Generated at: 2026-05-31 (Phase 1+2; re-rendered with horizon fix).
 
 ## Headline
 
@@ -11,7 +11,7 @@ Regime-segmented usefulness study over `nasdaq100_sp500`. Primary axis is **inte
 **Useful signals:** —
 **Inverted:** —
 **Useless:** —
-**Data-limited:** earnings_quality, momentum, quality, technical, value
+**Data-limited:** earnings_quality, quality, value
 
 ## Detector scorecard
 
@@ -39,11 +39,11 @@ Per-regime cell: `mean rank-IC (t) / n_dates`.
 
 | Signal | Verdict | BEAR (bear_2022) | BULL (bull_2023_24) | CHOPPY (choppy_2025) |
 |---|---|---|---|---|
-| earnings_quality | DATA-LIMITED | — | — | — |
-| momentum | DATA-LIMITED | — | — | — |
-| quality | DATA-LIMITED | — | — | — |
-| technical | DATA-LIMITED | — | — | — |
-| value | DATA-LIMITED | — | — | — |
+| momentum | WATCH | +0.017 (t=0.4) / 40 | +0.043 (t=0.8) / 36 | -0.004 (t=-0.1) / 23 |
+| technical | WATCH | -0.050 (t=-1.7) / 40 | -0.017 (t=-0.6) / 36 | -0.029 (t=-0.6) / 23 |
+| earnings_quality | DATA-LIMITED | +0.000 (t=0.0) / 0 | +0.000 (t=0.0) / 0 | +0.000 (t=0.0) / 0 |
+| quality | DATA-LIMITED | +0.000 (t=0.0) / 0 | +0.000 (t=0.0) / 0 | +0.076 (t=1.0) / 17 |
+| value | DATA-LIMITED | +0.000 (t=0.0) / 0 | +0.000 (t=0.0) / 0 | +0.000 (t=0.0) / 0 |
 
 ## Phase 3 — full-replay confirmation
 

@@ -50,9 +50,23 @@ _SIG_KEEP_REGIMES = 2  # regimes that must clear to KEEP / INVERTED
 # ---------------------------------------------------------------------------
 
 
+def _norm_horizon(h) -> str:
+    """Canonicalize a horizon to the ``'<n>d'`` string form.
+
+    ``detector_scorecard`` emits ``'5d'`` (string) while ``signal_ic`` historically
+    emitted ``5`` (int); both — and a bare ``'5'`` from a CSV round-trip — must
+    match ``PRIMARY_HORIZON``. Without this, int-horizon signal rows silently fail
+    the ``== '5d'`` filter and every signal collapses to DATA-LIMITED.
+    """
+    if h is None:
+        return ""
+    s = str(h)
+    return s if s.endswith("d") else f"{s}d"
+
+
 def _primary(rows: list[dict]) -> list[dict]:
-    """Keep only the primary-horizon rows of *rows*."""
-    return [r for r in rows if r.get("horizon") == PRIMARY_HORIZON]
+    """Keep only the primary-horizon rows of *rows* (int or string horizon)."""
+    return [r for r in rows if _norm_horizon(r.get("horizon")) == PRIMARY_HORIZON]
 
 
 def _group_by(rows: list[dict], key: str) -> dict[str, list[dict]]:

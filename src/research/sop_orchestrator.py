@@ -107,10 +107,19 @@ def _backtest_validation_md(b: BacktestVerdict, lang: str = "en") -> str:
     return md
 
 
-def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
+def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeReport:
     """End-to-end SOP runner. Returns AnalyzeReport with all sections,
     persona assignments (when use_personas), backtest verdict, and
-    rendered_html=None (Task 16's render_sop populates that)."""
+    rendered_html=None (Task 16's render_sop populates that).
+
+    api_keys: per-user provider keys (multi-tenant). When provided, the
+    dict is threaded onto EVERY SectionContext — including the sections
+    fanned out across the ThreadPoolExecutor — so each section's LLM call
+    uses the requesting user's own keys. It is a local var captured by the
+    _run_one closure and carried solely via SectionContext; it is NEVER
+    placed on a module global / os.environ / thread-local, because
+    concurrent multi-tenant analyze runs would otherwise race and
+    cross-contaminate tenants. None => host-env keys (single-tenant / cron)."""
     scan_date = date.today().isoformat()
     shared = fetch_shared_data(request.ticker, scan_date, market=request.market)
 
@@ -189,6 +198,7 @@ def run_sop(request: AnalyzeRequest) -> AnalyzeReport:
             shared=shared,
             persona=_persona_for_request(name),
             prior=prior_snapshot,
+            api_keys=api_keys,
         )
         try:
             return runner.run(ctx)

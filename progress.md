@@ -12,6 +12,7 @@
 - scanner-eval D2: run_eval orchestrator — prefetch price bundles, Phase1 guaranteed + Phase2 enrich (time-boxed) + Phase3 bounded replay, incremental fail-soft report. TDD green.
 - per-user-keys A1: get_model gains allow_env_fallback (user path off → no host-key leak); call_research_llm forwards api_keys. TDD green.
 - per-user-keys A2: SectionContext.api_keys + run_llm_section forwards it to call_research_llm. TDD green.
+- per-user-keys A3: run_sop threads api_keys into all SectionContexts across the ThreadPool (explicit arg, no globals). Tenant-isolation tested.
 
 ## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
 

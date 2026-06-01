@@ -307,6 +307,7 @@ def run_eval(
             rr = run_phase3(
                 regimes,
                 universe_kind=universe,
+                universe_tickers=tickers,  # same capped subset as Phase 1/2 (NOT the full 516)
                 top_n=20,
                 max_days=phase3_max_days,
                 out_dir=out_path,

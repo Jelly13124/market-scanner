@@ -56,20 +56,35 @@ REGIMES = [
 ]
 
 
+def _load_phase3():
+    """Load the Phase-3 summary JSON if the standalone run produced one."""
+    import json
+
+    p = REPO / "scanner_eval" / "phase3_summary.json"
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+
+
 def main() -> None:
     det = _load(REPO / "scanner_eval" / "detectors.csv")
     sig = _load(REPO / "scanner_eval" / "signals.csv")
+    phase3 = _load_phase3()
     out = REPO / "findings_scanner_eval.md"
+    tag = "Phase 1+2+3" if phase3 else "Phase 1+2"
     write_report(
         out,
         detector_rows=det,
         signal_rows=sig,
         regimes=REGIMES,
-        phase3=None,
+        phase3=phase3,
         universe="nasdaq100_sp500 (80-ticker subset)",
-        generated_at="2026-05-31 (Phase 1+2; re-rendered with horizon fix)",
+        generated_at=f"2026-05-31 ({tag})",
     )
-    print(f"re-rendered {out}")
+    print(f"re-rendered {out} (phase3={'yes' if phase3 else 'no'})")
 
 
 if __name__ == "__main__":

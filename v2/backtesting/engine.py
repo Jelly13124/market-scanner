@@ -202,10 +202,17 @@ def run_backtest(
     output_path: Path,
     benchmark_ticker: str = "SPY",
     max_days: int | None = None,
+    spread_days: int | None = None,
     provider_factory=None,
     use_quant_signals: bool = True,
 ) -> int:
     """Execute a backtest and write CSV. Returns the number of rows written.
+
+    ``spread_days`` (if set) evenly samples that many scan dates ACROSS the full
+    [start,end] window instead of taking the first ``max_days`` adjacent ones —
+    adjacent days produce near-identical Top-Ns, so for a small bounded sample
+    spread_days gives a far more regime-representative alpha estimate. Takes
+    precedence over ``max_days`` when both are set.
 
     Sequential per-day loop. Inside each day ``run_scan`` parallelizes
     across tickers via its own ThreadPool. Per CLAUDE.md per-worker
@@ -246,7 +253,15 @@ def run_backtest(
         days = trading_days_between(
             helper_client, start_date=start_date, end_date=end_date,
         )
-        if max_days is not None:
+        if spread_days is not None and spread_days > 0 and len(days) > spread_days:
+            # Evenly sample across the whole window — adjacent days give nearly
+            # identical Top-Ns, so for a bounded sample this is far more
+            # regime-representative than the first N days.
+            import numpy as _np
+
+            idx = sorted(set(int(i) for i in _np.linspace(0, len(days) - 1, spread_days)))
+            days = [days[i] for i in idx]
+        elif max_days is not None:
             days = days[:max_days]
         if not days:
             raise ValueError(

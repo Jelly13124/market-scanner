@@ -37,8 +37,10 @@ def run_phase3(
     regimes,
     *,
     universe_kind="nasdaq100_sp500",
+    universe_tickers=None,
     top_n=20,
     max_days=8,
+    spread_days=None,
     out_dir,
     provider_factory=None,
     run_backtest=None,
@@ -76,13 +78,14 @@ def run_phase3(
             try:
                 run_backtest(
                     universe_kind=universe_kind,
-                    universe_tickers=None,
+                    universe_tickers=universe_tickers,
                     weights_payload=None,
                     start_date=start,
                     end_date=end,
                     top_n=top_n,
                     output_path=csv_path,
                     max_days=max_days,
+                    spread_days=spread_days,
                     provider_factory=provider_factory,
                     use_quant_signals=use_quant,
                 )

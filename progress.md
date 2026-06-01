@@ -2876,3 +2876,7 @@ Decisions (findings): stock score = the conviction (综合评分 53/100) score, 
 - scanner-eval B3: report renderer + verdict logic (KEEP/WATCH/CUT/DATA-LIMITED/INVERTED), interestingness-primary, Phase-3 block. TDD green.
 - scanner-eval C1: historical_events — reuse YFinanceClient for earnings+analyst history, best-effort insider/news/financials, budget-aware enrich_bundle. TDD mocked, green.
 - scanner-eval D1: phase3_backtest — bounded full-replay per regime x quant on/off via v2.backtesting, fail-soft, summarize alpha + quant ablation delta. TDD green.
+
+## Session — 2026-06-01 (scanner-eval round 2 — Task M1)
+
+- scanner-eval round2 M1: eval_volume_confirm — split intraday_move fires by volume-z, interestingness vs random per bucket. TDD offline green.

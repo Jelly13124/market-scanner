@@ -88,10 +88,11 @@ class TestApiKeyRouteIsolation:
         r = full_client.delete("/api-keys/OPENAI_API_KEY", headers=auth_header(tok_b))
         assert r.status_code == 404
 
-        # A's key still present
+        # A's key still present. The response MASKS the key (C1: keys are
+        # write-only; only '••••' + last 4 is returned, never the raw secret).
         r2 = full_client.get("/api-keys/OPENAI_API_KEY", headers=auth_header(tok_a))
         assert r2.status_code == 200
-        assert r2.json()["key_value"] == "sk-aaa"
+        assert r2.json()["key_value"] == "••••-aaa"
 
     def test_a_can_delete_own_key(self, full_client, two_users):
         tok_a, _ = two_users
@@ -102,15 +103,19 @@ class TestApiKeyRouteIsolation:
         assert r2.status_code == 404
 
     def test_same_provider_distinct_per_user(self, full_client, two_users):
-        """A and B may both store OPENAI_API_KEY; each resolves to their own."""
+        """A and B may both store OPENAI_API_KEY; each resolves to their own.
+
+        Responses are masked (C1), so the distinct last-4 tails prove each user
+        gets their OWN key back, not the other's.
+        """
         tok_a, tok_b = two_users
-        _store_key(full_client, tok_a, value="sk-aaa")
-        _store_key(full_client, tok_b, value="sk-bbb")
+        _store_key(full_client, tok_a, value="sk-aaa1111")
+        _store_key(full_client, tok_b, value="sk-bbb2222")
 
         ra = full_client.get("/api-keys/OPENAI_API_KEY", headers=auth_header(tok_a))
         rb = full_client.get("/api-keys/OPENAI_API_KEY", headers=auth_header(tok_b))
-        assert ra.json()["key_value"] == "sk-aaa"
-        assert rb.json()["key_value"] == "sk-bbb"
+        assert ra.json()["key_value"] == "••••1111"
+        assert rb.json()["key_value"] == "••••2222"
 
 
 # ---------------------------------------------------------------------------

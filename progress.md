@@ -16,6 +16,7 @@
 - per-user-keys A4: /research/analyze fetches user keys (ApiKeyService), validates require_api_key → 400, passes to run_sop. No host-key leak on the user path.
 - per-user-keys B1: Lab chat (trigger_chat → run_chat_turn → call_research_llm) threads user api_keys + 400 gate. TDD green.
 - per-user-keys B2: legacy /research/run is superuser-only (non-superuser → 403) to prevent the un-wired legacy pipeline leaking host keys. TDD green.
+- per-user-keys C1: Fernet-encrypt ApiKey.key_value at rest (APP_ENCRYPTION_KEY); decrypt on read (legacy-plaintext tolerant); mask key in responses. TDD green.
 
 ## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
 

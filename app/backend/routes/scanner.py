@@ -37,6 +37,7 @@ from sqlalchemy.orm import Session
 from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
 from app.backend.database.models import User
+from app.backend.rate_limit import heavy_limit, rate_limited
 from app.backend.models.scanner_schemas import (
     DetectorMetadataResponse,
     QuoteResponse,
@@ -210,8 +211,10 @@ def delete_config(
 
 
 @router.post("/configs/{config_id}/run", status_code=202)
+@rate_limited(heavy_limit())
 def run_config_now(
     config_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     scheduler: SchedulerService = Depends(get_scheduler_service),
     current_user: User = Depends(get_current_user),

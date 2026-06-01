@@ -11,6 +11,7 @@ from app.backend.auth.oauth import build_authorize_url, exchange_code, get_provi
 from app.backend.auth.security import create_access_token, create_refresh_token, create_verify_token, decode_token, decode_verify_token, hash_password, verify_password
 from app.backend.database import get_db
 from app.backend.models.auth_schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
+from app.backend.rate_limit import auth_limit, rate_limited
 from app.backend.repositories.user_repository import UserRepository
 from app.backend.services.notifications.email_handler import EmailHandler
 
@@ -49,7 +50,8 @@ def _set_refresh_cookie(response: Response, user_id: int) -> None:
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
-def register(body: RegisterRequest, response: Response, db: Session = Depends(get_db)):
+@rate_limited(auth_limit())
+def register(body: RegisterRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     repo = UserRepository(db)
     if repo.get_by_email(body.email):
         raise HTTPException(status_code=409, detail="Email already registered")
@@ -80,7 +82,8 @@ def verify_email(token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(body: LoginRequest, response: Response, db: Session = Depends(get_db)):
+@rate_limited(auth_limit())
+def login(body: LoginRequest, request: Request, response: Response, db: Session = Depends(get_db)):
     repo = UserRepository(db)
     user = repo.get_by_email(body.email)
     if user is None or user.hashed_password is None or not verify_password(body.password, user.hashed_password):

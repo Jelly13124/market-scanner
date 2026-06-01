@@ -18,13 +18,14 @@ import os
 import time
 from datetime import date as _date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session
 
 from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
 from app.backend.database.models import User
+from app.backend.rate_limit import heavy_limit, rate_limited
 from app.backend.services.api_key_service import ApiKeyError, ApiKeyService
 from app.backend.models.research_schemas import (
     AnalyzeReportDetail,
@@ -317,8 +318,10 @@ def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
 
 
 @router.post("/analyze", response_model=AnalyzeReportDetail)
+@rate_limited(heavy_limit())
 def trigger_analyze(
     req: AnalyzeRunRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> AnalyzeReportDetail:

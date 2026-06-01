@@ -48,6 +48,8 @@ cryptography = ">=42.0.0"
 authlib = "^1.3.0"
 email-validator = "^2.1.0"
 psycopg2-binary = "^2.9.9"
+# IP-keyed rate limiting for the public deploy surface (auth + heavy endpoints)
+slowapi = "^0.1.9"
 # Analyst data backend for the scanner (M8)
 yfinance = "^0.2.66"
 # Phase 8 — A-share data integration (optional [ashare] extra)

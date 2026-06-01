@@ -8,7 +8,11 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
+from app.backend.rate_limit import limiter
 from app.backend.routes import api_router
 from app.backend.database.connection import SessionLocal, engine
 from app.backend.database.models import Base
@@ -90,6 +94,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# IP-keyed rate limiting (slowapi) for the public deploy surface. The shared
+# ``limiter`` (app/backend/rate_limit.py) is OFF unless RATE_LIMIT_ENABLED=true,
+# so dev/tests are unaffected; prod turns it on. Per-route limits are applied
+# via @limiter.limit decorators in the auth/research/scanner routes. This wiring
+# (state + handler + middleware) lives ONLY here, so the conftest test apps —
+# which build their own FastAPI and never run main.py — don't activate limiting.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # Include all routes
 app.include_router(api_router)

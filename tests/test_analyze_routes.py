@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.backend.auth.dependencies import get_current_user
 from app.backend.database.connection import Base, get_db
-from app.backend.database.models import User
+from app.backend.database.models import ApiKey, User
 from app.backend.main import app
 from src.research.models import (
     AnalyzeRequest, AnalyzeReport, BacktestVerdict, SectionPayload,
@@ -37,6 +37,21 @@ def client():
             s.close()
 
     _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
+
+    # Per-user keys (Wave A4): /research/analyze now fails fast (400) when the
+    # acting user lacks the configured provider's key. Seed a matching user row
+    # (id=1) + the DeepSeek key so these run-path tests exercise the SOP flow
+    # rather than the new key gate. Seed a SEPARATE User instance — keep the
+    # _fake_user returned by the override transient so reading .id never tries
+    # to refresh from a closed session (DetachedInstanceError).
+    _seed = Session()
+    try:
+        _seed.add(User(id=1, email="test@test.com", is_active=True, is_superuser=False))
+        _seed.add(ApiKey(provider="DEEPSEEK_API_KEY", key_value="sk-test-deepseek",
+                         is_active=True, user_id=1))
+        _seed.commit()
+    finally:
+        _seed.close()
 
     app.dependency_overrides[get_db] = _override
     app.dependency_overrides[get_current_user] = lambda: _fake_user

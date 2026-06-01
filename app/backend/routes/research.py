@@ -14,6 +14,7 @@ typically wants the report back inline. Long-poll / streaming is deferred.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from datetime import date as _date
 
@@ -24,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
 from app.backend.database.models import User
+from app.backend.services.api_key_service import ApiKeyError, ApiKeyService
 from app.backend.models.research_schemas import (
     AnalyzeReportDetail,
     AnalyzeRunRequest,
@@ -189,6 +191,37 @@ def delete_report(
 # ---------------------------------------------------------------------------
 
 
+# Provider (display name) -> the *_API_KEY env-var / stored-key name. Mirrors
+# the suffix convention inside src/llm/models.get_model. Per-user keys are
+# stored keyed by these exact names (see ApiKey.provider, e.g. "DEEPSEEK_API_KEY"),
+# so this is also the name require_api_key / get_api_keys_dict look up.
+_PROVIDER_KEY_NAME = {
+    "Anthropic": "ANTHROPIC_API_KEY",
+    "DeepSeek": "DEEPSEEK_API_KEY",
+    "Google": "GOOGLE_API_KEY",
+    "Groq": "GROQ_API_KEY",
+    "Kimi": "MOONSHOT_API_KEY",
+    "OpenAI": "OPENAI_API_KEY",
+    "OpenRouter": "OPENROUTER_API_KEY",
+    "xAI": "XAI_API_KEY",
+}
+
+# Defaults match src/research/llm.py so the route requires the SAME provider's
+# key the pipeline will actually call (override via RESEARCH_MODEL_PROVIDER).
+_DEFAULT_RESEARCH_PROVIDER = "DeepSeek"
+
+
+def _configured_provider_key_name() -> str:
+    """The *_API_KEY name for the provider the research pipeline will call.
+
+    Resolved from RESEARCH_MODEL_PROVIDER (the var src/research/llm.py reads),
+    mapped by the known suffix convention. Falls back to "<UPPER>_API_KEY" for
+    any provider not in the table so a clear key name is still surfaced.
+    """
+    provider = os.environ.get("RESEARCH_MODEL_PROVIDER", _DEFAULT_RESEARCH_PROVIDER)
+    return _PROVIDER_KEY_NAME.get(provider, f"{provider.upper()}_API_KEY")
+
+
 def _to_analyze_request(req: AnalyzeRunRequest) -> AnalyzeRequest:
     """Convert the API schema to the internal dataclass."""
     return AnalyzeRequest(
@@ -286,9 +319,32 @@ def trigger_analyze(
     streaming is deferred.
     """
     internal_req = _to_analyze_request(req)
+
+    # Per-user keys (multi-tenant): fetch the LOGGED-IN user's stored keys and
+    # FAIL FAST if they lack the configured provider's key, so the host's keys
+    # are never spent on a user's behalf. (The seed superuser/owner falls back
+    # to env inside require_api_key, matching ApiKeyService policy.)
+    svc = ApiKeyService(db, current_user.id)
+    provider_key = _configured_provider_key_name()
+    try:
+        svc.require_api_key(provider_key)
+    except ApiKeyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    api_keys = svc.get_api_keys_dict()
+
     t0 = time.monotonic()
     try:
-        report = run_sop(internal_req)
+        report = run_sop(internal_req, api_keys=api_keys)
+    except ValueError as e:
+        # Belt-and-suspenders: a deep "No API key ..." from get_model's
+        # no-fallback path (e.g. a section configured for a different provider
+        # the user has no key for) is the user's problem to fix, not a 500.
+        msg = str(e)
+        if "API key" in msg:
+            logger.warning("analyze blocked: missing provider key for %s: %s", req.ticker, msg)
+            raise HTTPException(status_code=400, detail=msg)
+        logger.exception("analyze run failed for %s", req.ticker)
+        raise HTTPException(500, f"analyze pipeline failed: {type(e).__name__}: {e}")
     except Exception as e:
         logger.exception("analyze run failed for %s", req.ticker)
         raise HTTPException(500, f"analyze pipeline failed: {type(e).__name__}: {e}")

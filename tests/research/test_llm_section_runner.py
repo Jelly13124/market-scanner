@@ -63,3 +63,54 @@ class TestRunLlmSection:
         )
         assert out.skipped is True
         assert "boom" in (out.skip_reason or "")
+
+
+def test_run_llm_section_passes_ctx_api_keys(monkeypatch):
+    captured = {}
+
+    def fake_call(*args, **kwargs):
+        captured["api_keys"] = kwargs.get("api_keys")
+        return _Narr(narrative="ok")
+
+    monkeypatch.setattr(
+        "src.research.sections._llm_runner.call_research_llm", fake_call
+    )
+    req = AnalyzeRequest(
+        ticker="NVDA", objective="medium_term",
+        position_budget_usd=None, already_holds=False, cost_basis_usd=None,
+        risk_tolerance="balanced", use_personas=False,
+    )
+    shared = SharedData(
+        ticker="NVDA", scan_date="2026-05-22",
+        prices=[], financials=[], insider_trades=[], news=[],
+        analyst_actions=[], analyst_targets=None, earnings_history=[],
+        company_facts={"sector": "Tech"},
+        sector_etf_prices=[], spy_prices=[],
+    )
+    ctx = SectionContext(
+        request=req, shared=shared, persona=None, prior={},
+        api_keys={"OPENAI_API_KEY": "u"},
+    )
+    run_llm_section(
+        section_name="x", ctx=ctx, prompt="p",
+        output_model=_Narr, markdown_heading="H",
+    )
+    assert captured["api_keys"] == {"OPENAI_API_KEY": "u"}
+
+
+def test_run_llm_section_none_api_keys_when_absent(monkeypatch):
+    captured = {}
+
+    def fake_call(*args, **kwargs):
+        captured["api_keys"] = kwargs.get("api_keys")
+        return _Narr(narrative="ok")
+
+    monkeypatch.setattr(
+        "src.research.sections._llm_runner.call_research_llm", fake_call
+    )
+    out = run_llm_section(
+        section_name="x", ctx=_ctx(), prompt="p",
+        output_model=_Narr, markdown_heading="H",
+    )
+    assert isinstance(out, SectionPayload)
+    assert captured["api_keys"] is None

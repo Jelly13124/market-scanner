@@ -61,6 +61,7 @@ def run_llm_section(
             default_factory=lambda: output_model(
                 narrative=f"LLM call failed for {section_name}."
             ),
+            api_keys=ctx.api_keys,
         )
         narrative = getattr(r, "narrative", "") or ""
         return SectionPayload(

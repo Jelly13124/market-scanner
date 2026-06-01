@@ -37,6 +37,10 @@ class SectionContext:
     shared: SharedData
     persona: str | None
     prior: dict[str, SectionPayload]
+    # Per-user API keys (multi-tenant): forwarded to call_research_llm so
+    # each request uses the requesting user's own provider keys. None =>
+    # fall back to host-env keys (single-tenant / legacy behavior).
+    api_keys: dict | None = None
 
 
 class Section(ABC):

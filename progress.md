@@ -11,6 +11,7 @@
 - D3 (overnight): bulk add-to-watchlist in snapshot-table.tsx — row checkboxes + select-all header checkbox + toolbar "Add N to watchlist" button (visible only when selection non-empty) + watchlist-picker Dialog using watchlistService.list()/addTicker(); Promise.allSettled with success/error toasts; selection keyed by ticker, persists across column-group tab switches; colSpan updated to activeCols.length+1; tsc 0 errors. Commit feat(screener): bulk add selected tickers to watchlist.
 - scanner-eval D2: run_eval orchestrator — prefetch price bundles, Phase1 guaranteed + Phase2 enrich (time-boxed) + Phase3 bounded replay, incremental fail-soft report. TDD green.
 - per-user-keys A1: get_model gains allow_env_fallback (user path off → no host-key leak); call_research_llm forwards api_keys. TDD green.
+- per-user-keys A2: SectionContext.api_keys + run_llm_section forwards it to call_research_llm. TDD green.
 
 ## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
 

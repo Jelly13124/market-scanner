@@ -46,7 +46,11 @@ def full_client():
             db.close()
 
     app.dependency_overrides[get_db] = _override_get_db
-    return TestClient(app)
+    tc = TestClient(app)
+    # Exposed so tests can open a session against the SAME in-memory DB
+    # (StaticPool shares the connection) for direct seeding / role promotion.
+    tc.session_local = TestingSession
+    return tc
 
 
 def _register(client, email):

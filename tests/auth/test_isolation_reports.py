@@ -47,6 +47,32 @@ def _fake_state(ticker="AAPL"):
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _promote_superuser(full_client, email):
+    """Promote a registered user to superuser in the test DB.
+
+    The legacy ``POST /research/run`` (used here only to set up a report owned by
+    A) is now superuser-only (it isn't wired for per-user keys). These tests check
+    REPORT isolation, not the creation route, so we just need a report owned by A
+    to exist; making A a superuser lets the legacy setup route through. B stays a
+    normal user, so every isolation assertion (B can't see/delete A's report) is
+    unchanged. (A cleaner future refactor: create reports via /research/analyze.)
+    """
+    from app.backend.database.models import User
+
+    db = full_client.session_local()
+    try:
+        u = db.query(User).filter(User.email == email).first()
+        u.is_superuser = True
+        db.commit()
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
@@ -59,6 +85,7 @@ class TestReportIsolation:
     ):
         """B's list endpoint returns an empty array (no A's rows)."""
         tok_a, tok_b = two_users
+        _promote_superuser(full_client, "a@x.com")
         mock_run.return_value = _fake_state("TSLA")
         mock_render.return_value = "<html></html>"
 
@@ -80,6 +107,7 @@ class TestReportIsolation:
     ):
         """GET /research/reports/{id} by B on A's report → 404."""
         tok_a, tok_b = two_users
+        _promote_superuser(full_client, "a@x.com")
         mock_run.return_value = _fake_state("NVDA")
         mock_render.return_value = "<html></html>"
 
@@ -101,6 +129,7 @@ class TestReportIsolation:
     ):
         """DELETE /research/reports/{id} by B on A's report → 404."""
         tok_a, tok_b = two_users
+        _promote_superuser(full_client, "a@x.com")
         mock_run.return_value = _fake_state("AAPL")
         mock_render.return_value = "<html></html>"
 
@@ -128,6 +157,7 @@ class TestReportIsolation:
     ):
         """A can delete their own report; subsequent GET returns 404."""
         tok_a, _ = two_users
+        _promote_superuser(full_client, "a@x.com")
         mock_run.return_value = _fake_state("AVGO")
         mock_render.return_value = "<html></html>"
 

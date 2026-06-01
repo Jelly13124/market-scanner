@@ -1,6 +1,6 @@
 # Scanner detector & signal usefulness — evaluation report
 
-Regime-segmented usefulness study over `nasdaq100_sp500 (80-ticker subset)`. Primary axis is **interestingness vs random** (does it flag bigger movers than random); directional alpha / IC is secondary colour. Generated at: 2026-05-31 (Phase 1+2; re-rendered with horizon fix).
+Regime-segmented usefulness study over `nasdaq100_sp500 (80-ticker subset)`. Primary axis is **interestingness vs random** (does it flag bigger movers than random); directional alpha / IC is secondary colour. Generated at: 2026-05-31 (Phase 1+2+3).
 
 ## Headline
 
@@ -47,7 +47,13 @@ Per-regime cell: `mean rank-IC (t) / n_dates`.
 
 ## Phase 3 — full-replay confirmation
 
-_pending / not run_
+Bounded full-replay over each regime: mean 5d alpha, and the quant overlay ON vs OFF delta.
+
+| Regime | mean alpha 5d | quant ON | quant OFF | ON − OFF |
+|---|---|---|---|---|
+| bear_2022 | -0.79% | -0.79% | +1.04% | -1.83% |
+| bull_2023_24 | +0.48% | +0.48% | +0.79% | -0.31% |
+| choppy_2025 | +1.93% | +1.93% | +1.93% | -0.00% |
 
 ## Regime windows
 

@@ -1,22 +1,39 @@
+import logging
 import os
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.backend.auth.dependencies import get_current_user
+from app.backend.auth.dependencies import get_current_user_allow_unverified
 from app.backend.auth.oauth import build_authorize_url, exchange_code, get_provider
-from app.backend.auth.security import create_access_token, create_refresh_token, decode_token, hash_password, verify_password
+from app.backend.auth.security import create_access_token, create_refresh_token, create_verify_token, decode_token, decode_verify_token, hash_password, verify_password
 from app.backend.database import get_db
 from app.backend.models.auth_schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
 from app.backend.repositories.user_repository import UserRepository
+from app.backend.services.notifications.email_handler import EmailHandler
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth")
 
 _COOKIE_SECURE = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 _OAUTH_REDIRECT_BASE = os.getenv("OAUTH_REDIRECT_BASE", "http://localhost:8001")
 _FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+
+def _send_verification_email(email: str, user_id: int) -> None:
+    """Best-effort verification email. A mail failure must NOT 500 the
+    registration — log it and let the user re-request later."""
+    base = os.getenv("FRONTEND_BASE_URL", _FRONTEND_URL).rstrip("/")
+    link = f"{base}/auth/verify?token={create_verify_token(user_id)}"
+    html = f'<p>Welcome! Please verify your email to start using the app.</p><p><a href="{link}">Verify your email</a></p><p>Or paste this link into your browser:<br>{link}</p>'
+    text = f"Welcome! Verify your email by visiting:\n{link}\n"
+    try:
+        EmailHandler().send(to=email, subject="Verify your email", html=html, text=text)
+    except Exception:
+        logger.exception("verification email send failed for %s", email)
 
 
 def _set_refresh_cookie(response: Response, user_id: int) -> None:
@@ -36,9 +53,30 @@ def register(body: RegisterRequest, response: Response, db: Session = Depends(ge
     repo = UserRepository(db)
     if repo.get_by_email(body.email):
         raise HTTPException(status_code=409, detail="Email already registered")
-    user = repo.create(email=body.email, hashed_password=hash_password(body.password), full_name=body.full_name)
+    user = repo.create(email=body.email, hashed_password=hash_password(body.password), full_name=body.full_name, is_verified=False)
+    _send_verification_email(body.email, user.id)
     _set_refresh_cookie(response, user.id)
     return TokenResponse(access_token=create_access_token(user.id))
+
+
+@router.get("/verify")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    """Consume an email-verify token and mark the user verified.
+
+    Authenticates via the query-param token (NOT get_current_user), so it
+    stays reachable while the verification gate is on. Invalid/expired → 400.
+    """
+    try:
+        user_id = decode_verify_token(token)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+    user = UserRepository(db).get_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+    if not user.is_verified:
+        user.is_verified = True
+        db.commit()
+    return HTMLResponse("<h1>Email verified</h1><p>You can now use the app.</p>")
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -77,7 +115,7 @@ def logout(response: Response):
 
 
 @router.get("/me", response_model=UserOut)
-def me(current_user=Depends(get_current_user)):
+def me(current_user=Depends(get_current_user_allow_unverified)):
     return UserOut.model_validate(current_user)
 
 

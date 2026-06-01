@@ -2894,3 +2894,4 @@ Decisions (findings): stock score = the conviction (综合评分 53/100) score, 
 ## Session — 2026-06-01 (deploy P2 — single-origin SPA)
 
 - deploy P2-A1: FastAPI serves the built SPA (index + /assets + catch-all), API stays at root; no-op when no build present. TDD green.
+- deploy P2-B1: email verification — User.is_verified + migration, verify-token email via Resend, /auth/verify, get_current_user gate (REQUIRE_EMAIL_VERIFICATION off by default), OAuth auto-verified. TDD green.

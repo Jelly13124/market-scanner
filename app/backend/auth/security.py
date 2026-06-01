@@ -22,6 +22,7 @@ _SECRET = os.getenv("JWT_SECRET", "dev-insecure-change-me")
 _ALG = "HS256"
 ACCESS_TTL = timedelta(minutes=30)
 REFRESH_TTL = timedelta(days=14)
+VERIFY_TTL = timedelta(hours=24)
 
 
 def _make(user_id: int, ttl: timedelta, kind: str) -> str:
@@ -41,5 +42,21 @@ def create_refresh_token(user_id: int) -> str:
     return _make(user_id, REFRESH_TTL, "refresh")
 
 
+def create_verify_token(user_id: int) -> str:
+    """Short-lived (24h) email-verification token; type="verify"."""
+    return _make(user_id, VERIFY_TTL, "verify")
+
+
 def decode_token(token: str) -> dict:
     return jwt.decode(token, _SECRET, algorithms=[_ALG])
+
+
+def decode_verify_token(token: str) -> int:
+    """Validate an email-verify token (type + exp) and return the user id.
+
+    Raises on invalid signature, expiry, or wrong token type.
+    """
+    claims = jwt.decode(token, _SECRET, algorithms=[_ALG])
+    if claims.get("type") != "verify":
+        raise ValueError("wrong token type")
+    return int(claims["sub"])

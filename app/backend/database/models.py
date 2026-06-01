@@ -6,6 +6,7 @@ from .connection import Base
 
 class ApiKey(Base):
     """Table to store API keys for various services"""
+
     __tablename__ = "api_keys"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -28,6 +29,7 @@ class ApiKey(Base):
 
 class ScannerConfig(Base):
     """Saved configuration for the daily market scanner."""
+
     __tablename__ = "scanner_configs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -52,19 +54,28 @@ class ScannerConfig(Base):
     # row whose ``tickers`` list becomes the scan universe. Null for non-watchlist
     # kinds (sp500/nasdaq100/custom/etc.).
     user_watchlist_id = Column(
-        Integer, ForeignKey("user_watchlists.id"), nullable=True, index=True,
+        Integer,
+        ForeignKey("user_watchlists.id"),
+        nullable=True,
+        index=True,
     )
 
     # Phase 5E — when > 0, the scanner runs full SOP analysis on the top-N
     # watchlist entries after each scan completes and emits ONE bundled email
     # with all reports. 0 = disabled (default; the legacy behavior).
     auto_sop_top_n = Column(
-        Integer, nullable=False, default=0, server_default="0",
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
     )
     # Phase 5E — whether the auto-SOP follow-up routes sections through the
     # persona router (more LLM calls, richer reports) or runs objective.
     auto_sop_use_personas = Column(
-        Boolean, nullable=False, default=False, server_default=sa.false(),
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=sa.false(),
     )
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
@@ -72,6 +83,7 @@ class ScannerConfig(Base):
 
 class ScanRun(Base):
     """A single execution of the scanner against a configured universe."""
+
     __tablename__ = "scan_runs"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -89,6 +101,7 @@ class ScanRun(Base):
 
 class WatchlistEntry(Base):
     """One ranked ticker produced by a ScanRun."""
+
     __tablename__ = "watchlist_entries"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -121,6 +134,7 @@ class AnalystTargetSnapshot(Base):
     freedom to switch which point statistic it z-scores against; v1 uses
     ``target_median``.
     """
+
     __tablename__ = "analyst_target_snapshots"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -137,9 +151,7 @@ class AnalystTargetSnapshot(Base):
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    __table_args__ = (
-        UniqueConstraint("ticker", "asof_date", name="uq_target_snapshot_ticker_date"),
-    )
+    __table_args__ = (UniqueConstraint("ticker", "asof_date", name="uq_target_snapshot_ticker_date"),)
 
 
 class PipelineRun(Base):
@@ -150,6 +162,7 @@ class PipelineRun(Base):
     the full watchlist + per-agent signals + final portfolio_manager
     decisions so the detail UI can render without re-running anything.
     """
+
     __tablename__ = "pipeline_runs"
 
     # UUID hex (not autoincrement) so we can return the run_id to the
@@ -178,9 +191,9 @@ class PipelineRun(Base):
     # Stored as JSON columns rather than a normalized schema because v1
     # query patterns are "fetch run by id" + "list recent runs"; no
     # cross-run aggregation needed yet.
-    watchlist_json = Column(JSON, nullable=True)             # list[ScoredEntry.model_dump()]
-    agent_decisions_json = Column(JSON, nullable=True)       # portfolio_manager output
-    analyst_signals_json = Column(JSON, nullable=True)       # per-agent per-ticker signals
+    watchlist_json = Column(JSON, nullable=True)  # list[ScoredEntry.model_dump()]
+    agent_decisions_json = Column(JSON, nullable=True)  # portfolio_manager output
+    analyst_signals_json = Column(JSON, nullable=True)  # per-agent per-ticker signals
     duration_seconds = Column(Float, nullable=True)
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
@@ -195,6 +208,7 @@ class PipelineSchedule(Base):
     Keeping it as a table rather than a config file means we can hot-edit
     via the UI without redeploying.
     """
+
     __tablename__ = "pipeline_schedule"
 
     # Plain autoincrement PK. (Used to carry ``default=1`` for the singleton
@@ -229,6 +243,7 @@ class NotificationSubscription(Base):
     row matching the event_type. Delivery attempts are recorded in
     ``NotificationDelivery`` for debugging.
     """
+
     __tablename__ = "notification_subscriptions"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -255,13 +270,16 @@ class NotificationDelivery(Base):
     record both ok and error attempts so the absence of a row tells you
     the dispatcher never fired.
     """
+
     __tablename__ = "notification_deliveries"
 
     id = Column(Integer, primary_key=True, index=True)
     attempted_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     subscription_id = Column(
-        Integer, ForeignKey("notification_subscriptions.id"),
-        nullable=False, index=True,
+        Integer,
+        ForeignKey("notification_subscriptions.id"),
+        nullable=False,
+        index=True,
     )
     run_id = Column(String(32), nullable=True, index=True)  # nullable for /test sends
     status = Column(String(10), nullable=False)  # 'ok' | 'error'
@@ -278,6 +296,7 @@ class ResearchReport(Base):
     Cross-referencing is intentionally absent: each subsystem persists what
     its own pipeline produced.
     """
+
     __tablename__ = "research_reports"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -309,9 +328,7 @@ class ResearchReport(Base):
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
 
-    __table_args__ = (
-        Index("ix_research_reports_ticker_scan_date", "ticker", "scan_date"),
-    )
+    __table_args__ = (Index("ix_research_reports_ticker_scan_date", "ticker", "scan_date"),)
 
 
 class UserWatchlist(Base):
@@ -320,6 +337,7 @@ class UserWatchlist(Base):
     Separate from ``WatchlistEntry`` (which is scanner output): this table
     holds named, hand-picked ticker lists the user maintains via the UI.
     """
+
     __tablename__ = "user_watchlists"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -352,6 +370,7 @@ class AnalyzeFlow(Base):
     Intentionally NOT FK'd to ResearchReport: templates are reusable
     across runs and across tickers.
     """
+
     __tablename__ = "analyze_flows"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -376,20 +395,22 @@ class ResearchTradePlan(Base):
     from splitting. ON DELETE CASCADE so deleting a report cleans up the
     plan automatically.
     """
+
     __tablename__ = "research_trade_plans"
 
     id = Column(Integer, primary_key=True, index=True)
     report_id = Column(
         Integer,
         ForeignKey("research_reports.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        nullable=False,
+        index=True,
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # ---- TradePlan fields ----
     # 'long' | 'short' | 'stand_aside'
     direction = Column(String(20), nullable=False)
-    entry_price = Column(Float, nullable=True)   # null when stand_aside
+    entry_price = Column(Float, nullable=True)  # null when stand_aside
     target_price = Column(Float, nullable=True)
     stop_price = Column(Float, nullable=True)
     horizon_days = Column(Integer, nullable=False, default=0)
@@ -411,6 +432,7 @@ class ResearchTradePlan(Base):
 class Strategy(Base):
     """Phase 6: a saved StrategySpec. Spec lives in spec_json; version bumps
     every time user accepts an AI patch or manually edits."""
+
     __tablename__ = "strategies"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -429,31 +451,37 @@ class Strategy(Base):
 class LabChatMessage(Base):
     """Phase 6: one chat turn under a Strategy. AI proposals include a
     spec_patch_json + the resulting spec_snapshot_json if accepted."""
+
     __tablename__ = "lab_chat_messages"
 
     id = Column(Integer, primary_key=True, index=True)
     strategy_id = Column(
-        Integer, ForeignKey("strategies.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        Integer,
+        ForeignKey("strategies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     role = Column(String(20), nullable=False)  # 'user' | 'assistant' | 'user_manual_edit'
     content = Column(Text, nullable=False)
     spec_snapshot_json = Column(JSON, nullable=True)  # spec AFTER accept
-    spec_patch_json = Column(JSON, nullable=True)     # raw AI patch
-    patch_accepted = Column(Boolean, nullable=True)   # null if N/A
+    spec_patch_json = Column(JSON, nullable=True)  # raw AI patch
+    patch_accepted = Column(Boolean, nullable=True)  # null if N/A
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
 
 
 class Backtest(Base):
     """Phase 6: one backtest run on a Strategy's spec snapshot."""
+
     __tablename__ = "backtests"
 
     id = Column(Integer, primary_key=True, index=True)
     strategy_id = Column(
-        Integer, ForeignKey("strategies.id", ondelete="CASCADE"),
-        nullable=False, index=True,
+        Integer,
+        ForeignKey("strategies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -512,8 +540,7 @@ class TickerSnapshot(Base):
 
     __tablename__ = "ticker_snapshots"
 
-    id = Column(BigInteger().with_variant(Integer(), "sqlite"),
-                primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
     ticker = Column(String(20), nullable=False)
     market = Column(String(8), nullable=False)
     snapshot_date = Column(Date, nullable=False)
@@ -589,20 +616,17 @@ class ScreenerPreset(Base):
 
     __tablename__ = "screener_presets"
 
-    id = Column(BigInteger().with_variant(Integer(), "sqlite"),
-                primary_key=True, autoincrement=True)
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
     name = Column(String(120), nullable=False)
-    market = Column(String(8))                       # 'US' | 'CN' | None(all)
+    market = Column(String(8))  # 'US' | 'CN' | None(all)
     filters_json = Column(JSON, nullable=False, default=dict)
     sort_by = Column(String(32), nullable=False, default="market_cap")
     sort_dir = Column(String(4), nullable=False, default="desc")
-    schedule_enabled = Column(Boolean, nullable=False, default=False,
-                              server_default=text("0"))
-    notify_channels = Column(JSON)                   # ["email","webhook"]
+    schedule_enabled = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    notify_channels = Column(JSON)  # ["email","webhook"]
     last_run_at = Column(DateTime(timezone=True))
     last_match_count = Column(Integer)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(),
-                        nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
 
 
@@ -614,6 +638,9 @@ class User(Base):
     full_name = Column(String(120))
     is_active = Column(Boolean, nullable=False, server_default=text("true"))
     is_superuser = Column(Boolean, nullable=False, server_default=text("false"))
+    # Password signups land False and must verify via emailed token; OAuth
+    # logins arrive verified from the provider. Gated by REQUIRE_EMAIL_VERIFICATION.
+    is_verified = Column(Boolean, nullable=False, server_default=text("false"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -621,7 +648,7 @@ class OAuthAccount(Base):
     __tablename__ = "oauth_accounts"
     id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, autoincrement=True)
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
-    provider = Column(String(16), nullable=False)         # 'google' | 'github'
+    provider = Column(String(16), nullable=False)  # 'google' | 'github'
     provider_account_id = Column(String(128), nullable=False)
     email = Column(String(255))
     created_at = Column(DateTime(timezone=True), server_default=func.now())

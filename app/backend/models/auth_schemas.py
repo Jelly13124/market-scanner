@@ -23,3 +23,4 @@ class UserOut(BaseModel):
     email: EmailStr
     full_name: str | None = None
     is_superuser: bool = False
+    is_verified: bool = False

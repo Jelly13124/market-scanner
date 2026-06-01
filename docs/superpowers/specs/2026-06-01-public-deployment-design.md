@@ -1,149 +1,145 @@
-# Public deployment — Vultr + Docker Compose + Caddy (semi-public)
+# Public deployment — Fly.io (semi-public)
 
-**Status:** design 2026-06-01, brainstormed interactively. For review →
-writing-plans → implementation. This is **Phase 2** of the deploy project; **Phase
-1 (per-user API key wiring) is a hard prerequisite** — see the sibling spec
+**Status:** design 2026-06-01, brainstormed interactively; platform = **Fly.io**
+(user pick). For review → writing-plans → implementation. This is **Phase 2**;
+**Phase 1 (per-user API key wiring) is a hard prerequisite** — sibling spec
 `2026-06-01-per-user-api-key-wiring-design.md`. Do NOT deploy publicly until users
-bring their own keys (else the host pays for everyone).
+bring their own keys.
 
 ## Goal
 
 Put the multi-tenant app on the public internet for **semi-public** use (open
-registration, modest scale) on a **Vultr** VPS, behind one domain with automatic
-HTTPS, with basic abuse protection. Cost to the host stays ~$0 for LLM/data usage
-(per-user keys) + ~$24/mo VPS + ~$10/yr domain.
+registration + email verification + rate limiting) on **Fly.io**, one app serving
+both API and frontend at one origin, automatic HTTPS, SQLite on a Fly Volume. Host
+cost ≈ **$12/mo** (Fly shared-cpu-1x 2 GB) + volume (~$0.50/mo) + domain (~$10/yr);
+LLM/data usage = $0 to host (per-user keys).
 
-## Locked decisions (from brainstorming)
+## Locked decisions
 
 1. **Per-user keys** — host pays $0 for usage (Phase 1 prerequisite).
-2. **Semi-public** — open registration + **email verification** + **rate limiting**
-   + optional invite codes.
-3. **Vultr** VPS — a **NEW** Cloud Compute instance, **2 vCPU / 4 GB (~$24/mo)**;
-   do NOT reuse the existing 1 GB VPN instances (a scanner scan uses ~0.8–1 GB →
-   OOM on 1 GB) and don't co-host with the VPN. Ubuntu 24.04. (2 GB ~$12 is a tight
-   fallback if cost-sensitive.)
-4. **Domain** — buy one (~$10/yr, Cloudflare Registrar / Porkbun), Cloudflare DNS,
-   A-record → VPS IP.
-5. **Single VPS + Docker Compose + Caddy** (auto-TLS). **Stay on SQLite** (user's
-   standing decision) — on a persisted Docker volume.
+2. **Semi-public** — open registration + **email verification** (Resend) + **rate
+   limiting** + optional invite codes.
+3. **Fly.io**, **shared-cpu-1x / 2 GB** to start. A scanner scan spikes to ~1 GB; if
+   the nightly scan OOMs, `fly scale memory 4096` (or cap scan concurrency). One
+   machine only (SQLite).
+4. **Domain** — buy one (~$10/yr); `fly certs add` for auto Let's Encrypt TLS.
+5. **Stay on SQLite** (standing decision) — on a **Fly Volume**.
 
 ## Architecture
 
 ```
-            yourapp.com  (A record → Vultr IP)
-                  │
-        ┌─────────▼─────────┐  Caddy (reverse proxy + automatic HTTPS)
-        │   /          →    │  frontend static (vite build), file_server
-        │   /api/*     →    │  backend:8000 (uvicorn)  ── APScheduler inside
-        └───────────────────┘
-                  │
-        SQLite file on a Docker named volume (WAL + busy_timeout + nightly backup)
+        yourapp.com  (fly certs → auto Let's Encrypt;  appname.fly.dev also works)
+              │  Fly proxy (TLS termination, HTTP/2)
+        ┌─────▼──────────────────────────┐  ONE Fly app, ONE machine
+        │  uvicorn (app.backend.main:app) │   ├─ API routers under /api/*
+        │                                  │   ├─ built frontend (vite) served at /
+        │  APScheduler runs in-process     │   └─ SPA fallback → index.html
+        └──────────────┬──────────────────┘
+                 Fly Volume  /data  →  SQLite app.db (WAL + busy_timeout)
 ```
 
-**Single domain + `/api` sub-path** → no CORS, auth can be same-origin (more
-robust than the dev cross-origin localStorage flow; see Auth below). Compose
-services: `caddy`, `backend`. Frontend is built to static assets and served by
-Caddy (either baked into the caddy image or a shared volume from a frontend build
-stage).
+**One app, one origin.** API routers get an `/api` prefix; the built frontend is
+served at `/` by the same FastAPI app (StaticFiles + SPA catch-all). No CORS, no
+separate frontend host, no Caddy/nginx. `min_machines_running=1` +
+`auto_stop_machines=false` → the single machine stays up so APScheduler + the
+SQLite volume are always available (Fly's autoscale + SQLite would diverge — pin to
+ONE machine).
 
 ## Components / files (create or adapt)
 
 | File | Purpose |
 |---|---|
-| `docker/Dockerfile.backend` | adapt existing `docker/Dockerfile`: install Python deps, run `uvicorn app.backend.main:app --host 0.0.0.0 --port 8000` (no `--reload`); entrypoint runs `alembic upgrade head` first. |
-| `docker/Dockerfile.frontend` | multi-stage: `vite build` (with `VITE_API_URL=/api`) → output static to a stage Caddy serves. |
-| `docker/Caddyfile` | `yourapp.com { handle /api/* { reverse_proxy backend:8000 } handle { root * /srv; try_files {path} /index.html; file_server } }` — automatic HTTPS via Let's Encrypt. |
-| `docker/docker-compose.prod.yml` | services `caddy` (ports 80/443, volumes: caddy_data, frontend static), `backend` (env_file .env, volume sqlite_data:/data); `restart: unless-stopped`. |
-| `.env.prod.example` | documents the prod env (below); the real `.env` is created ON the VPS, never committed. |
-| `docs/DEPLOY.md` | step-by-step runbook (provision → DNS → docker → up → backups → updates). |
+| `Dockerfile` (adapt `docker/Dockerfile`) | multi-stage: (1) `node` stage runs `vite build` (with `VITE_API_URL=<prod-url>/api`) → `dist`; (2) python stage installs backend deps, copies `dist` into the image, runs the entrypoint. |
+| `fly.toml` | app config: `[build]` Dockerfile; `[[mounts]] source="data" destination="/data"`; `[http_service]` internal_port=8000, `force_https=true`, `auto_stop_machines=false`, `min_machines_running=1`; `[env]` non-secret vars; a `[checks]`/health check on `/health`. |
+| `docker/entrypoint.sh` | runs `alembic upgrade head` **on the machine** (the volume is mounted here — NOT in `release_command`, whose machine has no volume), then `exec uvicorn app.backend.main:app --host 0.0.0.0 --port 8000` (no `--reload`). |
+| `app/backend/main.py` (edit) | (a) add `/api` prefix to the API routers (or a sub-app), (b) mount the built frontend `dist` as StaticFiles at `/` with an SPA catch-all returning `index.html`, (c) ensure `/health` exists. |
+| `docs/DEPLOY.md` | Fly runbook (launch, volume, secrets, deploy, certs, scale, backups). |
 
-## Production configuration (the `.env` on the VPS)
+## Production configuration
 
-- `JWT_SECRET` — a strong random 32+ byte secret (NOT the dev default
-  `dev-insecure-change-me`). Generate with `openssl rand -hex 32`.
-- `DATABASE_URL=sqlite:////data/app.db` — on the persisted volume. WAL +
-  busy_timeout already configured in `connection.py`.
-- `RESEND_API_KEY` + `RESEND_FROM_EMAIL` — for email verification + notifications
-  (Resend already wired). Verify a sender domain in Resend for deliverability.
-- Per-user keys mean NO host LLM keys are required for user requests; but the
-  SHARED background jobs (snapshot/cron) still need the host's market-data keys
-  (`EODHD_API_KEY`, `FINNHUB_API_KEY`, …) in `.env` — keep those.
-- Frontend build-time `VITE_API_URL=/api` (same-origin).
-- App config flags: `REGISTRATION_OPEN=true`, `REQUIRE_EMAIL_VERIFICATION=true`,
-  `INVITE_CODES=` (optional), rate-limit knobs.
+- **Fly secrets** (`fly secrets set ...` — injected as env, never in the image):
+  - `JWT_SECRET` = `openssl rand -hex 32` (NOT the dev default).
+  - `RESEND_API_KEY` + `RESEND_FROM_EMAIL` (email verification + notifications).
+  - Host **market-data** keys for the shared snapshot/crons: `EODHD_API_KEY`,
+    `FINNHUB_API_KEY`, (`FINANCIAL_DATASETS_API_KEY`). NO host LLM keys needed
+    (per-user).
+  - `APP_ENCRYPTION_KEY` (Fernet) — for encrypting stored user keys at rest (Phase 1
+    security item).
+- **`[env]` in fly.toml** (non-secret): `DATABASE_URL=sqlite:////data/app.db`,
+  `REGISTRATION_OPEN=true`, `REQUIRE_EMAIL_VERIFICATION=true`, rate-limit knobs.
+- **Frontend build arg** `VITE_API_URL=https://<your-domain>/api` (absolute, same
+  origin in prod). NOTE: the services do `VITE_API_URL || 'http://localhost:8000'`,
+  so an EMPTY value would wrongly fall back to localhost — must be the real
+  non-empty prod URL. Rebuild if the domain changes.
 
-## Auth for a public surface
+## Auth on a public surface
 
-- The dev flow puts the access token in `localStorage` and is cross-origin
-  (5173↔8001). In prod we're **same-origin** (`/` + `/api`), so we CAN move the
-  refresh token to an httpOnly+Secure+SameSite cookie (more secure). **Default:
-  keep the existing localStorage access-token flow to minimize change** (it works
-  same-origin too); note the httpOnly-cookie hardening as a fast follow.
-- HTTPS only (Caddy). `Secure` + `SameSite=Lax` on any cookie.
-- Strong `JWT_SECRET`; short access TTL (30 min, already) + refresh rotation.
+- Same-origin (frontend + API on one Fly app) → the existing **localStorage
+  access-token** flow works as-is (the dev cross-origin limitation is gone).
+  **Default: keep it** (minimal change); note httpOnly+Secure+SameSite refresh
+  cookie as a fast-follow hardening (now possible same-origin).
+- HTTPS enforced by Fly (`force_https`). Strong `JWT_SECRET`; 30-min access TTL +
+  refresh rotation (already).
 
 ## Abuse protection (semi-public)
 
-1. **Email verification** — on register, issue a one-time verification token, email
-   it via Resend; gate login / API use until verified. New: a `verification_token`
-   on `User` (or a small table) + a `/auth/verify` route + the email template.
-   (Confirm against current auth — the multi-tenant auth may already have a stub.)
-2. **Rate limiting** — add `slowapi` (or a lightweight middleware) keyed by IP +
-   user: tight limits on `/auth/*` (login/register), modest on analyze/scan
-   (these are per-user-key-funded so the cost risk is the USER's, but the VPS CPU
-   is shared — cap concurrent scans).
-3. **Optional invite codes** — a config flag + a small check at register; off by
-   default, on if abuse appears.
-4. **Resource guards** — cap concurrent analyze/scan per user; the scanner's heavy
-   scans run on the nightly cron, not per-request, to protect the 4 GB box.
+1. **Email verification** on register — issue a token, email via Resend, gate
+   use until verified. (Confirm whether the multi-tenant auth already stubs this;
+   if not, add a `verification_token` + `/auth/verify` + the email.)
+2. **Rate limiting** — `slowapi` (or middleware) keyed by IP + user; tight on
+   `/api/auth/*`, modest on analyze/scan; cap concurrent scans (protect the 2 GB
+   machine).
+3. **Optional invite codes** — config flag, off by default.
 
-## SQLite in production
+## SQLite on Fly
 
-- WAL + `busy_timeout=30s` already set. Single backend instance (no horizontal
-  scaling — SQLite + one APScheduler). Document this as a known ceiling; the
-  `DATABASE_URL` env makes a future Postgres swap a 1-var change if scale demands.
-- **Backups:** nightly `sqlite3 /data/app.db ".backup /data/backup-$(date).db"`
-  (or litestream to object storage) via a cron/compose sidecar; keep N days.
-- Volume `sqlite_data` persists across `compose up`/redeploys.
+- WAL + `busy_timeout=30s` already set. **One machine** with the volume (no
+  horizontal scale). Migrations run in the **entrypoint** (the release-command
+  machine has no volume — a Fly gotcha; running migrations there would hit a
+  different/empty DB).
+- **Backups:** Fly Volumes have automatic daily snapshots (~5-day retention) — on by
+  default. Add a nightly in-app `.backup` to `/data/backups/` and/or **litestream**
+  to S3/Cloudflare R2 for continuous SQLite backup (recommended for a public surface).
+- `DATABASE_URL` env keeps a future Postgres swap a 1-var change if scale demands.
 
 ## Prerequisites (must land before deploy)
 
-1. **Phase 1 — per-user key wiring** (sibling spec). Without it, deploy bills the
-   host.
-2. **Multi-tenant work merged to `main`** (or deploy from the multi-tenant feature
-   line) — `main` lacks the per-user models/auth. Confirm + merge.
+1. **Phase 1 — per-user key wiring + encrypt keys at rest** (sibling spec).
+2. **Multi-tenant work merged to `main`** (or deploy from the multi-tenant line) —
+   `main` lacks the per-user models/auth. Confirm + merge.
 
 ## Ops runbook (in `docs/DEPLOY.md`)
 
-1. Provision Vultr 4 GB Ubuntu 24.04; create a non-root sudo user; ufw (allow 22/80/443); fail2ban.
-2. Buy domain; Cloudflare DNS A-record → VPS IP (proxy off initially for Let's Encrypt, or use DNS-challenge).
-3. Install Docker + compose plugin.
-4. Clone repo (the deploy branch); create `/data` volume; write `.env` (secrets).
-5. `docker compose -f docker/docker-compose.prod.yml up -d --build` (entrypoint runs `alembic upgrade head`).
-6. Verify HTTPS, register a test user, verify email, add keys, run an analysis.
-7. Updates: `git pull && docker compose ... up -d --build`. Backups: nightly job.
+1. `fly launch --no-deploy` (generates `fly.toml`; pick a region near users; app name).
+2. `fly volumes create data --size 3 --region <r>` (SQLite lives here).
+3. `fly secrets set JWT_SECRET=... RESEND_API_KEY=... EODHD_API_KEY=... APP_ENCRYPTION_KEY=...`.
+4. `fly deploy` (builds the multi-stage image; entrypoint runs `alembic upgrade head` then uvicorn).
+5. `fly certs add yourapp.com` + set the DNS record Fly prints (A/AAAA or CNAME). Wait for the cert.
+6. Verify HTTPS, register → verify email → add LLM key → run an analysis (bills the user's key).
+7. Updates: `fly deploy`. Scale RAM if scans OOM: `fly scale memory 4096`. Logs: `fly logs`.
 
 ## Testing / verification
 
-- Local: `docker compose -f docker/docker-compose.prod.yml up` against a test
-  domain or `localhost` (Caddy `tls internal` for local) — smoke the full flow.
-- A deploy checklist in `docs/DEPLOY.md`; a `/health` endpoint for uptime checks.
-- Confirm migrations run clean on a fresh volume (fresh DB → `alembic upgrade head`).
+- Local: `docker build` + run the image with a local volume + `tls internal`/plain
+  HTTP → smoke the full single-origin flow (SPA at `/`, API at `/api`).
+- Fresh-volume migration: a brand-new volume → entrypoint `alembic upgrade head`
+  creates the schema cleanly.
+- `/health` returns 200 (Fly health check + uptime monitor).
+- A `docs/DEPLOY.md` checklist.
 
 ## Decisions (defaulted — confirm in review)
 
-1. Vultr new **4 GB** instance (not the 1 GB VPN ones). 2 GB tight fallback.
-2. **Single domain + `/api`** (no CORS); keep localStorage access-token auth
-   (cookie hardening = fast follow).
-3. Caddy auto-TLS (not nginx+certbot).
-4. Email verification + rate limiting ON for the public surface; invite codes OFF
-   by default.
-5. SQLite on a volume + nightly `.backup`; single instance (documented ceiling).
-6. Frontend served by Caddy as static (not a separate node server).
+1. **Fly shared-cpu-1x / 2 GB** to start; `fly scale memory 4096` if the nightly
+   scan OOMs (or reduce scan concurrency).
+2. **Single Fly app, API under `/api`, SPA served by FastAPI** at `/`
+   (`VITE_API_URL=https://domain/api`).
+3. **Migrations in the entrypoint** (NOT `release_command` — volume gotcha).
+4. Email verification + rate limiting ON; invite codes OFF by default.
+5. SQLite on a Fly Volume; Fly daily snapshots + (recommended) litestream to R2.
+6. Keep localStorage access-token auth; cookie hardening = fast follow.
 
 ## Out of scope
 
-- Horizontal scaling / Postgres / k8s / CDN.
+- Horizontal scaling / Postgres / multi-region.
 - Per-user verified sender domains.
-- Mobile apps.
 - The per-user-key WIRING itself (Phase 1, sibling spec).

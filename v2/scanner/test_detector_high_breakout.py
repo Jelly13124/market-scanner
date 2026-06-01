@@ -232,9 +232,19 @@ class TestHighBreakoutDetector:
         assert trig.triggered is True
         assert trig.severity_z <= 8.0
 
-    def test_registration_in_all_detectors(self):
-        """high_breakout must appear in ALL_DETECTORS and DETECTOR_METADATA."""
-        from v2.scanner.detectors import ALL_DETECTORS, DETECTOR_METADATA
+    def test_retired_from_all_detectors(self):
+        """high_breakout was RETIRED 2026-06-01 (net-counterproductive per the
+        regime eval): unregistered from ALL_DETECTORS + DETECTOR_METADATA, but the
+        class stays importable and the name is accepted by config validators via
+        RETIRED_DETECTORS so old saved configs still load."""
+        from v2.scanner.detectors import (
+            ALL_DETECTORS,
+            DETECTOR_METADATA,
+            RETIRED_DETECTORS,
+            HighBreakoutDetector,
+        )
         names = [c().name for c in ALL_DETECTORS]
-        assert "high_breakout" in names
-        assert "high_breakout" in DETECTOR_METADATA
+        assert "high_breakout" not in names
+        assert "high_breakout" not in DETECTOR_METADATA
+        assert "high_breakout" in RETIRED_DETECTORS
+        assert HighBreakoutDetector().name == "high_breakout"  # still importable

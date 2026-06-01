@@ -27,17 +27,25 @@ from v2.scanner.detectors.volume_anomaly import VolumeAnomalyDetector
 ALL_DETECTORS: tuple[type[EventDetector], ...] = (
     EarningsEventDetector,
     InsiderClusterDetector,
-    VolumeAnomalyDetector,
-    NewsSentimentShiftDetector,
     IntradayMoveDetector,
     AnalystRatingDetector,
     TargetPriceChangeDetector,
     BollingerSqueezeDetector,
-    OBVDivergenceDetector,
     RsiDivergenceDetector,
-    HighBreakoutDetector,
     GapDetector,
     MaCrossDetector,
+    # UNREGISTERED 2026-06-01 as net-counterproductive pre-filters per the
+    # regime-segmented eval (findings_scanner_eval.md). Their flagged events had
+    # significantly NEGATIVE interestingness-vs-random — i.e. they flag stocks
+    # that then move LESS than a random pick, worst in the bear regime:
+    #   * HighBreakoutDetector   (high_breakout,        t=-4.2 / -4.4)
+    #   * OBVDivergenceDetector  (obv_divergence,       t=-4.3 / -2.4)
+    #   * NewsSentimentShiftDetector (news_sentiment_shift, t=-5.0 — also the
+    #       long-planned removal as sentiment moves to the LLM agent layer)
+    #   * VolumeAnomalyDetector  (price_volume_anomaly, flat-day volume ≈0/neg)
+    # Classes remain importable + re-registerable (files retained); drop them
+    # back into this tuple + DETECTOR_METADATA to re-enable.
+    #
     # EarningsSurpriseDetector + EarningsUpcomingDetector — UNREGISTERED
     # 2026-05-18. Merged into the unified ``EarningsEventDetector`` above.
     # The two old classes remain importable for back-compat with tests and
@@ -80,16 +88,6 @@ DETECTOR_METADATA: dict[str, dict] = {
         "default_mult": 1.00,
         "description": "Coordinated insider buys/sells inside the last 30 days vs trailing baseline.",
     },
-    "price_volume_anomaly": {
-        "label": "Volume Anomaly",
-        "default_mult": 0.90,
-        "description": "Volume spike on a flat-return day (Wyckoff stopping/distribution).",
-    },
-    "news_sentiment_shift": {
-        "label": "News Sentiment",
-        "default_mult": 0.50,
-        "description": "EODHD aggregate sentiment shift. Underweighted — moving to LLM agent layer.",
-    },
     "intraday_move": {
         "label": "Intraday Move",
         "default_mult": 1.10,
@@ -110,16 +108,6 @@ DETECTOR_METADATA: dict[str, dict] = {
         "default_mult": 0.80,
         "description": "First-day entry into 20d Bollinger bandwidth ≤10th percentile of 126d — statistical setup for imminent directional move. Direction neutral.",
     },
-    "obv_divergence": {
-        "label": "OBV Divergence",
-        "default_mult": 1.00,
-        "description": (
-            "20d On-Balance Volume slope diverges from 20d price slope by "
-            ">2σ vs trailing 60-reading baseline. Bullish = accumulation "
-            "(OBV ↑, price ↓); bearish = distribution (OBV ↓, price ↑). "
-            "Granville 1963 + microstructure (Blume/Easley/O'Hara 1994)."
-        ),
-    },
     "rsi_divergence": {
         "label": "RSI Divergence",
         "default_mult": 1.00,
@@ -128,16 +116,6 @@ DETECTOR_METADATA: dict[str, dict] = {
             "two 20-bar halves. Bearish: recent price high > older price high BUT "
             "RSI at that high is lower. Bullish: recent price low < older price low "
             "BUT RSI at that low is higher. Severity = RSI gap / 10, capped at 8."
-        ),
-    },
-    "high_breakout": {
-        "label": "52-Week High Breakout",
-        "default_mult": 1.00,
-        "description": (
-            "First-day close above trailing 252-bar (≈52-week) high. "
-            "Bullish only. Severity z-scored vs daily-return std (floor 0.005), "
-            "clamped to [0, 8]. First-day gate prevents re-fire on subsequent "
-            "new-high days."
         ),
     },
     "gap": {
@@ -174,6 +152,22 @@ LEGACY_DETECTOR_ALIASES: dict[str, str] = {
 }
 
 
+# Detectors that were registered once but have been retired (unregistered from
+# ALL_DETECTORS). Persisted ScannerConfig rows may still list these in their
+# enabled_detectors / detector_severity_mult; the ScannerWeights validators
+# accept them (so old configs still load) but the runner no longer has a
+# matching detector, so they're harmless no-ops. Re-register a name (move its
+# class back into ALL_DETECTORS + DETECTOR_METADATA) to revive it.
+RETIRED_DETECTORS: frozenset[str] = frozenset(
+    {
+        "high_breakout",
+        "obv_divergence",
+        "news_sentiment_shift",
+        "price_volume_anomaly",
+    }
+)
+
+
 __all__ = [
     "EventDetector",
     "EventTrigger",
@@ -195,4 +189,5 @@ __all__ = [
     "ALL_DETECTORS",
     "DETECTOR_METADATA",
     "LEGACY_DETECTOR_ALIASES",
+    "RETIRED_DETECTORS",
 ]

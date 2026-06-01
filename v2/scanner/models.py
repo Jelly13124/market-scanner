@@ -60,12 +60,17 @@ class ScannerWeights(BaseModel):
             raise ValueError("enabled_detectors cannot be empty — pick at least one")
         # Lazy import to avoid circular dependency
         # (v2.scanner.detectors → base.py → v2.scanner.models).
-        from v2.scanner.detectors import ALL_DETECTORS, LEGACY_DETECTOR_ALIASES
+        from v2.scanner.detectors import (
+            ALL_DETECTORS,
+            LEGACY_DETECTOR_ALIASES,
+            RETIRED_DETECTORS,
+        )
         registered = {c().name for c in ALL_DETECTORS}
         # Legacy keys (e.g. "earnings_surprise") pass validation; they get
         # rewritten to the canonical replacement below so the rest of the
-        # pipeline only ever sees current names.
-        valid = registered | set(LEGACY_DETECTOR_ALIASES.keys())
+        # pipeline only ever sees current names. Retired names (unregistered
+        # detectors) also pass so old configs still load — they just no-op.
+        valid = registered | set(LEGACY_DETECTOR_ALIASES.keys()) | RETIRED_DETECTORS
         bad = sorted(set(v) - valid)
         if bad:
             raise ValueError(
@@ -86,9 +91,13 @@ class ScannerWeights(BaseModel):
     def _validate_severity_mult(cls, v: dict[str, float]) -> dict[str, float]:
         if not v:
             return v
-        from v2.scanner.detectors import ALL_DETECTORS, LEGACY_DETECTOR_ALIASES
+        from v2.scanner.detectors import (
+            ALL_DETECTORS,
+            LEGACY_DETECTOR_ALIASES,
+            RETIRED_DETECTORS,
+        )
         registered = {c().name for c in ALL_DETECTORS}
-        valid = registered | set(LEGACY_DETECTOR_ALIASES.keys())
+        valid = registered | set(LEGACY_DETECTOR_ALIASES.keys()) | RETIRED_DETECTORS
         bad_names = sorted(set(v.keys()) - valid)
         if bad_names:
             raise ValueError(

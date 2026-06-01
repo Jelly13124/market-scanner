@@ -116,11 +116,17 @@ def run_chat_turn(
     chat_history: list,
     prior_strategies_summary: list[dict],
     user_message: str,
+    api_keys: dict | None = None,
 ) -> ChatResponse:
     """Single chat turn -> ChatResponse (reply or patch).
 
     On LLM failure returns ChatReply with a generic error message
     rather than raising - callers don't need to handle exceptions.
+
+    ``api_keys`` (multi-tenant): when None, the host/cron path runs with
+    env fallback (legacy). When a dict, it is the acting user's stored
+    keys and ``call_research_llm`` resolves the model with NO env fallback,
+    so the host's keys are never spent on a user's behalf.
     """
     prompt = build_chat_prompt(
         current_spec=current_spec,
@@ -134,4 +140,5 @@ def run_chat_turn(
             kind="reply",
             message="(LLM call failed - please retry or rephrase.)",
         )),
+        api_keys=api_keys,
     )

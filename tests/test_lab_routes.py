@@ -47,6 +47,19 @@ def _auth_header(client):
     return {"Authorization": f"Bearer {token}"}
 
 
+def _seed_deepseek_key(client, hdrs):
+    """Seed the configured provider key (DEEPSEEK_API_KEY) for the acting user.
+
+    Wave B1 gated /lab chat on the user having the research provider's key
+    (mirrors /research/analyze). Chat tests that exercise the LLM flow must
+    seed it, otherwise the route fails fast with 400 before run_chat_turn.
+    """
+    r = client.post("/api-keys/", json={
+        "provider": "DEEPSEEK_API_KEY", "key_value": "sk-test-deepseek",
+    }, headers=hdrs)
+    assert r.status_code == 200, r.text
+
+
 def _spec_dict():
     return {
         "name": "TestStrategy", "description": "",
@@ -115,6 +128,7 @@ class TestChatRoutes:
         from src.lab.chat import ChatReply, ChatResponse
         mock_chat.return_value = ChatResponse(root=ChatReply(message="OK"))
         hdrs = _auth_header(client)
+        _seed_deepseek_key(client, hdrs)
         sid = client.post("/lab/strategies", json={"name": "ChatB"}, headers=hdrs).json()["id"]
         r = client.post(f"/lab/strategies/{sid}/chat", json={"message": "hi"}, headers=hdrs)
         assert r.status_code == 200
@@ -130,6 +144,7 @@ class TestChatRoutes:
             rationale="changed it", patch=new_spec,
         ))
         hdrs = _auth_header(client)
+        _seed_deepseek_key(client, hdrs)
         sid = client.post("/lab/strategies", json={"name": "ChatC"}, headers=hdrs).json()["id"]
         r = client.post(f"/lab/strategies/{sid}/chat", json={"message": "edit"}, headers=hdrs)
         assert r.json()["kind"] == "patch"

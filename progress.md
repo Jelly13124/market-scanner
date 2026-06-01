@@ -14,6 +14,7 @@
 - per-user-keys A2: SectionContext.api_keys + run_llm_section forwards it to call_research_llm. TDD green.
 - per-user-keys A3: run_sop threads api_keys into all SectionContexts across the ThreadPool (explicit arg, no globals). Tenant-isolation tested.
 - per-user-keys A4: /research/analyze fetches user keys (ApiKeyService), validates require_api_key → 400, passes to run_sop. No host-key leak on the user path.
+- per-user-keys B1: Lab chat (trigger_chat → run_chat_turn → call_research_llm) threads user api_keys + 400 gate. TDD green.
 
 ## Session — 2026-05-26 (Phase 8 Wave 7 — Verification, smoke, and Phase 8 landing)
 

@@ -34,6 +34,8 @@ from sqlalchemy.orm import Session
 from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
 from app.backend.database.models import User
+from app.backend.routes.research import _configured_provider_key_name
+from app.backend.services.api_key_service import ApiKeyError, ApiKeyService
 from app.backend.models.lab_schemas import (
     BacktestResponse,
     BacktestRunRequest,
@@ -198,6 +200,19 @@ def post_chat(
     if strategy is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
 
+    # Per-user keys (multi-tenant): Lab chat burns LLM credits via the same
+    # call_research_llm chokepoint as analyze, so FAIL FAST (before saving the
+    # user message) if the acting user lacks the configured provider's key, so
+    # the host's keys are never spent on a user's behalf. (The seed
+    # superuser/owner falls back to env inside require_api_key.)
+    svc = ApiKeyService(db, current_user.id)
+    provider_key = _configured_provider_key_name()
+    try:
+        svc.require_api_key(provider_key)
+    except ApiKeyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    api_keys = svc.get_api_keys_dict()
+
     # Save user message
     chat_repo.add(strategy_id=strategy_id, role="user", content=req.message, user_id=current_user.id)
 
@@ -211,12 +226,23 @@ def post_chat(
     history = list(reversed(history))
 
     # LLM call
-    chat_resp = run_chat_turn(
-        current_spec=strategy.spec_json,
-        chat_history=history,
-        prior_strategies_summary=prior_strategies,
-        user_message=req.message,
-    )
+    try:
+        chat_resp = run_chat_turn(
+            current_spec=strategy.spec_json,
+            chat_history=history,
+            prior_strategies_summary=prior_strategies,
+            user_message=req.message,
+            api_keys=api_keys,
+        )
+    except ValueError as e:
+        # Belt-and-suspenders: a deep "No API key ..." from get_model's
+        # no-fallback path is the user's problem to fix, not a 500.
+        msg = str(e)
+        if "API key" in msg:
+            logger.warning("lab chat blocked: missing provider key for strategy %s: %s",
+                           strategy_id, msg)
+            raise HTTPException(status_code=400, detail=msg)
+        raise
 
     root = chat_resp.root
     if isinstance(root, ProposeSpecPatch):

@@ -23,9 +23,17 @@ def test_chat_isolation(full_client, two_users):
         headers=auth_header(b),
     ).status_code == 404
 
-    # A can post a message
+    # A can post a message. Wave B1 gates /lab chat on the configured provider
+    # key (mirrors /research/analyze), so seed A's DEEPSEEK key first.
     from unittest.mock import patch
     from src.lab.chat import ChatReply, ChatResponse
+
+    seed = full_client.post(
+        "/api-keys/",
+        json={"provider": "DEEPSEEK_API_KEY", "key_value": "sk-a-deepseek"},
+        headers=auth_header(a),
+    )
+    assert seed.status_code == 200, seed.text
 
     with patch("app.backend.routes.lab.run_chat_turn") as mock_chat:
         mock_chat.return_value = ChatResponse(root=ChatReply(message="OK"))

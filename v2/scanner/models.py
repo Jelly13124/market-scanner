@@ -16,8 +16,14 @@ Direction = Literal["bullish", "bearish", "neutral"]
 class ScannerWeights(BaseModel):
     """Composite-score weights. Configurable per ScannerConfig."""
 
-    event_weight: float = 0.60
-    quant_weight: float = 0.40
+    # Quant overlay OFF by default (2026-06-01). The detector-only composite beat
+    # SPY in all 3 regimes (bear +1.04% / bull +0.79% / choppy +1.93% 5d alpha),
+    # while turning the quant signals ON dragged it down every regime (−1.83% in
+    # bear). See findings_scanner_eval.md (Phase 3). Reversible per-config — set
+    # quant_weight > 0 on a ScannerConfig to re-enable once the fundamental signals
+    # have a real point-in-time data source. Signal CODE is kept, just unweighted.
+    event_weight: float = 1.00
+    quant_weight: float = 0.00
     factor_weights: dict[str, float] = Field(
         default_factory=lambda: {
             "momentum": 0.30,

@@ -1256,13 +1256,30 @@ class TestComputeComposite:
             "momentum": SignalResult(signal_name="momentum", value=0.6),
             "value": SignalResult(signal_name="value", value=-0.2),
         }
-        weights = ScannerWeights()
+        # Explicit non-zero quant_weight so this exercises the actual mixing
+        # (the DEFAULT is now quant_weight=0 — see test_quant_off_by_default).
+        weights = ScannerWeights(event_weight=0.6, quant_weight=0.4)
         out = compute_composite("AAPL", triggers, quant, weights)
         assert out is not None
         assert out.quant_score is not None
         # Composite is a convex combination of event_score and quant_score
         expected = weights.event_weight * out.event_score + weights.quant_weight * out.quant_score
         assert out.composite_score == pytest.approx(expected)
+
+    def test_quant_off_by_default(self):
+        """Default weights are quant-OFF (event 1.0 / quant 0.0) after the Phase-3
+        finding that the quant overlay dragged the composite. Even with quant
+        signals present, the default composite == event_score; the signals are
+        still computed (quant_score not None) but carry zero weight. Reversible
+        by passing a ScannerWeights with quant_weight > 0."""
+        w = ScannerWeights()
+        assert w.event_weight == 1.0 and w.quant_weight == 0.0
+        triggers = [EventTrigger(detector="earnings_surprise", triggered=True,
+                                 severity_z=2.5, direction="bullish")]
+        quant = {"momentum": SignalResult(signal_name="momentum", value=0.9)}
+        out = compute_composite("AAPL", triggers, quant, w)
+        assert out.quant_score is not None  # still computed, just unweighted
+        assert out.composite_score == pytest.approx(out.event_score)
 
     def test_direction_aggregates_signed_severities(self):
         triggers = [

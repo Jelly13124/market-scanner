@@ -1,7 +1,8 @@
 # v2/scanner — Daily Market Scanner
 
 Quant-only ticker selection. Runs a 7-detector pass + 5 quant signals over a
-US-stock universe, ranks the Top-N by a 60/40 (event/quant) composite score.
+US-stock universe, ranks the Top-N by a detector-driven composite score
+(quant overlay OFF by default since the Phase-3 eval — re-enable per-config).
 No LLM, no LangGraph. Pure Python — typical NASDAQ-100 + S&P 500 scan in
 3–6 min on a single laptop.
 
@@ -109,7 +110,10 @@ mults              = weights.detector_severity_mult            # missing keys �
 weighted_severity  = max(|t.severity_z| * mults.get(t.detector, 1.0))
 event_score        = clip(weighted_severity / 5σ, 0, 1) * 100  # 0..100
 quant_score        = weighted mean of (value + 1) / 2 * 100    # 0..100, weights renormalized
-composite          = 0.60 * event_score + 0.40 * quant_score   # 0..100
+composite          = event_weight * event_score + quant_weight * quant_score  # 0..100
+                     # DEFAULT is now event_weight=1.0, quant_weight=0.0 (quant OFF).
+                     # The Phase-3 eval found the quant overlay dragged the composite
+                     # in every regime (findings_scanner_eval.md); re-enable per-config.
 event_severity     = max(|severity_z|)  RAW, used as tiebreaker at composite=100
 direction          = sign of  Σ (t.severity_z * mults.get(t.detector, 1.0))
 ```

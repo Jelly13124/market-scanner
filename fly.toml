@@ -1,0 +1,41 @@
+# Fly.io config. `fly launch` fills in `app` + `primary_region`; review everything
+# marked CHANGE-ME before `fly deploy`. See docs/DEPLOY.md for the full runbook.
+
+app = "CHANGE-ME"
+primary_region = "iad"   # near your users: iad=US-East, sjc=US-West, nrt=Tokyo, ams=EU, sin=Singapore
+
+[build]
+  dockerfile = "Dockerfile"
+  [build.args]
+    # Baked into the SPA bundle at build time. The API is served at ROOT (no /api
+    # prefix), so this is just your final public URL. Deploy first with the
+    # fly.dev host, then re-deploy with your custom domain once DNS is live.
+    VITE_API_URL = "https://CHANGE-ME.fly.dev"
+
+[env]
+  DATABASE_URL = "sqlite:////data/app.db"          # SQLite on the persisted volume
+  FRONTEND_DIST = "/app/app/frontend/dist"         # where the Dockerfile placed the built SPA
+  REQUIRE_EMAIL_VERIFICATION = "true"              # gate unverified password signups
+  RATE_LIMIT_ENABLED = "true"                      # slowapi on /auth/* + analyze/scan
+  FRONTEND_ORIGINS = "https://CHANGE-ME.fly.dev"   # CORS allow-list (same-origin, but set it)
+
+# SQLite lives here. Create it once: `fly volumes create data --size 3 --region <r>`.
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false     # keep the single machine up (APScheduler + the SQLite volume)
+  min_machines_running = 1       # exactly one machine — SQLite cannot run multi-instance
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "2gb"                 # ~$12/mo. Bump to 4gb (`fly scale memory 4096`) if the nightly scan OOMs.

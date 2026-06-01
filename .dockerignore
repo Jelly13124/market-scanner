@@ -1,28 +1,57 @@
+# Keep the build context (and final image) small. The frontend is built in its
+# own stage, so node_modules / dist never need to enter the context.
+
 # Git
 .git
 .gitignore
 
-# Poetry
+# Python caches / virtualenvs
 .venv
 __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
-# Environment
+# Node (frontend is built in the `frontend` stage from package*.json only)
+app/frontend/node_modules/
+app/frontend/dist/
+
+# Secrets / local env (never bake into the image)
 .env
+.env.*
 
-# IDEs and editors
+# Local SQLite databases (prod DB lives on the Fly volume at /data)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Scanner evaluation artifacts (large CSVs, not needed at runtime)
+scanner_eval/
+v2/scanner/scanner_eval/
+
+# Source-of-truth / working notes (not needed in the image)
+progress.md
+task_plan.md
+findings.md
+
+# Logs and data dirs
+logs/
+data/
+*.log
+
+# IDEs / editors
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Logs and data
-logs/
-data/
-*.log
+# Claude / tooling config
+.claude/
 
 # OS specific
 .DS_Store
-Thumbs.db 
+Thumbs.db

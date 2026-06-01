@@ -2896,3 +2896,4 @@ Decisions (findings): stock score = the conviction (综合评分 53/100) score, 
 - deploy P2-A1: FastAPI serves the built SPA (index + /assets + catch-all), API stays at root; no-op when no build present. TDD green.
 - deploy P2-B1: email verification — User.is_verified + migration, verify-token email via Resend, /auth/verify, get_current_user gate (REQUIRE_EMAIL_VERIFICATION off by default), OAuth auto-verified. TDD green.
 - deploy P2-B2: slowapi rate limiting (IP-keyed) — tight on /auth/*, modest on analyze/scan, env-configurable; existing tests unaffected. TDD 429 green.
+- deploy P2-C1/C2/D1: Dockerfile + entrypoint + .dockerignore (pre-existing, verified) + fly.toml + docs/DEPLOY.md runbook. API at root + SPA same-origin; one machine + Fly volume for SQLite; email-verify + rate-limit on; per-user keys → host $0.

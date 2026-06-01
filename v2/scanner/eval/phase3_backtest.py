@@ -63,6 +63,12 @@ def run_phase3(
     if run_backtest is None:
         from v2.backtesting.engine import run_backtest as run_backtest
 
+    # load_universe ignores `custom` unless the kind is "custom"; a named kind
+    # (e.g. "nasdaq100_sp500") always returns its full membership. So when the
+    # caller pins an explicit ticker subset, switch the kind to "custom" — else
+    # Phase 3 silently replays the whole 516-name universe.
+    effective_kind = "custom" if universe_tickers else universe_kind
+
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -77,7 +83,7 @@ def run_phase3(
             csv_path = out_dir / f"phase3_{name}_quant{'on' if use_quant else 'off'}.csv"
             try:
                 run_backtest(
-                    universe_kind=universe_kind,
+                    universe_kind=effective_kind,
                     universe_tickers=universe_tickers,
                     weights_payload=None,
                     start_date=start,

@@ -1,8 +1,8 @@
 # Fly.io config. `fly launch` fills in `app` + `primary_region`; review everything
 # marked CHANGE-ME before `fly deploy`. See docs/DEPLOY.md for the full runbook.
 
-app = "CHANGE-ME"
-primary_region = "iad"   # near your users: iad=US-East, sjc=US-West, nrt=Tokyo, ams=EU, sin=Singapore
+app = "quantlab"
+primary_region = "nrt"   # Tokyo (low latency for Asia). near your users: iad=US-East, hkg=Hong Kong, sin=Singapore
 
 [build]
   dockerfile = "Dockerfile"
@@ -10,14 +10,14 @@ primary_region = "iad"   # near your users: iad=US-East, sjc=US-West, nrt=Tokyo,
     # Baked into the SPA bundle at build time. The API is served at ROOT (no /api
     # prefix), so this is just your final public URL. Deploy first with the
     # fly.dev host, then re-deploy with your custom domain once DNS is live.
-    VITE_API_URL = "https://CHANGE-ME.fly.dev"
+    VITE_API_URL = "https://quantlab.fly.dev"
 
 [env]
   DATABASE_URL = "sqlite:////data/app.db"          # SQLite on the persisted volume
   FRONTEND_DIST = "/app/app/frontend/dist"         # where the Dockerfile placed the built SPA
   REQUIRE_EMAIL_VERIFICATION = "true"              # gate unverified password signups
   RATE_LIMIT_ENABLED = "true"                      # slowapi on /auth/* + analyze/scan
-  FRONTEND_ORIGINS = "https://CHANGE-ME.fly.dev"   # CORS allow-list (same-origin, but set it)
+  FRONTEND_ORIGINS = "https://quantlab.fly.dev"   # CORS allow-list (same-origin, but set it)
 
 # SQLite lives here. Create it once: `fly volumes create data --size 3 --region <r>`.
 [[mounts]]

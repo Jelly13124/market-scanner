@@ -57,6 +57,23 @@ def _conviction_score(ctx: SectionContext) -> int | None:
     return p.structured.get("total_score")
 
 
+def _position_action(score: int | None, lang: str) -> str | None:
+    """Map the 0-100 conviction score to a concrete position action on the house
+    ladder: >=85 full buy / >70 small buy / 55-70 hold / 40-54 small sell /
+    <40 exit. Returns None when there is no score."""
+    if score is None:
+        return None
+    if score >= 85:
+        return "全仓买入" if lang == "zh" else "Full position (buy)"
+    if score > 70:
+        return "小额买入" if lang == "zh" else "Small buy"
+    if score >= 55:
+        return "持有 / 观望" if lang == "zh" else "Hold"
+    if score >= 40:
+        return "小额卖出 / 减仓" if lang == "zh" else "Small sell / trim"
+    return "清仓" if lang == "zh" else "Exit / liquidate"
+
+
 _TASK_INSTRUCTION = (
     "Write the Executive Summary. Output these fields:\n"
     "  recommendation — the single actionable call, exactly one of: "
@@ -134,8 +151,11 @@ class ExecutiveSummarySection(Section):
             "confidence": "置信度"          if lang == "zh" else "Confidence",
             "invalidate": "关键证伪条件"    if lang == "zh" else "Key invalidation",
             "score":      "信念评分"        if lang == "zh" else "Score",
+            "position":   "建议仓位"        if lang == "zh" else "Position action",
         }
         score_line = f"- **{L['score']}:** {score}/100\n" if score is not None else ""
+        action = _position_action(score, lang)
+        position_line = f"- **{L['position']}:** {action}\n" if action else ""
 
         md = (
             f"{heading}\n\n"
@@ -149,10 +169,11 @@ class ExecutiveSummarySection(Section):
             f"- **{L['confidence']}:** {out.confidence_qualitative}\n"
             f"- **{L['invalidate']}:** {out.key_invalidation}\n"
             f"{score_line}"
+            f"{position_line}"
         )
         return SectionPayload(
             name=self.name, markdown=md,
-            structured={**out.model_dump(), "score_from_conviction": score},
+            structured={**out.model_dump(), "score_from_conviction": score, "position_action": action},
             skipped=False, persona_used=None,
         )
 

@@ -48,7 +48,15 @@ logger = logging.getLogger(__name__)
 
 
 class ScanAlreadyRunningError(RuntimeError):
-    """Raised when a scan is requested for a config that already has a RUNNING row."""
+    """Raised when a scan is requested for a config that already has a RUNNING row.
+
+    Carries ``run_id`` (the in-flight run) so the API layer can return it and let
+    the client re-attach to that run's stream instead of surfacing a 500.
+    """
+
+    def __init__(self, message: str, run_id: int | None = None):
+        super().__init__(message)
+        self.run_id = run_id
 
 
 class ScannerService:
@@ -279,7 +287,10 @@ class ScannerService:
 
             existing = session.query(ScanRun).filter(ScanRun.config_id == config_id, ScanRun.status == "RUNNING").first()
             if existing is not None:
-                raise ScanAlreadyRunningError(f"Scanner config {config_id} already has a RUNNING run (id={existing.id})")
+                raise ScanAlreadyRunningError(
+                    f"Scanner config {config_id} already has a RUNNING run (id={existing.id})",
+                    run_id=existing.id,
+                )
 
             # Phase 5C — when targeting a UserWatchlist, resolve the tickers
             # here (inside the same session) so the long-running scan thread

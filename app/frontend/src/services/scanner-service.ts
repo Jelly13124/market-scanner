@@ -95,12 +95,23 @@ export const scannerService = {
   // Run lifecycle
   // ===================================================================
 
-  /** Trigger a manual scan; resolves with the new run_id. */
-  async runNow(configId: number): Promise<{ run_id: number; status: string }> {
+  /** Trigger a manual scan; resolves with the run_id. When a run is already in
+   *  flight for this config the backend returns that run with already_running=true
+   *  (instead of erroring), so the caller just re-attaches to its stream. */
+  async runNow(configId: number): Promise<{ run_id: number; status: string; already_running?: boolean }> {
     const r = await fetch(`${API_BASE_URL}/scanner/configs/${configId}/run`, {
       method: 'POST',
     });
     if (!r.ok) throw await _toError(r, 'runNow');
+    return r.json();
+  },
+
+  /** Most recent run for a config (any status), or null. The panel calls this on
+   *  mount / config-switch to re-attach to a run still RUNNING server-side (the
+   *  panel unmounts + aborts its SSE on a tab switch) or restore the last results. */
+  async getLatestRun(configId: number): Promise<ScanRunSummary | null> {
+    const r = await fetch(`${API_BASE_URL}/scanner/configs/${configId}/latest-run`);
+    if (!r.ok) throw await _toError(r, 'getLatestRun');
     return r.json();
   },
 

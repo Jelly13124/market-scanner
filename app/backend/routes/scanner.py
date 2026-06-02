@@ -53,6 +53,7 @@ from app.backend.repositories.scanner_repository import (
     WatchlistEntryRepository,
 )
 from app.backend.services.scan_broadcaster import ScanBroadcaster, get_broadcaster
+from app.backend.services.scanner_service import ScanAlreadyRunningError
 from app.backend.services.scheduler_service import (
     SchedulerService,
     get_scheduler_service,
@@ -230,10 +231,33 @@ def run_config_now(
         raise HTTPException(404, f"No scanner config with id {config_id}")
     try:
         run_id = scheduler.run_now(config_id)
+    except ScanAlreadyRunningError as e:
+        # Idempotent: a run is already in flight for this config. Return it so the
+        # client re-attaches to its stream instead of seeing a 500.
+        return {"run_id": e.run_id, "status": "RUNNING", "already_running": True}
     except Exception as e:
         logger.exception("Manual run for config %s failed to dispatch", config_id)
         raise HTTPException(500, str(e))
-    return {"run_id": run_id, "status": "RUNNING"}
+    return {"run_id": run_id, "status": "RUNNING", "already_running": False}
+
+
+@router.get("/configs/{config_id}/latest-run", response_model=ScanRunSummary | None)
+def get_latest_run_for_config(
+    config_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ScanRunSummary | None:
+    """Most recent run for a config (any status), or null if none.
+
+    The Scanner panel calls this on mount / config-switch to re-attach to a run
+    that is still RUNNING (its live progress lives on the server, not the panel
+    that unmounted on a tab switch) or to restore the last run's results. Scoped
+    to the config owner.
+    """
+    if not ScannerConfigRepository(db).get_by_id(config_id, user_id=current_user.id):
+        raise HTTPException(404, f"No scanner config with id {config_id}")
+    run = ScanRunRepository(db).get_latest_for_config(config_id)
+    return ScanRunSummary.model_validate(run) if run else None
 
 
 @router.get("/runs/{run_id}", response_model=ScanRunSummary)

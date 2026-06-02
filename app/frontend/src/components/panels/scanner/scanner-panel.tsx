@@ -152,6 +152,39 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
     }
   }
 
+  // Subscribe to a run's live SSE stream. Extracted so both a fresh "Run now"
+  // and an on-mount re-attach (after a tab switch) share the same wiring.
+  const subscribeToRun = useCallback((run_id: number) => {
+    abortRef.current?.();
+    abortRef.current = scannerService.streamRun(run_id, {
+      onStart: () => {
+        /* no-op — we already have the run_id */
+      },
+      onProgress: (e) => setProgress(e),
+      onComplete: async () => {
+        // Fetch the full entries list when the scan finishes.
+        try {
+          const detail = await scannerService.getRunEntries(run_id);
+          setEntries(detail.entries);
+          setRun({
+            id: detail.id,
+            config_id: detail.config_id,
+            status: detail.status,
+            started_at: detail.started_at,
+            completed_at: detail.completed_at,
+            universe_size: detail.universe_size,
+            error_message: detail.error_message,
+            created_at: detail.created_at,
+          });
+        } catch (err) {
+          setStreamError(err instanceof Error ? err.message : String(err));
+        }
+      },
+      onError: (e) => setStreamError(e.message),
+      onFatal: (err) => setStreamError(err.message),
+    });
+  }, []);
+
   async function handleRunNow() {
     if (!selectedConfig) return;
     setRunId(null);
@@ -161,41 +194,60 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
     setStreamError(null);
 
     try {
+      // runNow is idempotent: if a scan is already running for this config the
+      // backend returns that run (already_running=true) instead of 500'ing, so
+      // we simply re-attach to its stream below.
       const { run_id } = await scannerService.runNow(selectedConfig.id);
       setRunId(run_id);
-      // Subscribe immediately to the stream.
-      abortRef.current?.();
-      abortRef.current = scannerService.streamRun(run_id, {
-        onStart: () => {
-          /* no-op — the runNow response already gave us the id */
-        },
-        onProgress: (e) => setProgress(e),
-        onComplete: async () => {
-          // Fetch the full entries list when the scan finishes.
-          try {
-            const detail = await scannerService.getRunEntries(run_id);
-            setEntries(detail.entries);
-            setRun({
-              id: detail.id,
-              config_id: detail.config_id,
-              status: detail.status,
-              started_at: detail.started_at,
-              completed_at: detail.completed_at,
-              universe_size: detail.universe_size,
-              error_message: detail.error_message,
-              created_at: detail.created_at,
-            });
-          } catch (err) {
-            setStreamError(err instanceof Error ? err.message : String(err));
-          }
-        },
-        onError: (e) => setStreamError(e.message),
-        onFatal: (err) => setStreamError(err.message),
-      });
+      subscribeToRun(run_id);
     } catch (err) {
       setStreamError(err instanceof Error ? err.message : String(err));
     }
   }
+
+  // Re-attach to the selected config's latest run on (re)mount or config switch.
+  // A tab switch unmounts this panel and aborts the SSE, but the scan keeps
+  // running server-side — RUNNING => resubscribe to live progress, COMPLETE =>
+  // restore the results, otherwise show the empty state.
+  useEffect(() => {
+    if (selectedId == null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const latest = await scannerService.getLatestRun(selectedId);
+        if (cancelled) return;
+        if (latest && latest.status === 'RUNNING') {
+          setRunId(latest.id);
+          setRun(latest);
+          setProgress(null);
+          setEntries([]);
+          setStreamError(null);
+          subscribeToRun(latest.id);
+        } else if (latest && latest.status === 'COMPLETE') {
+          const detail = await scannerService.getRunEntries(latest.id);
+          if (cancelled) return;
+          setRunId(latest.id);
+          setRun(latest);
+          setEntries(detail.entries);
+          setProgress(null);
+          setStreamError(null);
+        } else {
+          // No restorable run for this config — clean slate.
+          abortRef.current?.();
+          setRunId(null);
+          setRun(null);
+          setProgress(null);
+          setEntries([]);
+          setStreamError(null);
+        }
+      } catch {
+        /* latest-run unavailable — leave whatever is showing */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, subscribeToRun]);
 
   function handleTickerClick(ticker: string) {
     // One-click → open/focus the Analyze tab, pre-fill this ticker, auto-run
@@ -206,10 +258,11 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
   // ---- render -------------------------------------------------------------
 
   const isRunning =
-    runId !== null &&
-    progress != null &&
-    progress.processed < progress.total &&
-    entries.length === 0;
+    run?.status === 'RUNNING' ||
+    (runId !== null &&
+      progress != null &&
+      progress.processed < progress.total &&
+      entries.length === 0);
 
   return (
     <div className="h-full w-full flex flex-col bg-background">

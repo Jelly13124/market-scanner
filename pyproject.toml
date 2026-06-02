@@ -52,6 +52,13 @@ psycopg2-binary = "^2.9.9"
 slowapi = "^0.1.9"
 # Analyst data backend for the scanner (M8)
 yfinance = "^0.2.66"
+# Report rendering deps imported directly on the app startup path: jinja2 (HTML
+# templates in src/research/html_render.py) and mplfinance (kline/equity charts
+# in src/research/charts/render.py). They were satisfied locally (conda) but the
+# slim prod image needs them declared — uvicorn crashed on import without them.
+# mplfinance ships only prerelease (bN) versions, so pin the exact known-good one.
+jinja2 = "^3.1.0"
+mplfinance = "0.12.10b0"
 # Phase 8 — A-share data integration (optional [ashare] extra).
 # TEMPORARILY REMOVED from the Poetry dependency graph for the Fly deploy:
 # mootdx 0.11.7 hard-pins httpx (>=0.25,<0.26), irreconcilable with the app's

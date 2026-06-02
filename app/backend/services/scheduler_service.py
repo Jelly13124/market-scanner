@@ -146,6 +146,20 @@ class SchedulerService:
         except Exception as e:
             logger.warning("Failed to register screener preset job: %s", e)
 
+        # Register each user's enabled report-delivery schedules (Stage 3).
+        try:
+            from app.backend.database.models import ReportSchedule
+
+            with self._session_factory() as session:
+                schedules = session.query(ReportSchedule).filter(ReportSchedule.is_enabled.is_(True)).all()
+            for s in schedules:
+                try:
+                    self.register_report_schedule(s)
+                except Exception as e:
+                    logger.warning("Failed to register report schedule %s: %s", s.id, e)
+        except Exception as e:
+            logger.warning("Failed to load report schedules: %s", e)
+
         logger.info(
             "SchedulerService started (tz=%s); registered %d/%d enabled scanner configs + daily pipeline + daily research",
             self._tz,
@@ -245,6 +259,42 @@ class SchedulerService:
             # Exceptions inside cron jobs would otherwise vanish into APScheduler's
             # error log — log them explicitly for visibility.
             logger.exception("Cron scan for config %s failed", config_id)
+
+    # ------------------------------------------------------------------
+    # Report-delivery schedules (Stage 3) — called by REST routes after CRUD
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _report_schedule_job_id(schedule_id: int) -> str:
+        return f"report-schedule-{schedule_id}"
+
+    def register_report_schedule(self, schedule) -> None:
+        """(Re)register a report schedule's cron. No-op when disabled."""
+        self.unregister_report_schedule(schedule.id)
+        if not schedule.is_enabled:
+            return
+        try:
+            trigger = CronTrigger.from_crontab(schedule.cron_expr, timezone=self._tz)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid cron expression {schedule.cron_expr!r}: {e}") from e
+        job_id = self._report_schedule_job_id(schedule.id)
+        self._scheduler.add_job(
+            _run_report_schedule_job,
+            trigger=trigger,
+            id=job_id,
+            args=[schedule.id],
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=300,
+            coalesce=True,
+        )
+        logger.info("Registered report-schedule job %s (cron=%r, tz=%s)", job_id, schedule.cron_expr, self._tz)
+
+    def unregister_report_schedule(self, schedule_id: int) -> None:
+        job_id = self._report_schedule_job_id(schedule_id)
+        if self._scheduler.get_job(job_id):
+            self._scheduler.remove_job(job_id)
+            logger.info("Unregistered report-schedule job %s", job_id)
 
     # ------------------------------------------------------------------
     # Daily scanner→agent pipeline job
@@ -448,6 +498,72 @@ class SchedulerService:
 # Daily research job — module-level function so tests can patch
 # SessionLocal, run_research, and render_html at this module's namespace.
 # ----------------------------------------------------------------------
+
+
+def _run_report_schedule_job(schedule_id: int) -> None:
+    """Body of a per-user scheduled-report cron: run the SOP for each ticker with
+    the owner's keys and email each rendered report to their verified recipients.
+
+    Runs on an APScheduler worker thread — must never let an exception escape.
+    Skips entirely when the schedule is disabled/missing, has no tickers, or the
+    owner has no verified recipients (nothing to deliver to). Mirrors the
+    /research/analyze route's per-user-key + run_sop + render_sop flow.
+    """
+    _logger = logging.getLogger(__name__)
+    db = SessionLocal()
+    try:
+        from app.backend.database.models import ReportSchedule
+
+        sched = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+        if sched is None or not sched.is_enabled:
+            return
+        user_id = sched.user_id
+        tickers = [t for t in (sched.tickers or []) if t]
+        if not tickers:
+            return
+
+        from app.backend.services.report_delivery import email_report_html, verified_recipients
+
+        if not verified_recipients(db, user_id):
+            _logger.info("report schedule %s: no verified recipients; skipping", schedule_id)
+            return
+
+        from app.backend.services.api_key_service import ApiKeyService
+        from src.research.html_render import render_sop
+        from src.research.models import AnalyzeRequest
+        from src.research.sop_orchestrator import run_sop
+
+        api_keys = ApiKeyService(db, user_id).get_api_keys_dict()
+        for ticker in tickers:
+            try:
+                req = AnalyzeRequest(
+                    ticker=ticker,
+                    objective="general_research",
+                    position_budget_usd=None,
+                    already_holds=False,
+                    cost_basis_usd=None,
+                    risk_tolerance="balanced",
+                    use_personas=False,
+                    report_language=(sched.report_language or "en"),
+                )
+                report = run_sop(req, api_keys=api_keys)
+                html = render_sop(report)
+                res = email_report_html(db, user_id, ticker=ticker, html=html)
+                _logger.info(
+                    "report schedule %s: %s sent=%s failed=%s",
+                    schedule_id, ticker, res["sent"], res["failed"],
+                )
+            except Exception:
+                _logger.exception("report schedule %s: ticker %s failed", schedule_id, ticker)
+
+        from datetime import datetime, timezone
+
+        sched.last_run_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:
+        _logger.exception("report schedule job %s crashed", schedule_id)
+    finally:
+        db.close()
 
 
 def _run_research_job_body() -> None:

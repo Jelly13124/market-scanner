@@ -46,6 +46,26 @@ class ReportRecipient(Base):
     __table_args__ = (UniqueConstraint("user_id", "email", name="uq_report_recipient_user_email"),)
 
 
+class ReportSchedule(Base):
+    """A user's scheduled auto-analyze: run the SOP for a list of tickers on a
+    cron and email each rendered report to the user's verified recipients.
+
+    Created by create_all (no migration). The cron is (un)registered with the
+    APScheduler-backed SchedulerService as rows are created / toggled / deleted.
+    Scoped by user_id like every other owned table."""
+
+    __tablename__ = "report_schedules"
+
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, index=True)
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
+    tickers = Column(JSON, nullable=False, default=list)  # list[str]
+    cron_expr = Column(String(120), nullable=False)  # interpreted in America/New_York
+    report_language = Column(String(4), nullable=False, default="en")  # "en" | "zh"
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class ScannerConfig(Base):
     """Saved configuration for the daily market scanner."""
 

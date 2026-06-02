@@ -386,6 +386,8 @@
     "apiKeysDesc": "API endpoints and authentication",
     "reportEmails": "Report emails",
     "reportEmailsDesc": "Verified addresses that receive your reports",
+    "schedules": "Scheduled reports",
+    "schedulesDesc": "Auto-run analysis and email reports on a schedule",
     "apiKeysHeader": "API Keys",
     "securityNote": "Security Note",
     "models": "Models",

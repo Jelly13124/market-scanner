@@ -1,9 +1,9 @@
 import { cn } from '@/lib/utils';
 import { CubeIcon } from '@radix-ui/react-icons';
-import { Key, Mail, Palette } from 'lucide-react';
+import { CalendarClock, Key, Mail, Palette } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ApiKeysSettings, Models, ReportRecipientsSettings } from './';
+import { ApiKeysSettings, Models, ReportRecipientsSettings, ReportSchedulesSettings } from './';
 import { ThemeSettings } from './appearance';
 
 interface SettingsProps {
@@ -35,6 +35,12 @@ export function Settings({ className }: SettingsProps) {
       description: t('settings.reportEmailsDesc'),
     },
     {
+      id: 'schedules',
+      label: t('settings.schedules'),
+      icon: CalendarClock,
+      description: t('settings.schedulesDesc'),
+    },
+    {
       id: 'models',
       label: t('settings.models'),
       icon: CubeIcon,
@@ -58,6 +64,8 @@ export function Settings({ className }: SettingsProps) {
         return <ApiKeysSettings />;
       case 'emails':
         return <ReportRecipientsSettings />;
+      case 'schedules':
+        return <ReportSchedulesSettings />;
       default:
         return <Models />;
     }

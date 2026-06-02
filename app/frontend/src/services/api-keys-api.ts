@@ -48,7 +48,10 @@ class ApiKeysService {
       params.append('include_inactive', 'true');
     }
     
-    const response = await fetch(`${this.baseUrl}?${params}`);
+    // Trailing slash: the backend collection route is `/api-keys/`. Hitting it
+    // without the slash triggers a 307 redirect whose Location downgrades to
+    // http:// behind Fly's proxy, dropping the Authorization header -> 401.
+    const response = await fetch(`${this.baseUrl}/?${params}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch API keys: ${response.statusText}`);
     }
@@ -67,7 +70,8 @@ class ApiKeysService {
   }
 
   async createOrUpdateApiKey(request: ApiKeyCreateRequest): Promise<ApiKey> {
-    const response = await fetch(this.baseUrl, {
+    // Trailing slash — see getAllApiKeys: avoids the http:// redirect that strips auth.
+    const response = await fetch(`${this.baseUrl}/`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

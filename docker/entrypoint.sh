@@ -17,4 +17,10 @@ PYTHONPATH=/app python docker/db_init.py
 # Serve the API + SPA. No --reload (Fly runs one process; reload buffers logs and
 # leaks sockets). 0.0.0.0 so Fly's proxy can reach it on the internal port.
 cd /app
-exec uvicorn app.backend.main:app --host 0.0.0.0 --port 8000
+# --proxy-headers + --forwarded-allow-ips '*': trust Fly's proxy so uvicorn reads
+# X-Forwarded-Proto=https. Without it FastAPI thinks requests are HTTP and emits
+# trailing-slash redirects (e.g. POST /api-keys -> /api-keys/) with an http://
+# Location; the browser then drops the Authorization header on the cross-protocol
+# redirect and the request 401s. Only Fly's proxy can reach this port, so
+# trusting all forwarded IPs here is safe.
+exec uvicorn app.backend.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'

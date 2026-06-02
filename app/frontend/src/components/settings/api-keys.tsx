@@ -85,6 +85,8 @@ const LLM_API_KEYS: ApiKey[] = [
 
 export function ApiKeysSettings() {
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [savedKeys, setSavedKeys] = useState<Record<string, string>>({});
+  const [saveStatus, setSaveStatus] = useState<Record<string, 'saving' | 'saved' | 'error'>>({});
   const [visibleKeys, setVisibleKeys] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -113,6 +115,7 @@ export function ApiKeysSettings() {
       }
       
       setApiKeys(keysData);
+      setSavedKeys(keysData);
     } catch (err) {
       console.error('Failed to load API keys:', err);
       setError('Failed to load API keys. Please try again.');
@@ -121,32 +124,39 @@ export function ApiKeysSettings() {
     }
   };
 
-  const handleKeyChange = async (key: string, value: string) => {
-    // Update local state immediately for responsive UI
-    setApiKeys(prev => ({
-      ...prev,
-      [key]: value
-    }));
+  const handleKeyChange = (key: string, value: string) => {
+    // Edit local state only — persistence happens on the explicit Save button.
+    setApiKeys(prev => ({ ...prev, [key]: value }));
+    // Editing clears any prior saved/error badge for this field.
+    setSaveStatus(prev => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
 
-    // Auto-save with debouncing
+  const isDirty = (key: string) => (apiKeys[key] || '') !== (savedKeys[key] || '');
+
+  const saveKey = async (key: string) => {
+    const value = (apiKeys[key] || '').trim();
+    setError(null);
+    setSaveStatus(prev => ({ ...prev, [key]: 'saving' }));
     try {
-      if (value.trim()) {
-        await apiKeysService.createOrUpdateApiKey({
-          provider: key,
-          key_value: value.trim(),
-          is_active: true
-        });
+      if (value) {
+        await apiKeysService.createOrUpdateApiKey({ provider: key, key_value: value, is_active: true });
       } else {
-        // If value is empty, delete the key
+        // Empty value => delete the stored key (ignore "not found").
         try {
           await apiKeysService.deleteApiKey(key);
-        } catch (err) {
-          // Key might not exist, which is fine
-          console.log(`Key ${key} not found for deletion, which is expected`);
+        } catch {
+          /* key may not exist yet — fine */
         }
       }
+      setSavedKeys(prev => ({ ...prev, [key]: value }));
+      setSaveStatus(prev => ({ ...prev, [key]: 'saved' }));
     } catch (err) {
       console.error(`Failed to save API key ${key}:`, err);
+      setSaveStatus(prev => ({ ...prev, [key]: 'error' }));
       setError(`Failed to save ${key}. Please try again.`);
     }
   };
@@ -161,11 +171,9 @@ export function ApiKeysSettings() {
   const clearKey = async (key: string) => {
     try {
       await apiKeysService.deleteApiKey(key);
-      setApiKeys(prev => {
-        const newKeys = { ...prev };
-        delete newKeys[key];
-        return newKeys;
-      });
+      setApiKeys(prev => { const n = { ...prev }; delete n[key]; return n; });
+      setSavedKeys(prev => { const n = { ...prev }; delete n[key]; return n; });
+      setSaveStatus(prev => { const n = { ...prev }; delete n[key]; return n; });
     } catch (err) {
       console.error(`Failed to delete API key ${key}:`, err);
       setError(`Failed to delete ${key}. Please try again.`);
@@ -223,6 +231,26 @@ export function ApiKeysSettings() {
                 </Button>
               </div>
             </div>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs"
+                disabled={!isDirty(apiKey.key) || saveStatus[apiKey.key] === 'saving'}
+                onClick={() => saveKey(apiKey.key)}
+              >
+                {saveStatus[apiKey.key] === 'saving' ? 'Saving…' : 'Save'}
+              </Button>
+              {isDirty(apiKey.key) && saveStatus[apiKey.key] !== 'saving' && (
+                <span className="text-xs text-amber-500">Unsaved changes</span>
+              )}
+              {!isDirty(apiKey.key) && saveStatus[apiKey.key] === 'saved' && (
+                <span className="text-xs text-green-500">✓ Saved</span>
+              )}
+              {saveStatus[apiKey.key] === 'error' && (
+                <span className="text-xs text-red-500">Save failed — try again</span>
+              )}
+            </div>
           </div>
         ))}
       </CardContent>
@@ -255,7 +283,7 @@ export function ApiKeysSettings() {
         <h2 className="text-xl font-semibold text-primary mb-2">{t('settings.apiKeysHeader')}</h2>
         <p className="text-sm text-muted-foreground">
           Configure API endpoints and authentication credentials for financial data and language models.
-          Changes are automatically saved.
+          Paste a key and click Save.
         </p>
       </div>
 
@@ -309,7 +337,7 @@ export function ApiKeysSettings() {
             <div className="space-y-1">
               <h4 className="text-sm font-medium text-amber-500">{t('settings.securityNote')}</h4>
               <p className="text-xs text-muted-foreground">
-                API keys are stored securely on your local system and changes are automatically saved. 
+                API keys are encrypted at rest and scoped to your account. Click Save after entering a key.
                 Keep your API keys secure and don't share them with others.
               </p>
             </div>

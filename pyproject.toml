@@ -49,6 +49,11 @@ scipy = "^1.11.0"
 apscheduler = "^3.10"
 # Multi-tenant auth
 passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+# passlib 1.7.4 (2020) predates bcrypt 4.1+: it reads bcrypt.__about__ which 4.1
+# removed (a harmless trapped warning on 4.x) and breaks outright on bcrypt 5.x.
+# The [bcrypt] extra is uncapped, so the prod image pulled bcrypt 5.x and register
+# 500'd at hash_password. Cap bcrypt to the 4.x line (local runs 4.3.0 fine).
+bcrypt = "^4.0.0"
 python-jose = {extras = ["cryptography"], version = "^3.3.0"}
 # Fernet at-rest encryption for user API keys (APP_ENCRYPTION_KEY)
 cryptography = ">=42.0.0"

@@ -138,7 +138,7 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
                 use_personas=True,
                 scanner_context=None,
             )
-            persona_assignments = route_personas(adapter, shared)
+            persona_assignments = route_personas(adapter, shared, api_keys=api_keys)
         except Exception as e:
             logger.exception("router failed: %s", e)
             persona_assignments = None

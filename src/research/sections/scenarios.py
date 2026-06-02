@@ -82,6 +82,7 @@ class ScenariosSection(Section):
                                    key_assumptions="LLM failed", confidence="low",
                                    invalidation="n/a"),
                 ),
+                api_keys=ctx.api_keys,
             )
         except Exception as e:
             logger.exception("scenarios raised: %s", e)

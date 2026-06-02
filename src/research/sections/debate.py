@@ -62,6 +62,7 @@ class DebateSection(Section):
             module_result = run_debate(
                 adapter, ctx.shared, debate_personas,
                 debate_rounds=rounds,
+                api_keys=ctx.api_keys,
             )
         except Exception as e:
             logger.exception("debate raised: %s", e)

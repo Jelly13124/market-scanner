@@ -151,6 +151,7 @@ class ConvictionSection(Section):
                     _CategoryScore(name=c, score=0, rationale="LLM failed")
                     for c in _CATEGORIES
                 ]),
+                api_keys=ctx.api_keys,
             )
         except Exception as e:
             logger.exception("conviction raised: %s", e)

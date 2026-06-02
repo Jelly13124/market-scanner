@@ -101,6 +101,7 @@ class ExecutiveSummarySection(Section):
                     target_range="n/a", strategy_type="n/a",
                     confidence_qualitative="low", key_invalidation="n/a",
                 ),
+                api_keys=ctx.api_keys,
             )
         except Exception as e:
             logger.exception("executive_summary raised: %s", e)

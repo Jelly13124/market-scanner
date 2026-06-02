@@ -75,6 +75,8 @@ def _ticker_profile(shared: SharedData) -> dict:
 def route_personas(
     request: ResearchRequest,
     shared: SharedData,
+    *,
+    api_keys: dict | None = None,
 ) -> dict[str, str | list[str] | None]:
     """Run the router LLM and return validated per-module assignments.
 
@@ -117,6 +119,7 @@ def route_personas(
             fundamentals=None, valuation=None, risk_position=None,
             debate=[], rationale="Router LLM failed; defaulting to objective.",
         ),
+        api_keys=api_keys,
     )
 
     def _valid(name: str | None) -> str | None:

@@ -110,6 +110,7 @@ def run_debate(
     personas: list[str],
     *,
     debate_rounds: int = 2,
+    api_keys: dict | None = None,
 ) -> ModuleResult:
     """Run a two-persona debate over ``debate_rounds`` rounds (1..5).
 
@@ -162,6 +163,7 @@ def run_debate(
             ),
             verdict="Debate generation failed; no verdict.",
         ),
+        api_keys=api_keys,
     )
 
     markdown = out.transcript + "\n\n**Verdict:** " + out.verdict

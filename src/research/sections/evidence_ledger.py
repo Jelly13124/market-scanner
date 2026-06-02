@@ -86,6 +86,7 @@ class EvidenceLedgerSection(Section):
             out = call_research_llm(
                 prompt, _LedgerOut,
                 default_factory=lambda: _LedgerOut(items=[]),
+                api_keys=ctx.api_keys,
             )
         except Exception as e:
             logger.exception("evidence_ledger raised: %s", e)

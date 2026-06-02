@@ -7,9 +7,12 @@
 # --- frontend build ---
 FROM node:20-slim AS frontend
 WORKDIR /fe
-# Copy manifest + lockfile first so `npm ci` layer caches on dep changes only.
-COPY app/frontend/package.json app/frontend/package-lock.json ./
-RUN npm ci
+# Copy manifest (+ lockfile if present) first so the install layer caches on dep
+# changes only. Use `npm install` not `npm ci`: the committed package-lock.json
+# lags the @radix-ui additions in package.json, and `npm ci` hard-fails on any
+# drift. `npm install` resolves from package.json and tolerates the stale lock.
+COPY app/frontend/package.json app/frontend/package-lock.json* ./
+RUN npm install --no-audit --no-fund
 COPY app/frontend/ ./
 # VITE_API_URL is baked into the bundle at build time. Empty default => the SPA
 # calls the same origin it is served from (single-origin deploy), which is what

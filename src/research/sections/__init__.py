@@ -31,6 +31,7 @@ from src.research.sections import (  # noqa: E402, F401  (side-effect imports)
     scenarios,
     conviction,
     event_risk,
+    catalyst,
     debate,
     final_strategy,
     missing_data,

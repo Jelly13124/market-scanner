@@ -144,6 +144,7 @@ SECTION_ORDER: list[str] = [
     "scenarios",
     "conviction",
     "event_risk",
+    "catalyst",
     "debate",
     "final_strategy",
     "missing_data",

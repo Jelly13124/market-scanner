@@ -40,6 +40,7 @@ SECTION_HEADING_ZH: dict[str, str] = {
     "## Technical Analysis":               "## 技术分析",
     "## Risk and Position Sizing":         "## 风险与仓位管理",
     "## Event Risk Check":                 "## 事件风险检查",
+    "## Near-term Catalysts":              "## 近期催化剂",
     "## Final Conditional Strategy":       "## 最终条件性策略",
     "## Executive Summary":                "## 执行摘要",
     "## Evidence Ledger":                  "## 证据账本",

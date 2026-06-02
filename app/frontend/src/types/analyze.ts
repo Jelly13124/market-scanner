@@ -90,7 +90,7 @@ export const SECTION_ORDER: string[] = [
   'data_health', 'executive_summary', 'evidence_ledger',
   'macro', 'sector', 'company_fundamentals', 'financial_statements',
   'valuation', 'technical', 'risk_position', 'scenarios',
-  'conviction', 'event_risk', 'debate', 'final_strategy',
+  'conviction', 'event_risk', 'catalyst', 'debate', 'final_strategy',
   'missing_data',
 ];
 
@@ -109,6 +109,7 @@ export const SECTION_LABELS: Record<string, string> = {
   scenarios:            'Bear/Base/Bull Scenarios',
   conviction:           'Conviction Score',
   event_risk:           'Event Risk',
+  catalyst:             'Near-term Catalysts',
   debate:               'Debate (personas only)',
   final_strategy:       'Final Strategy',
   missing_data:         'Missing Data',

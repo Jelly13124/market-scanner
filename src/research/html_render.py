@@ -186,6 +186,7 @@ _HEADING_MAP = {
 # than <h2> sections. Append at end of <main> with a synthetic <h2>
 # so the user sees them.
 _APPENDIX_SECTIONS = {
+    "catalyst":        "Near-term Catalysts",
     "evidence_ledger": "Evidence Ledger",
     "debate":          "Debate Summary",
     "missing_data":    "Missing Data / Low Confidence",
@@ -210,6 +211,7 @@ _HEADING_ZH_MAP = {
     "Conviction / Setup Quality Score":     "信念 / 配置质量评分",
     "Event Risk Check":                     "事件风险检查",
     "Final Conditional Strategy":           "最终条件性策略",
+    "Near-term Catalysts":                  "近期催化剂",
     "Evidence Ledger":                      "证据账本",
     "Debate Summary":                       "辩论纪要",
     "Missing Data / Low Confidence":        "缺失数据 / 低置信领域",

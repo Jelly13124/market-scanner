@@ -381,6 +381,8 @@
     "title": "设置",
     "apiKeys": "API 密钥",
     "apiKeysDesc": "API 端点与认证",
+    "reportEmails": "报告邮箱",
+    "reportEmailsDesc": "接收报告的已验证邮箱",
     "apiKeysHeader": "API 密钥",
     "securityNote": "安全说明",
     "models": "模型",

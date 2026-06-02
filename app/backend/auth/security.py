@@ -60,3 +60,19 @@ def decode_verify_token(token: str) -> int:
     if claims.get("type") != "verify":
         raise ValueError("wrong token type")
     return int(claims["sub"])
+
+
+def create_recipient_verify_token(recipient_id: int) -> str:
+    """Short-lived (24h) token to verify a bound report-recipient email.
+
+    Encodes the ReportRecipient row id with a distinct type so it can't be
+    confused with the account email-verification token."""
+    return _make(recipient_id, VERIFY_TTL, "recipient_verify")
+
+
+def decode_recipient_verify_token(token: str) -> int:
+    """Validate a recipient-verify token (type + exp) and return the recipient id."""
+    claims = jwt.decode(token, _SECRET, algorithms=[_ALG])
+    if claims.get("type") != "recipient_verify":
+        raise ValueError("wrong token type")
+    return int(claims["sub"])

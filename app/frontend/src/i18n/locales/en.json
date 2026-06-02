@@ -381,6 +381,8 @@
     "title": "Settings",
     "apiKeys": "API Keys",
     "apiKeysDesc": "API endpoints and authentication",
+    "reportEmails": "Report emails",
+    "reportEmailsDesc": "Verified addresses that receive your reports",
     "apiKeysHeader": "API Keys",
     "securityNote": "Security Note",
     "models": "Models",

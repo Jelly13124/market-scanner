@@ -27,6 +27,25 @@ class ApiKey(Base):
     __table_args__ = (UniqueConstraint("user_id", "provider", name="uq_api_key_user_provider"),)
 
 
+class ReportRecipient(Base):
+    """Extra email addresses a user binds to receive their reports.
+
+    Each must be verified (the user clicks an emailed link) before it receives
+    reports. Capped at 3 per user in the route layer. Scoped by user_id like
+    every other owned table. Created lazily via Base.metadata.create_all — this
+    table has no alembic migration (create_all is the schema source of truth)."""
+
+    __tablename__ = "report_recipients"
+
+    id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, index=True)
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
+    email = Column(String(320), nullable=False)
+    is_verified = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("user_id", "email", name="uq_report_recipient_user_email"),)
+
+
 class ScannerConfig(Base):
     """Saved configuration for the daily market scanner."""
 

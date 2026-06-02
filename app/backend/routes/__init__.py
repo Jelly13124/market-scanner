@@ -6,6 +6,7 @@ from app.backend.routes.storage import router as storage_router
 from app.backend.routes.ollama import router as ollama_router
 from app.backend.routes.language_models import router as language_models_router
 from app.backend.routes.api_keys import router as api_keys_router
+from app.backend.routes.report_recipients import router as report_recipients_router
 from app.backend.routes.scanner import router as scanner_router
 from app.backend.routes.pipeline import router as pipeline_router
 from app.backend.routes.notifications import router as notifications_router
@@ -26,6 +27,7 @@ api_router.include_router(storage_router, tags=["storage"])
 api_router.include_router(ollama_router, tags=["ollama"])
 api_router.include_router(language_models_router, tags=["language-models"])
 api_router.include_router(api_keys_router, tags=["api-keys"])
+api_router.include_router(report_recipients_router, tags=["report-recipients"])
 api_router.include_router(scanner_router, tags=["scanner"])
 api_router.include_router(pipeline_router, tags=["pipeline"])
 api_router.include_router(notifications_router, tags=["notifications"])

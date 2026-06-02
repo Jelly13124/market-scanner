@@ -42,9 +42,16 @@ RUN apt-get update \
 # alembic resolve on PATH. `--only main` skips dev tools (pytest/black/flake8).
 # `--no-root` skips installing the project itself as a package here — we COPY the
 # source in directly and run via PYTHONPATH, so there's nothing to build/install.
+#
+# `poetry lock --no-update` re-locks in-image first: the committed poetry.lock
+# lags pyproject.toml (auth/deploy deps were added to the manifest without
+# re-locking), and `poetry install` hard-fails on the content-hash mismatch.
+# --no-update keeps existing version pins and only resolves the new/changed deps.
+# The local conda env doesn't use this lock, so regenerating it here is local-safe.
 COPY pyproject.toml poetry.lock ./
 RUN pip install --no-cache-dir "poetry==1.8.5" \
     && poetry config virtualenvs.create false \
+    && poetry lock --no-update \
     && poetry install --only main --no-interaction --no-ansi --no-root
 
 # App code (respects .dockerignore).

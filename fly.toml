@@ -18,6 +18,7 @@ primary_region = "nrt"   # Tokyo (low latency for Asia). near your users: iad=US
   REQUIRE_EMAIL_VERIFICATION = "true"              # gate unverified password signups
   RATE_LIMIT_ENABLED = "true"                      # slowapi on /auth/* + analyze/scan
   FRONTEND_ORIGINS = "https://quantlab.fly.dev"   # CORS allow-list (same-origin, but set it)
+  FRONTEND_BASE_URL = "https://quantlab.fly.dev"  # base URL baked into email verify links (was defaulting to localhost)
 
 # SQLite lives here. Create it once: `fly volumes create data --size 3 --region <r>`.
 [[mounts]]

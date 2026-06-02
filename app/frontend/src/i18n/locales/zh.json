@@ -219,6 +219,9 @@
       "titleFor": "{{ticker}} 的近期报告",
       "reportN": "报告 #{{id}}",
       "openInNewTab": "在新标签页打开",
+      "emailReport": "发送到邮箱",
+      "emailSent": "已发送报告到 {{count}} 个邮箱",
+      "emailFailed": "{{count}} 个邮箱发送失败",
       "noReports": "暂无报告",
       "deleteConfirm": "删除报告 #{{id}}（{{ticker}}）？",
       "deleted": "报告 #{{id}} 已删除"

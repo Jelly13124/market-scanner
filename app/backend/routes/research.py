@@ -40,6 +40,7 @@ from app.backend.models.research_schemas import (
     VerdictPayload,
 )
 from app.backend.repositories.research_repository import ResearchReportRepository
+from app.backend.services.report_delivery import email_report_html
 from src.research.backtest_signal import _closes, run_signal_backtest
 from src.research.charts.render import render_equity_curve_png, render_kline_png
 from src.research.html_render import render_html, render_sop
@@ -182,6 +183,29 @@ def get_report_html(
     if not report:
         raise HTTPException(404, f"No research report with id {report_id}")
     return HTMLResponse(content=report.rendered_html or "<html></html>")
+
+
+@router.post("/reports/{report_id}/email")
+def email_report(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Email a saved report's rendered HTML to the caller's verified recipients.
+
+    400 when the caller has no verified report emails yet."""
+    report = ResearchReportRepository(db).get_by_id(report_id, user_id=current_user.id)
+    if not report:
+        raise HTTPException(404, f"No report with id {report_id}")
+    result = email_report_html(
+        db, current_user.id, ticker=report.ticker, html=report.rendered_html or ""
+    )
+    if not result["sent"] and not result["failed"]:
+        raise HTTPException(
+            400,
+            "No verified report emails. Add and verify one in Settings -> Report emails.",
+        )
+    return result
 
 
 @router.delete("/reports/{report_id}", status_code=204)

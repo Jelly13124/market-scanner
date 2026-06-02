@@ -219,6 +219,9 @@
       "titleFor": "Recent reports for {{ticker}}",
       "reportN": "Report #{{id}}",
       "openInNewTab": "Open in new tab",
+      "emailReport": "Email report",
+      "emailSent": "Emailed report to {{count}} address(es)",
+      "emailFailed": "Email failed for {{count}} address(es)",
       "noReports": "No reports yet",
       "deleteConfirm": "Delete report #{{id}} ({{ticker}})?",
       "deleted": "Report #{{id}} deleted"

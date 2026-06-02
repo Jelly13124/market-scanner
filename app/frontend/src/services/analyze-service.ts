@@ -68,4 +68,14 @@ export const analyzeService = {
     });
     if (!r.ok && r.status !== 204) throw await _toError(r, 'deleteReport');
   },
+
+  /** POST /research/reports/{id}/email — email the rendered report to the
+   *  caller's verified report recipients. */
+  async emailReport(reportId: number): Promise<{ sent: string[]; failed: string[] }> {
+    const r = await fetch(`${API_BASE_URL}/research/reports/${reportId}/email`, {
+      method: 'POST',
+    });
+    if (!r.ok) throw await _toError(r, 'emailReport');
+    return r.json();
+  },
 };

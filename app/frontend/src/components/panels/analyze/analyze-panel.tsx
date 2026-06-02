@@ -19,7 +19,7 @@ import { useReportHtml } from '@/hooks/use-report-html';
 import { analyzeService } from '@/services/analyze-service';
 import { analyzeBus, type AnalyzeRequest as AnalyzeBusRequest } from '@/services/analyze-bus';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Mail } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -210,15 +210,43 @@ export function AnalyzePanel() {
                 {t('analyze.reports.reportN', { id: currentReportId })}
               </AccordionTrigger>
               <AccordionContent className="pb-3">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7"
-                  onClick={() => window.open(iframeSrc, '_blank', 'noopener')}
-                >
-                  <ExternalLink className="size-3 mr-1" />
-                  {t('analyze.reports.openInNewTab')}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={() => window.open(iframeSrc, '_blank', 'noopener')}
+                  >
+                    <ExternalLink className="size-3 mr-1" />
+                    {t('analyze.reports.openInNewTab')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7"
+                    onClick={async () => {
+                      if (!currentReportId) return;
+                      try {
+                        const res = await analyzeService.emailReport(currentReportId);
+                        if (res.sent.length) {
+                          toast.success(
+                            t('analyze.reports.emailSent', { count: res.sent.length }),
+                          );
+                        }
+                        if (res.failed.length) {
+                          toast.error(
+                            t('analyze.reports.emailFailed', { count: res.failed.length }),
+                          );
+                        }
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : 'Failed to email report');
+                      }
+                    }}
+                  >
+                    <Mail className="size-3 mr-1" />
+                    {t('analyze.reports.emailReport')}
+                  </Button>
+                </div>
               </AccordionContent>
             </AccordionItem>
           )}

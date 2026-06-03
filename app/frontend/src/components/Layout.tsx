@@ -2,6 +2,7 @@ import { LeftSidebar } from '@/components/panels/left/left-sidebar';
 import { TabBar } from '@/components/tabs/tab-bar';
 import { TabContent } from '@/components/tabs/tab-content';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { AnalyzeRunsProvider } from '@/contexts/analyze-runs-context';
 import { LayoutProvider } from '@/contexts/layout-context';
 import { TabsProvider, useTabsContext } from '@/contexts/tabs-context';
 import { useLayoutKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
@@ -101,12 +102,14 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   return (
-    <SidebarProvider defaultOpen={true}>
-      <TabsProvider>
-        <LayoutProvider>
-          <LayoutContent>{children}</LayoutContent>
-        </LayoutProvider>
-      </TabsProvider>
-    </SidebarProvider>
+    <AnalyzeRunsProvider>
+      <SidebarProvider defaultOpen={true}>
+        <TabsProvider>
+          <LayoutProvider>
+            <LayoutContent>{children}</LayoutContent>
+          </LayoutProvider>
+        </TabsProvider>
+      </SidebarProvider>
+    </AnalyzeRunsProvider>
   );
 }

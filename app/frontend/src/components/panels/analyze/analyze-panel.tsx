@@ -15,6 +15,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
+import { useAnalyzeRuns } from '@/contexts/analyze-runs-context';
 import { useReportHtml } from '@/hooks/use-report-html';
 import { analyzeService } from '@/services/analyze-service';
 import { analyzeBus, type AnalyzeRequest as AnalyzeBusRequest } from '@/services/analyze-bus';
@@ -26,6 +27,7 @@ import { toast } from 'sonner';
 
 import { AnalyzeToolbar } from './analyze-toolbar';
 import { FlowCanvas, type FlowCanvasHandle } from './flow-canvas';
+import { AnalyzeRunsSidebar } from './analyze-runs-sidebar';
 import {
   ScheduleTickerDialog,
   type ScheduleTickerContext,
@@ -44,7 +46,7 @@ export function AnalyzePanel() {
   const [canvasTick, setCanvasTick] = useState(0);
   const onCanvasChange = useCallback(() => setCanvasTick((t) => t + 1), []);
 
-  const [running, setRunning] = useState(false);
+  const { startRun, latestDone } = useAnalyzeRuns();
   const [currentReportId, setCurrentReportId] = useState<number | null>(null);
   const [currentDetail, setCurrentDetail] = useState<AnalyzeReportDetail | null>(null);
   const [loadedFlowId, setLoadedFlowId] = useState<number | null>(null);
@@ -112,26 +114,19 @@ export function AnalyzePanel() {
       // Phase 8 — defaults to 'us'. Older saved canvases lack this field.
       market: ov?.market ?? input.market ?? 'us',
     };
-    setRunning(true);
-    try {
-      const detail = await analyzeService.runAnalyze(req);
-      setCurrentReportId(detail.id);
-      setCurrentDetail(detail);
-      // Tell the sidebar Recent Reports list to refresh + nudge the user there.
-      analyzeBus.notifyReportsChanged();
-      toast.success(
-        t('analyze.toasts.completeInReports', {
-          ticker: detail.ticker,
-          id: detail.id,
-          defaultValue: 'Report #{{id}} for {{ticker}} is ready — open it from Recent Reports in the sidebar.',
-        }),
-      );
-    } catch (e) {
-      toast.error((e as Error).message);
-    } finally {
-      setRunning(false);
+    // Fire non-blocking so multiple analyses run concurrently; the runs
+    // sidebar (hoisted store) tracks each one's progress + result.
+    startRun(req);
+  }, [getConfig, t, startRun]);
+
+  // Mirror the most-recently-completed run into the inline verdict/report view
+  // (the bottom accordion) — keeps the single-report UX while runs go async.
+  useEffect(() => {
+    if (latestDone?.reportId != null && latestDone.detail) {
+      setCurrentReportId(latestDone.reportId);
+      setCurrentDetail(latestDone.detail);
     }
-  }, [getConfig, t]);
+  }, [latestDone?.id]);
 
   // Bus-driven one-click analyze (from Screener / Scanner). Pre-fills the
   // Input node with the requested ticker + market, then auto-runs. Handles
@@ -165,10 +160,11 @@ export function AnalyzePanel() {
     currentDetail != null && currentDetail.id === currentReportId;
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden">
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
       {/* 1. Toolbar */}
       <AnalyzeToolbar
-        running={running}
+        running={false}
         canRun={hasInput}
         onRun={handleRun}
         sectionCount={sectionCount}
@@ -268,7 +264,9 @@ export function AnalyzePanel() {
           )}
         </Accordion>
       </div>
+      </div>
 
+      <AnalyzeRunsSidebar />
       <ScheduleTickerDialog ctx={scheduleCtx} onClose={() => setScheduleCtx(null)} />
     </div>
   );

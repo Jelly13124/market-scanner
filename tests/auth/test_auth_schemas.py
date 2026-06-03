@@ -15,6 +15,7 @@ def test_token_default_type():
 
 def test_userout_from_attributes():
     class FakeUser:
-        id = 5; email = "a@x.com"; full_name = "A"; is_superuser = False
+        id = 5; email = "a@x.com"; full_name = "A"; is_superuser = False; timezone = "Asia/Shanghai"
     out = UserOut.model_validate(FakeUser())
     assert out.id == 5 and out.is_superuser is False
+    assert out.timezone == "Asia/Shanghai"

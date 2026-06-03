@@ -680,6 +680,9 @@ class User(Base):
     # Password signups land False and must verify via emailed token; OAuth
     # logins arrive verified from the provider. Gated by REQUIRE_EMAIL_VERIFICATION.
     is_verified = Column(Boolean, nullable=False, server_default=text("false"))
+    # IANA timezone name used to interpret this user's scheduled-report crons
+    # (read by the scheduler in a separate task). Existing rows backfill to ET.
+    timezone = Column(String(64), nullable=False, server_default="America/New_York")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

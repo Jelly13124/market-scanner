@@ -1,8 +1,8 @@
 import { cn } from '@/lib/utils';
-import { CalendarClock, Key, Mail, Palette } from 'lucide-react';
+import { CalendarClock, Clock, Key, Mail, Palette } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ApiKeysSettings, ReportRecipientsSettings, ReportSchedulesSettings } from './';
+import { ApiKeysSettings, ReportRecipientsSettings, ReportSchedulesSettings, TimezoneSettings } from './';
 import { ThemeSettings } from './appearance';
 
 interface SettingsProps {
@@ -40,6 +40,12 @@ export function Settings({ className }: SettingsProps) {
       description: t('settings.schedulesDesc'),
     },
     {
+      id: 'timezone',
+      label: t('settings.timezone'),
+      icon: Clock,
+      description: t('settings.timezoneDesc'),
+    },
+    {
       id: 'theme',
       label: t('settings.theme'),
       icon: Palette,
@@ -57,6 +63,8 @@ export function Settings({ className }: SettingsProps) {
         return <ReportRecipientsSettings />;
       case 'schedules':
         return <ReportSchedulesSettings />;
+      case 'timezone':
+        return <TimezoneSettings />;
       default:
         return <ApiKeysSettings />;
     }

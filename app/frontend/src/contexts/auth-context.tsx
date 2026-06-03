@@ -64,6 +64,7 @@ interface AuthContextValue {
   ) => Promise<void>;
   logout: () => Promise<void>;
   loginWithOAuth: (provider: 'google' | 'github') => void;
+  updateTimezone: (timezone: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -204,9 +205,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = authService.oauthUrl(provider);
   };
 
+  const updateTimezone = async (timezone: string) => {
+    const token = getToken();
+    if (!token) throw new Error('Not authenticated');
+    const updated = await authService.updateTimezone(token, timezone);
+    setUser(updated);
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, status, login, register, logout, loginWithOAuth }}
+      value={{
+        user,
+        status,
+        login,
+        register,
+        logout,
+        loginWithOAuth,
+        updateTimezone,
+      }}
     >
       {children}
     </AuthContext.Provider>

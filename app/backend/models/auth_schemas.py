@@ -24,3 +24,8 @@ class UserOut(BaseModel):
     full_name: str | None = None
     is_superuser: bool = False
     is_verified: bool = False
+    timezone: str = "America/New_York"
+
+
+class UpdateMeRequest(BaseModel):
+    timezone: str

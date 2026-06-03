@@ -1,6 +1,7 @@
 export { ApiKeysSettings } from './api-keys';
 export { ReportRecipientsSettings } from './report-recipients';
 export { ReportSchedulesSettings } from './report-schedules';
+export { TimezoneSettings } from './timezone';
 export { ThemeSettings } from './appearance';
 export { Models } from './models';
 export { CloudModels } from './models/cloud';

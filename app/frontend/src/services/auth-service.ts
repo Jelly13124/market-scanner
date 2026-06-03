@@ -66,6 +66,21 @@ export const authService = {
     return r.json();
   },
 
+  // PATCH /auth/me — update the user's timezone. /auth/* is skipped by the
+  // global interceptor, so set the Authorization header explicitly here.
+  async updateTimezone(token: string, timezone: string): Promise<User> {
+    const r = await fetch(`${API_BASE}/auth/me`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ timezone }),
+    });
+    if (!r.ok) throw await _toError(r, 'updateTimezone');
+    return r.json();
+  },
+
   async logout(token: string): Promise<void> {
     // Best-effort; ignore failures (the client clears its token regardless).
     try {

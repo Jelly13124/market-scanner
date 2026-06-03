@@ -1,16 +1,17 @@
 import logging
 import os
 import secrets
+from zoneinfo import available_timezones
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
-from app.backend.auth.dependencies import get_current_user_allow_unverified
+from app.backend.auth.dependencies import get_current_user, get_current_user_allow_unverified
 from app.backend.auth.oauth import build_authorize_url, exchange_code, get_provider
 from app.backend.auth.security import create_access_token, create_refresh_token, create_verify_token, decode_token, decode_verify_token, hash_password, verify_password
 from app.backend.database import get_db
-from app.backend.models.auth_schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
+from app.backend.models.auth_schemas import LoginRequest, RegisterRequest, TokenResponse, UpdateMeRequest, UserOut
 from app.backend.rate_limit import auth_limit, rate_limited
 from app.backend.repositories.user_repository import UserRepository
 from app.backend.services.notifications.email_handler import EmailHandler
@@ -119,6 +120,20 @@ def logout(response: Response):
 
 @router.get("/me", response_model=UserOut)
 def me(current_user=Depends(get_current_user_allow_unverified)):
+    return UserOut.model_validate(current_user)
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(body: UpdateMeRequest, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """Update the current user's settings (currently: timezone).
+
+    Validates the IANA name against the host tz database; unknown zones → 400.
+    """
+    if body.timezone not in available_timezones():
+        raise HTTPException(status_code=400, detail=f"Unknown timezone: {body.timezone}")
+    current_user.timezone = body.timezone
+    db.commit()
+    db.refresh(current_user)
     return UserOut.model_validate(current_user)
 
 

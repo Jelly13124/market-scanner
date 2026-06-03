@@ -154,3 +154,12 @@ Verified signal quality:
 
 AMBIGUITY: except-log level for per-ticker get_prices failure → chose logger.debug (not warning like analyst_rating) because a bulk 800-ticker scan would spam warnings on routine transient fetch misses; debug satisfies RULE-5 (logger.* present) without noise.
 GAP: the per-detector scanner-invariant-reviewer gate validates the 4 CLAUDE.md invariants but NOT the 4 extra static-lint rules in tests/test_detector_invariants.py (RULE-3 components-float, RULE-5 except-logging, RULE-7 direction-literal, RULE-8 return-annotation). C1-C4 passed the gate but failed RULE-3/RULE-5 at the full-suite checkpoint; fixed by annotating components: dict[str,float] (matches gap.py/high_breakout.py) + adding module logger + logger.debug in except. Future detector tasks should also run `pytest tests/test_detector_invariants.py` before marking complete.
+
+## Scheduled-workflow Task 12 — Screener has NO per-user scheduled config (2026-06-02)
+
+Investigated whether the Screener (Phase 1, `ScreenerPreset`) can take the same per-user scheduled scan→email-watchlist→auto-analyze workflow that Task 8 added to the Scanner (`ScannerConfig`). It cannot, by design:
+
+- `ScreenerPreset` (app/backend/database/models.py) IS per-user (`user_id`) and has `schedule_enabled` (Boolean) + `notify_channels` (JSON ["email","webhook"]), but has **NO `cron_expr` / frequency / time column**. Contrast: `ScannerConfig.cron_expr` (default "0 21 * * 1-5") and `ReportSchedule.cron_expr` both exist.
+- Screener scheduling is a SINGLE GLOBAL daily cron (`SCREENER_PRESET_JOB_ID="screener_presets"`, 22:05 ET in scheduler_service.py) that iterates `ScreenerPresetRepository.list_enabled()` — ALL enabled presets across ALL users — and on a match dispatches an owner-scoped notification. The only per-user knob is the on/off `schedule_enabled` flag + channels; there is no per-user/per-preset cadence.
+
+Per the plan's Open Item 1 ("If its scheduling is global only, STOP and report — per-user screener scheduling is a separate spec; do not invent one"): **stopped, not implemented.** Adding per-user screener cadence would require a new `cron_expr` column on `screener_presets` + a per-preset job registration path (mirroring `_register` for ScannerConfig) — its own additive-migration + scheduler spec. Flag for the user if they want it; out of scope here.

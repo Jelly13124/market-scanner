@@ -20,10 +20,6 @@ function LayoutContent({ children: _children }: { children?: ReactNode }) {
     SidebarStorageService.loadLeftSidebarState(false)
   );
 
-  // Right sidebar + bottom panel fully removed along with the Flow tab.
-  const isRightCollapsed = true;
-  const isBottomCollapsed = true;
-
   // Track actual sidebar widths for dynamic positioning
   const [leftSidebarWidth, setLeftSidebarWidth] = useState(280);
 
@@ -60,15 +56,7 @@ function LayoutContent({ children: _children }: { children?: ReactNode }) {
   return (
     <div className="flex h-screen w-screen overflow-hidden relative bg-background">
       {/* VSCode-style Top Bar */}
-      <TopBar
-        isLeftCollapsed={isLeftCollapsed}
-        isRightCollapsed={isRightCollapsed}
-        isBottomCollapsed={isBottomCollapsed}
-        onToggleLeft={() => setIsLeftCollapsed(!isLeftCollapsed)}
-        onToggleRight={() => {}}
-        onToggleBottom={() => {}}
-        onSettingsClick={handleSettingsClick}
-      />
+      <TopBar onSettingsClick={handleSettingsClick} />
 
       {/* Tab Bar */}
       <div

@@ -15,6 +15,7 @@ from app.backend.models.auth_schemas import LoginRequest, RegisterRequest, Token
 from app.backend.rate_limit import auth_limit, rate_limited
 from app.backend.repositories.user_repository import UserRepository
 from app.backend.services.notifications.email_handler import EmailHandler
+from app.backend.services.scheduler_service import SchedulerService, get_scheduler_service
 
 logger = logging.getLogger(__name__)
 
@@ -124,16 +125,27 @@ def me(current_user=Depends(get_current_user_allow_unverified)):
 
 
 @router.patch("/me", response_model=UserOut)
-def update_me(body: UpdateMeRequest, current_user=Depends(get_current_user), db: Session = Depends(get_db)):
+def update_me(
+    body: UpdateMeRequest,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db),
+    scheduler: SchedulerService = Depends(get_scheduler_service),
+):
     """Update the current user's settings (currently: timezone).
 
     Validates the IANA name against the host tz database; unknown zones → 400.
+    After persisting, re-register the user's crons so the new tz takes effect
+    immediately (a scheduler hiccup must not fail the tz save).
     """
     if body.timezone not in available_timezones():
         raise HTTPException(status_code=400, detail=f"Unknown timezone: {body.timezone}")
     current_user.timezone = body.timezone
     db.commit()
     db.refresh(current_user)
+    try:
+        scheduler.reregister_user_jobs(current_user.id)
+    except Exception:
+        logger.exception("update_me: failed to re-register crons for user %s", current_user.id)
     return UserOut.model_validate(current_user)
 
 

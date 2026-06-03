@@ -208,6 +208,29 @@ class SchedulerService:
         """Convenience: re-register with the latest cron + enabled state."""
         self.register_config(config)
 
+    def reregister_user_jobs(self, user_id) -> None:
+        """Re-register every cron owned by ``user_id`` (enabled scanner configs
+        + enabled report schedules) so a timezone change takes effect without a
+        restart. Each ``_register`` / ``register_report_schedule`` re-resolves
+        the user's tz via ``_user_tz``. Per-job failures are logged, not raised,
+        so one bad cron can't abort the rest."""
+        from app.backend.database.models import ReportSchedule
+
+        with self._session_factory() as session:
+            configs = ScannerConfigRepository(session).list_for_user(user_id, enabled_only=True)
+            schedules = session.query(ReportSchedule).filter(ReportSchedule.user_id == user_id, ReportSchedule.is_enabled.is_(True)).all()
+
+        for cfg in configs:
+            try:
+                self._register(cfg)
+            except Exception as e:
+                logger.warning("reregister_user_jobs: scanner config %s failed: %s", cfg.id, e)
+        for sched in schedules:
+            try:
+                self.register_report_schedule(sched)
+            except Exception as e:
+                logger.warning("reregister_user_jobs: report schedule %s failed: %s", sched.id, e)
+
     def run_now(self, config_id: int) -> int:
         """Trigger a manual scan; return the new ``run_id`` immediately.
 
@@ -225,9 +248,20 @@ class SchedulerService:
     def _job_id(config_id: int) -> str:
         return f"scanner-config-{config_id}"
 
+    def _user_tz(self, user_id) -> str:
+        """Resolve a user's preferred IANA timezone, falling back to the
+        global default when the user (or their tz) is missing. APScheduler's
+        ``from_crontab`` accepts a tz-name string, so we return one."""
+        from app.backend.database.models import User
+
+        with self._session_factory() as s:
+            u = s.query(User).filter(User.id == user_id).first()
+            return (u.timezone if u and u.timezone else None) or self._tz
+
     def _register(self, config: ScannerConfig) -> None:
+        tz = self._user_tz(config.user_id)
         try:
-            trigger = CronTrigger.from_crontab(config.cron_expr, timezone=self._tz)
+            trigger = CronTrigger.from_crontab(config.cron_expr, timezone=tz)
         except (ValueError, TypeError) as e:
             raise ValueError(f"Invalid cron expression {config.cron_expr!r}: {e}") from e
 
@@ -246,7 +280,7 @@ class SchedulerService:
             "Registered scanner job %s (cron=%r, tz=%s)",
             job_id,
             config.cron_expr,
-            self._tz,
+            tz,
         )
 
     def _run_job(self, config_id: int) -> None:
@@ -273,8 +307,9 @@ class SchedulerService:
         self.unregister_report_schedule(schedule.id)
         if not schedule.is_enabled:
             return
+        tz = self._user_tz(schedule.user_id)
         try:
-            trigger = CronTrigger.from_crontab(schedule.cron_expr, timezone=self._tz)
+            trigger = CronTrigger.from_crontab(schedule.cron_expr, timezone=tz)
         except (ValueError, TypeError) as e:
             raise ValueError(f"Invalid cron expression {schedule.cron_expr!r}: {e}") from e
         job_id = self._report_schedule_job_id(schedule.id)
@@ -288,7 +323,7 @@ class SchedulerService:
             misfire_grace_time=300,
             coalesce=True,
         )
-        logger.info("Registered report-schedule job %s (cron=%r, tz=%s)", job_id, schedule.cron_expr, self._tz)
+        logger.info("Registered report-schedule job %s (cron=%r, tz=%s)", job_id, schedule.cron_expr, tz)
 
     def unregister_report_schedule(self, schedule_id: int) -> None:
         job_id = self._report_schedule_job_id(schedule_id)

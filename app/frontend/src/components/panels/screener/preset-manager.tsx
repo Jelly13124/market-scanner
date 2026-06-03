@@ -204,7 +204,7 @@ export function PresetManager({ open, onOpenChange, onChanged }: PresetManagerPr
                           disabled={isDisabled}
                           onChange={(e) => handleCron(p, buildCron(freq, e.target.value))}
                         />
-                        <span className="text-xs text-muted-foreground">ET</span>
+                        <span className="text-xs text-muted-foreground">{t('screener.presets.tz_et', 'ET')}</span>
                       </div>
                     );
                   })()}

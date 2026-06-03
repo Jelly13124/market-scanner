@@ -532,7 +532,9 @@
       "delete_confirm": "删除此预设？",
       "deleted": "预设已删除",
       "delete_error": "删除预设失败",
-      "patch_error": "更新预设失败"
+      "patch_error": "更新预设失败",
+      "runs_at": "运行于",
+      "tz_et": "美东"
     }
   },
   "reports": {

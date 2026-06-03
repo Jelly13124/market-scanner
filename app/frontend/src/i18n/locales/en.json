@@ -532,7 +532,9 @@
       "delete_confirm": "Delete this preset?",
       "deleted": "Preset deleted",
       "delete_error": "Could not delete preset",
-      "patch_error": "Could not update preset"
+      "patch_error": "Could not update preset",
+      "runs_at": "Runs",
+      "tz_et": "ET"
     }
   },
   "reports": {

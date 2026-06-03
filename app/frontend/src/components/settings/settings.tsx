@@ -1,8 +1,8 @@
 import { cn } from '@/lib/utils';
-import { CalendarClock, Clock, Key, Mail, Palette } from 'lucide-react';
+import { CalendarClock, Clock, Key, ListChecks, Mail, Palette } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ApiKeysSettings, ReportRecipientsSettings, ReportSchedulesSettings, TimezoneSettings } from './';
+import { ApiKeysSettings, ReportRecipientsSettings, ReportSchedulesSettings, SchedulesOverview, TimezoneSettings } from './';
 import { ThemeSettings } from './appearance';
 
 interface SettingsProps {
@@ -40,6 +40,12 @@ export function Settings({ className }: SettingsProps) {
       description: t('settings.schedulesDesc'),
     },
     {
+      id: 'plans',
+      label: t('settings.plans.nav', 'My schedules'),
+      icon: ListChecks,
+      description: t('settings.plans.navDesc', 'All scheduled jobs in one place'),
+    },
+    {
       id: 'timezone',
       label: t('settings.timezone'),
       icon: Clock,
@@ -63,6 +69,8 @@ export function Settings({ className }: SettingsProps) {
         return <ReportRecipientsSettings />;
       case 'schedules':
         return <ReportSchedulesSettings />;
+      case 'plans':
+        return <SchedulesOverview />;
       case 'timezone':
         return <TimezoneSettings />;
       default:

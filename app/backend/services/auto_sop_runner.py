@@ -63,6 +63,20 @@ def run_auto_sop_for_scan(
     report_ids: list[int] = []
     today_iso = date.today().isoformat()
 
+    # Per-user keys: run the SOP with the config OWNER's stored provider keys.
+    # The scanner cron runs detached from any HTTP request, so there is no
+    # current_user — without this, run_sop falls back to host env keys, which on
+    # the per-user-key deploy are ABSENT → "no API key". Mirrors the
+    # /research/analyze route and the report-schedule cron.
+    api_keys = None
+    if owner_user_id is not None:
+        try:
+            from app.backend.services.api_key_service import ApiKeyService
+
+            api_keys = ApiKeyService(db, owner_user_id).get_api_keys_dict()
+        except Exception:
+            logger.exception("auto_sop: failed to load keys for user %s", owner_user_id)
+
     for entry in entries:
         ticker = entry.ticker
         req = AnalyzeRequest(
@@ -77,7 +91,7 @@ def run_auto_sop_for_scan(
         )
         t0 = time.monotonic()
         try:
-            report = run_sop(req)
+            report = run_sop(req, api_keys=api_keys)
         except Exception as e:
             logger.exception("auto_sop: run_sop failed for %s: %s", ticker, e)
             continue

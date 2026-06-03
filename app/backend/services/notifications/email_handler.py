@@ -69,6 +69,7 @@ class EmailHandler:
         subject: str | None = None,
         html: str | None = None,
         text: str | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Render + POST to Resend. Return a delivery result dict.
 
@@ -77,7 +78,10 @@ class EmailHandler:
             from the event_type (pipeline/research/screener);
           * raw mode — ``send(to=..., subject=..., html=..., text=...)`` sends
             a pre-rendered message (used for transactional mail such as email
-            verification). Triggered when ``to`` is provided.
+            verification). Triggered when ``to`` is provided. Optional
+            ``attachments`` is a list of Resend ``{filename, content}`` dicts
+            (``content`` base64-encoded) — used to deliver a report as an
+            ``.html`` file instead of inlining it in the body.
 
         Keys: status ('ok'|'error'), http_code (int|None),
         message_id (str|None), error_text (str|None), latency_ms (int).
@@ -92,16 +96,16 @@ class EmailHandler:
             )
 
         if to is not None:
-            return self._post(
-                {
-                    "from": self._from,
-                    "to": [to],
-                    "subject": subject or "",
-                    "html": html or "",
-                    "text": text or "",
-                },
-                t0,
-            )
+            payload: dict[str, Any] = {
+                "from": self._from,
+                "to": [to],
+                "subject": subject or "",
+                "html": html or "",
+                "text": text or "",
+            }
+            if attachments:
+                payload["attachments"] = attachments
+            return self._post(payload, t0)
 
         try:
             # Route to the appropriate render functions based on event_type.

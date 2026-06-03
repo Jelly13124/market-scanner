@@ -4,6 +4,7 @@ Shared by the on-demand "email this report" endpoint (Stage 2) and the scheduled
 push job (Stage 3). Never raises on a per-recipient mail failure — it logs and
 counts the address as failed so one bad address can't sink the batch.
 """
+import base64
 import logging
 
 from sqlalchemy.orm import Session
@@ -27,18 +28,38 @@ def verified_recipients(db: Session, user_id: int) -> list[ReportRecipient]:
 def email_report_html(db: Session, user_id: int, *, ticker: str, html: str) -> dict:
     """Email a rendered report to every verified recipient of ``user_id``.
 
+    The full report rides as an ``{ticker}_report.html`` ATTACHMENT rather than
+    inlined in the body: mail clients routinely truncate or rewrite large inline
+    HTML (and strip the K-line chart <img> tags), whereas an attached file opens
+    cleanly in a browser. The body carries a one-line pointer to the attachment.
+
     Returns ``{"sent": [emails...], "failed": [emails...]}``. With no verified
     recipients both lists are empty — the caller decides whether that's an error
     (on-demand) or a quiet no-op (scheduled)."""
     recipients = verified_recipients(db, user_id)
     subject = f"Quant Lab report — {ticker}"
-    text = f"Your Quant Lab report for {ticker}. Open the HTML version to read it."
+    filename = f"{ticker}_report.html"
+    text = (
+        f"Your Quant Lab report for {ticker} is attached as {filename}. "
+        f"Open it in any browser to read it."
+    )
+    body_html = (
+        f"<p>Your Quant Lab report for <b>{ticker}</b> is attached as "
+        f"<code>{filename}</code>. Open it in any browser to read it.</p>"
+    )
+    attachments = [{
+        "filename": filename,
+        "content": base64.b64encode((html or "").encode("utf-8")).decode("ascii"),
+    }]
     handler = EmailHandler()
     sent: list[str] = []
     failed: list[str] = []
     for r in recipients:
         try:
-            res = handler.send(to=r.email, subject=subject, html=html or "", text=text)
+            res = handler.send(
+                to=r.email, subject=subject, html=body_html, text=text,
+                attachments=attachments,
+            )
             (sent if res.get("status") == "ok" else failed).append(r.email)
         except Exception:
             logger.exception("emailing report (%s) to %s failed", ticker, r.email)

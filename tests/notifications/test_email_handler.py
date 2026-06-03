@@ -137,3 +137,27 @@ class TestSendFailure:
         result = handler.send(_fake_subscription(), _fake_run())
         assert result["status"] == "error"
         assert "DNS failure" in result["error_text"]
+
+
+class TestRawModeAttachments:
+    """Raw mode (to=...) carries optional Resend attachments through verbatim."""
+
+    def test_attachments_included_in_payload(self):
+        client = _mock_client(200)
+        handler = EmailHandler(api_key="re_test", http_client=client)
+        handler.send(
+            to="u@x.com", subject="s", html="<p>see attached</p>", text="see attached",
+            attachments=[{"filename": "AAPL_report.html", "content": "YWJj"}],
+        )
+        payload = client.post.call_args.kwargs["json"]
+        assert payload["to"] == ["u@x.com"]
+        assert payload["attachments"] == [
+            {"filename": "AAPL_report.html", "content": "YWJj"}
+        ]
+
+    def test_no_attachments_key_when_omitted(self):
+        client = _mock_client(200)
+        handler = EmailHandler(api_key="re_test", http_client=client)
+        handler.send(to="u@x.com", subject="s", html="<p>x</p>", text="x")
+        payload = client.post.call_args.kwargs["json"]
+        assert "attachments" not in payload

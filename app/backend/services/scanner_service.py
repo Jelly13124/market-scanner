@@ -80,11 +80,16 @@ class ScannerService:
         *,
         end_date: str | None = None,
         max_workers: int | None = None,
+        deliver_emails: bool = True,
     ) -> int:
         """Run a scan synchronously to completion. Returns the new run_id.
 
         ``max_workers`` defaults to ``recommend_max_workers()`` for the
         active provider (16 for FD, 4 for Finnhub).
+
+        ``deliver_emails`` (default True) gates post-scan delivery to the
+        user's verified report recipients. Set False to suppress it (e.g.
+        backfills / dry runs) without touching the bundled notification email.
 
         Use this for cron-driven runs where blocking on the scan is fine.
         For REST manual runs where the HTTP response should return quickly
@@ -96,7 +101,13 @@ class ScannerService:
 
         # Phase 1: load config, refuse double-run, create PENDING row.
         config_payload, run_id = self._begin(config_id)
-        self._run_to_completion(run_id, config_payload, end_date, max_workers)
+        self._run_to_completion(
+            run_id,
+            config_payload,
+            end_date,
+            max_workers,
+            deliver_emails=deliver_emails,
+        )
         return run_id
 
     def execute_async(
@@ -105,6 +116,7 @@ class ScannerService:
         *,
         end_date: str | None = None,
         max_workers: int | None = None,
+        deliver_emails: bool = True,
     ) -> int:
         """Create the pending run row, return ``run_id`` immediately, run on a
         daemon thread.
@@ -112,6 +124,9 @@ class ScannerService:
         The HTTP caller can subscribe to ``/scanner/runs/{run_id}/stream``
         right after the response lands — the broadcaster collects events as
         soon as the background thread starts publishing.
+
+        ``deliver_emails`` (default True) is captured by the thread closure and
+        forwarded to ``_run_to_completion`` to gate verified-recipient delivery.
         """
         end_date = end_date or date.today().isoformat()
         if max_workers is None:
@@ -121,7 +136,13 @@ class ScannerService:
 
         def _bg() -> None:
             try:
-                self._run_to_completion(run_id, config_payload, end_date, max_workers)
+                self._run_to_completion(
+                    run_id,
+                    config_payload,
+                    end_date,
+                    max_workers,
+                    deliver_emails=deliver_emails,
+                )
             except Exception:
                 # _run_to_completion already logged + marked ERROR; swallow so
                 # the thread exits cleanly.
@@ -141,11 +162,16 @@ class ScannerService:
         config_payload: dict,
         end_date: str,
         max_workers: int,
+        deliver_emails: bool = True,
     ) -> None:
         """Phase 2 of execute(): tickers -> scan -> persist -> mark complete.
 
         Mirrors the original try/except/finally body. Used by both ``execute``
         and the background thread in ``execute_async``.
+
+        ``deliver_emails`` gates the post-scan delivery of the watchlist and
+        auto-SOP reports to the user's verified report recipients (the bundled
+        notification email is independent and always dispatched).
         """
         try:
             tickers = load_universe(
@@ -248,6 +274,28 @@ class ScannerService:
             if self._broadcaster is not None:
                 self._broadcaster.close(run_id)
 
+        # report_delivery — email the ranked watchlist to the user's verified
+        # report recipients. Runs OUTSIDE the main try/except (a mail failure
+        # must never roll back the scan) and in its own try/except so it can't
+        # affect the COMPLETE state or the auto-SOP follow-up below.
+        if deliver_emails and config_payload.get("email_watchlist"):
+            try:
+                from app.backend.services.report_delivery import email_watchlist
+                from app.backend.repositories.scanner_repository import WatchlistEntryRepository
+
+                with self._session_factory() as s:
+                    entries = WatchlistEntryRepository(s).list_for_run(run_id)
+                    owner = config_payload.get("owner_user_id")
+                    if owner is not None:
+                        email_watchlist(
+                            s,
+                            owner,
+                            config_name=config_payload.get("config_name") or "Scanner",
+                            entries=entries,
+                        )
+            except Exception:
+                logger.exception("email_watchlist failed for scan_run %s", run_id)
+
         # Phase 5E — auto-SOP follow-up runs OUTSIDE the main try/except so
         # an LLM/network/email failure here can never roll back the scan
         # persistence or re-mark the run as ERROR. Wrapped in its own
@@ -263,6 +311,7 @@ class ScannerService:
                     top_n,
                     use_personas,
                     owner_user_id=config_payload.get("owner_user_id"),
+                    email_reports=(deliver_emails and bool(config_payload.get("email_reports"))),
                 )
         except Exception:
             logger.exception(
@@ -323,6 +372,12 @@ class ScannerService:
                 # reports to the config's OWNING user so they show up scoped
                 # under that user (not as orphaned user_id=NULL rows).
                 "owner_user_id": config.user_id,
+                # report_delivery — post-scan delivery to the user's VERIFIED
+                # report recipients (separate from the bundled notification
+                # email). Gated per-run by the deliver_emails kwarg.
+                "config_name": config.name,
+                "email_watchlist": bool(getattr(config, "email_watchlist", False)),
+                "email_reports": bool(getattr(config, "email_reports", False)),
             }
             return payload, run.id
 
@@ -553,6 +608,7 @@ class ScannerService:
         use_personas: bool,
         *,
         owner_user_id: int | None = None,
+        email_reports: bool = False,
     ) -> None:
         """Phase 5E: after a scan completes, fire SOP on the top-N watchlist
         entries and dispatch one bundled email containing all reports.
@@ -631,6 +687,23 @@ class ScannerService:
                 "auto_sop: bundled dispatch failed for scan_run=%s",
                 scan_run_id,
             )
+
+        # report_delivery — additionally email each report to the owner's
+        # verified report recipients (separate channel from the bundled
+        # notification email above). Isolated so a failure here can't affect
+        # the bundled dispatch or the COMPLETE scan.
+        if email_reports and owner_user_id is not None:
+            try:
+                from app.backend.services.report_delivery import email_report_html
+
+                with self._session_factory() as s:
+                    for r in detached:
+                        email_report_html(s, owner_user_id, ticker=r.ticker, html=r.rendered_html or "")
+            except Exception:
+                logger.exception(
+                    "auto_sop: report_recipients delivery failed for scan_run=%s",
+                    scan_run_id,
+                )
 
     def _publish(self, run_id: int, event: dict) -> None:
         if self._broadcaster is not None:

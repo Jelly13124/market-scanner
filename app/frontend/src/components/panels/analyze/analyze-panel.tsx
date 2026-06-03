@@ -129,22 +129,21 @@ export function AnalyzePanel() {
     }
   }, [latestDone?.id]);
 
-  // Bus-driven one-click analyze (from Screener / Scanner). Pre-fills the
-  // Input node with the requested ticker + market, then auto-runs. Handles
-  // both "tab already open" (subscribe fires) and "tab opening fresh"
-  // (takePending on mount); the 60ms delay lets patchInput's setNodes apply.
+  // Bus-driven one-click analyze (from Screener / Scanner / Watchlist) is FIRED
+  // + tracked by the AnalyzeRunsProvider (always mounted, so the run starts even
+  // before this canvas exists). Here we only prefill the Input node with the
+  // requested ticker for visual continuity when the user lands on the tab.
   useEffect(() => {
-    const runFor = (req: AnalyzeBusRequest) => {
+    const prefill = (req: AnalyzeBusRequest) => {
       canvasRef.current?.patchInput({ ticker: req.ticker, market: req.market });
-      window.setTimeout(() => { void handleRun(req); }, 60);
     };
     const queued = analyzeBus.takePending();
-    if (queued) runFor(queued);
+    if (queued) prefill(queued);
     return analyzeBus.subscribe((req) => {
-      analyzeBus.takePending(); // clear so a later remount won't re-run it
-      runFor(req);
+      analyzeBus.takePending(); // clear so a later remount won't re-prefill stale
+      prefill(req);
     });
-  }, [handleRun]);
+  }, []);
 
   // Re-read canvas state every render (tick triggers a refresh).
   void canvasTick;

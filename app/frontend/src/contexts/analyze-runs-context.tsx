@@ -7,10 +7,12 @@
 // /research/analyze requests concurrently). Each run is tracked
 // running → done | failed with timestamps for a live elapsed timer.
 
+import { uiReportLanguage } from '@/lib/ui-language';
 import { analyzeBus } from '@/services/analyze-bus';
 import { analyzeService } from '@/services/analyze-service';
+import { SECTION_ORDER } from '@/types/analyze';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export interface AnalyzeRun {
   /** Local id (ticker + timestamp + seq) — NOT the report id. */
@@ -83,6 +85,25 @@ export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
         );
       });
   }, []);
+
+  // Track bus-driven one-click analyses (Screener / Scanner / Watchlist
+  // "Analyze this ticker") in the SAME sidebar. The provider is mounted above
+  // the tab switcher, so the run starts + tracks immediately — independent of
+  // whether the Analyze tab/canvas has mounted yet (the panel only prefills its
+  // canvas). Bus runs use a standard full-report config.
+  useEffect(() => {
+    return analyzeBus.subscribe((busReq) => {
+      startRun({
+        ticker: busReq.ticker,
+        objective: 'general_research',
+        risk_tolerance: 'balanced',
+        use_personas: false,
+        included_sections: SECTION_ORDER,
+        report_language: uiReportLanguage(),
+        market: busReq.market,
+      });
+    });
+  }, [startRun]);
 
   const clearFinished = useCallback(() => {
     setRuns((prev) => prev.filter((r) => r.status === 'running'));

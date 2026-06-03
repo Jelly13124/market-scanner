@@ -111,7 +111,7 @@ class TestTopNLimit:
         from app.backend.services.auto_sop_runner import run_auto_sop_for_scan
 
         scan_run_id = _seed_scan_with_entries(db_session, n=5)
-        mock_run_sop.side_effect = lambda req: _fake_sop_report(req.ticker)
+        mock_run_sop.side_effect = lambda req, **kwargs: _fake_sop_report(req.ticker)
         mock_render.return_value = "<html><body>mock</body></html>"
 
         result = run_auto_sop_for_scan(
@@ -119,9 +119,10 @@ class TestTopNLimit:
             top_n=3, use_personas=False, owner_user_id=1,
         )
         assert len(result) == 3
-        # run_sop called exactly 3 times on the top-3 tickers by rank
+        # run_sop called exactly 3 times on the top-3 tickers (by rank). The
+        # analyses run concurrently now, so the call ORDER isn't deterministic.
         assert mock_run_sop.call_count == 3
-        tickers_processed = [c.args[0].ticker for c in mock_run_sop.call_args_list]
+        tickers_processed = sorted(c.args[0].ticker for c in mock_run_sop.call_args_list)
         assert tickers_processed == ["T0", "T1", "T2"]
 
         # Each persisted as a ResearchReport row
@@ -140,7 +141,7 @@ class TestFailedSopDoesNotAbortLoop:
 
         scan_run_id = _seed_scan_with_entries(db_session, n=3)
 
-        def _side_effect(req):
+        def _side_effect(req, **kwargs):
             if req.ticker == "T1":
                 raise RuntimeError("simulated LLM blow-up")
             return _fake_sop_report(req.ticker)
@@ -168,7 +169,7 @@ class TestBundledDispatchFiresOnce:
         from app.backend.services.scanner_service import ScannerService
 
         scan_run_id = _seed_scan_with_entries(db_session, n=3)
-        mock_run_sop.side_effect = lambda req: _fake_sop_report(req.ticker)
+        mock_run_sop.side_effect = lambda req, **kwargs: _fake_sop_report(req.ticker)
         mock_render.return_value = "<html><body>mock</body></html>"
 
         # Single-session factory so the test can inspect rows after.

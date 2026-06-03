@@ -15,7 +15,9 @@ short-circuits to ``[]``.
 from __future__ import annotations
 
 import logging
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 
 from sqlalchemy.orm import Session
@@ -28,6 +30,13 @@ from src.research.sop_orchestrator import run_sop
 
 logger = logging.getLogger(__name__)
 
+# How many tickers to analyze concurrently in the post-scan Top-N batch.
+# Each ticker's run_sop ALREADY fans its sections out across up to
+# SOP_MAX_PARALLEL threads (default 10), so peak LLM concurrency is roughly
+# AUTO_SOP_MAX_WORKERS * SOP_MAX_PARALLEL. Keep this modest so a free-tier
+# provider key isn't rate-limited; raise it if your plan has the headroom.
+_MAX_WORKERS = max(1, int(os.environ.get("AUTO_SOP_MAX_WORKERS", "3")))
+
 
 def run_auto_sop_for_scan(
     db: Session,
@@ -39,8 +48,9 @@ def run_auto_sop_for_scan(
 ) -> list[int]:
     """Run SOP on top-N watchlist entries for ``scan_run_id``.
 
-    Returns the list of newly-inserted ``ResearchReport.id`` values, in
-    the same rank order the tickers were processed. Empty input / N=0
+    The per-ticker analyses run CONCURRENTLY (bounded by AUTO_SOP_MAX_WORKERS);
+    rendering + persistence then happen sequentially on this thread, so the
+    returned ``ResearchReport.id`` list stays in rank order. Empty input / N=0
     returns ``[]`` without touching the LLM.
     """
     if top_n <= 0:
@@ -77,7 +87,13 @@ def run_auto_sop_for_scan(
         except Exception:
             logger.exception("auto_sop: failed to load keys for user %s", owner_user_id)
 
-    for entry in entries:
+    # ---- Phase 1: analyze every ticker CONCURRENTLY (DB-free) ----
+    # run_sop is thread-safe — FastAPI already calls it concurrently across
+    # requests, and it threads api_keys via SectionContext (never globals). It
+    # touches NO database. Fan the tickers out across a bounded pool, then
+    # render + persist back on THIS thread (a SQLAlchemy Session is
+    # single-thread-only). Peak LLM concurrency ~= workers * SOP_MAX_PARALLEL.
+    def _analyze(entry):
         ticker = entry.ticker
         req = AnalyzeRequest(
             ticker=ticker,
@@ -94,8 +110,38 @@ def run_auto_sop_for_scan(
             report = run_sop(req, api_keys=api_keys)
         except Exception as e:
             logger.exception("auto_sop: run_sop failed for %s: %s", ticker, e)
+            return None
+        return report, time.monotonic() - t0
+
+    workers = min(len(entries), _MAX_WORKERS)
+    logger.info(
+        "auto_sop: analyzing %d ticker(s) (workers=%d) for scan_run %s",
+        len(entries), workers, scan_run_id,
+    )
+    # Index results by rank so Phase 2 persists in rank order (entries is
+    # rank-asc), no matter what order the concurrent analyses finish in.
+    analyzed: list = [None] * len(entries)
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="auto-sop") as pool:
+        future_to_idx = {pool.submit(_analyze, e): i for i, e in enumerate(entries)}
+        for fut in as_completed(future_to_idx):
+            idx = future_to_idx[fut]
+            analyzed[idx] = fut.result()
+            # Per-ticker completion log — the natural hook for a future
+            # analyze-progress side panel to surface live progress.
+            if analyzed[idx] is not None:
+                logger.info(
+                    "auto_sop: %s analysis done (%.1fs)",
+                    entries[idx].ticker, analyzed[idx][1],
+                )
+
+    # ---- Phase 2: render + persist SEQUENTIALLY on the main thread ----
+    # Single DB Session; rank order preserved. render_sop emits chart URLs
+    # (no matplotlib here), so this is cheap next to the analyses above.
+    for entry, result in zip(entries, analyzed):
+        if result is None:
             continue
-        duration = time.monotonic() - t0
+        report, duration = result
+        ticker = entry.ticker
 
         try:
             html = render_sop(report, report_id=None)

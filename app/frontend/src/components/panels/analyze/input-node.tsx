@@ -9,6 +9,7 @@
 
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { uiReportLanguage } from '@/lib/ui-language';
 import { cn } from '@/lib/utils';
 import type { Market, Objective, ReportLanguage, RiskBand } from '@/types/analyze';
 import { Handle, NodeProps, Position } from '@xyflow/react';
@@ -32,7 +33,8 @@ export interface InputNodeData {
   cost_basis_usd: string;
   risk_tolerance: RiskBand;
   use_personas: boolean;       // fallback only — see Debate node for source of truth
-  // Phase 7 i18n — language of the generated report. Defaults to 'en'.
+  // Phase 7 i18n — language of the generated report. Unset → follows the UI
+  // language (see uiReportLanguage); set only when the user picks on the node.
   report_language?: ReportLanguage;
   // Phase 8 — A-share data integration. Defaults to 'us'.
   market?: Market;
@@ -47,7 +49,8 @@ export const DEFAULT_INPUT_NODE_DATA: InputNodeData = {
   cost_basis_usd: '',
   risk_tolerance: 'balanced',
   use_personas: false,
-  report_language: 'en',
+  // report_language intentionally unset → falls back to the UI language
+  // (uiReportLanguage); a user pick on the node overrides it.
   market: 'us',
 };
 
@@ -69,14 +72,12 @@ const RISKS: { value: RiskBand; label: string }[] = [
 export function InputNode({ id, data, selected }: NodeProps) {
   const ctx = useContext(FlowCanvasContext);
   const d = data as unknown as InputNodeData;
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
 
-  // Default report_language tracks the current UI language unless the
-  // user has explicitly set it on this node. Read-only check — does not
-  // mutate stored data.
-  const effectiveReportLang: ReportLanguage = (d.report_language
-    ?? ((i18n.resolvedLanguage || i18n.language || 'en').startsWith('zh') ? 'zh' : 'en')
-  ) as ReportLanguage;
+  // Default report_language tracks the current UI language unless the user
+  // has explicitly set it on this node (read-only — does not mutate stored
+  // data). useTranslation keeps this re-rendering on UI-language change.
+  const effectiveReportLang: ReportLanguage = d.report_language ?? uiReportLanguage();
 
   const update = (patch: Partial<InputNodeData>) => {
     ctx?.updateNodeData(id, patch as Record<string, unknown>);

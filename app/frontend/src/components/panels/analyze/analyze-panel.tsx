@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAnalyzeRuns } from '@/contexts/analyze-runs-context';
 import { useReportHtml } from '@/hooks/use-report-html';
+import { uiReportLanguage } from '@/lib/ui-language';
 import { analyzeService } from '@/services/analyze-service';
 import { analyzeBus, type AnalyzeRequest as AnalyzeBusRequest } from '@/services/analyze-bus';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
@@ -59,7 +60,7 @@ export function AnalyzePanel() {
       toast.error(t('analyze.scheduleDialog.noTicker'));
       return;
     }
-    setScheduleCtx({ ticker, reportLanguage: input?.report_language ?? 'en' });
+    setScheduleCtx({ ticker, reportLanguage: input?.report_language ?? uiReportLanguage() });
   }, [t]);
 
   const getConfig = useCallback(
@@ -110,7 +111,7 @@ export function AnalyzePanel() {
         : null,
       // Phase 7 i18n — defaults to 'en' if user hasn't picked anything
       // on the Input node (fallback covers older saved canvases).
-      report_language: input.report_language ?? 'en',
+      report_language: input.report_language ?? uiReportLanguage(),
       // Phase 8 — defaults to 'us'. Older saved canvases lack this field.
       market: ov?.market ?? input.market ?? 'us',
     };

@@ -8,6 +8,7 @@
 import { Button } from '@/components/ui/button';
 import { useAnalyzeRuns } from '@/contexts/analyze-runs-context';
 import { cn } from '@/lib/utils';
+import { getOneClickUseCanvas, setOneClickUseCanvas } from '@/services/analyze-config-snapshot';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +26,7 @@ export function AnalyzeRunsSidebar() {
   const { t } = useTranslation();
   const [viewId, setViewId] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const [useCanvas, setUseCanvas] = useState(() => getOneClickUseCanvas());
 
   // Tick once a second while anything is running, to advance elapsed timers.
   const anyRunning = runs.some((r) => r.status === 'running');
@@ -101,6 +103,19 @@ export function AnalyzeRunsSidebar() {
           })
         )}
       </div>
+
+      <label
+        className="flex items-center gap-2 border-t px-3 py-2 text-[11px] text-muted-foreground cursor-pointer"
+        title={t('analyze.runsSidebar.useCanvasHint')}
+      >
+        <input
+          type="checkbox"
+          className="size-3"
+          checked={useCanvas}
+          onChange={(e) => { setOneClickUseCanvas(e.target.checked); setUseCanvas(e.target.checked); }}
+        />
+        {t('analyze.runsSidebar.useCanvas')}
+      </label>
 
       <ReportViewerModal
         reportId={viewId}

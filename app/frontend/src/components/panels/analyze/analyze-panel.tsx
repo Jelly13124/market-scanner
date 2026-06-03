@@ -20,6 +20,7 @@ import { useReportHtml } from '@/hooks/use-report-html';
 import { uiReportLanguage } from '@/lib/ui-language';
 import { analyzeService } from '@/services/analyze-service';
 import { analyzeBus, type AnalyzeRequest as AnalyzeBusRequest } from '@/services/analyze-bus';
+import { setAnalyzeConfigSnapshot } from '@/services/analyze-config-snapshot';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
 import { ExternalLink, Mail } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -144,6 +145,12 @@ export function AnalyzePanel() {
       prefill(req);
     });
   }, []);
+
+  // Mirror the current canvas config to the snapshot so the runs provider can
+  // reuse it for bus-driven one-click runs when the user opts in (sidebar toggle).
+  useEffect(() => {
+    setAnalyzeConfigSnapshot(getConfig());
+  }, [canvasTick, getConfig]);
 
   // Re-read canvas state every render (tick triggers a refresh).
   void canvasTick;

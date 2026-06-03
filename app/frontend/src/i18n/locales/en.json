@@ -258,7 +258,9 @@
       "done": "Done",
       "failed": "Failed",
       "openReport": "Open report",
-      "clearFinished": "Clear finished"
+      "clearFinished": "Clear finished",
+      "useCanvas": "Use my canvas config",
+      "useCanvasHint": "One-click analyses from Scanner/Screener reuse your Analyze canvas sections instead of running a full report."
     }
   },
   "lab": {

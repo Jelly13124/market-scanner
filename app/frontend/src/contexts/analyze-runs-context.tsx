@@ -9,6 +9,7 @@
 
 import { uiReportLanguage } from '@/lib/ui-language';
 import { analyzeBus } from '@/services/analyze-bus';
+import { getAnalyzeConfigSnapshot, getOneClickUseCanvas } from '@/services/analyze-config-snapshot';
 import { analyzeService } from '@/services/analyze-service';
 import { SECTION_ORDER } from '@/types/analyze';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
@@ -93,12 +94,17 @@ export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
   // canvas). Bus runs use a standard full-report config.
   useEffect(() => {
     return analyzeBus.subscribe((busReq) => {
+      // Opt-in: reuse the Analyze canvas's sections + persona overrides for the
+      // one-click run; otherwise a standard full report.
+      const snap = getOneClickUseCanvas() ? getAnalyzeConfigSnapshot() : null;
       startRun({
         ticker: busReq.ticker,
         objective: 'general_research',
         risk_tolerance: 'balanced',
         use_personas: false,
-        included_sections: SECTION_ORDER,
+        included_sections: snap?.included_sections?.length ? snap.included_sections : SECTION_ORDER,
+        persona_overrides:
+          snap && Object.keys(snap.persona_overrides ?? {}).length ? snap.persona_overrides : null,
         report_language: uiReportLanguage(),
         market: busReq.market,
       });

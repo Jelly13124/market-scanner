@@ -258,7 +258,9 @@
       "done": "完成",
       "failed": "失败",
       "openReport": "打开报告",
-      "clearFinished": "清除已完成"
+      "clearFinished": "清除已完成",
+      "useCanvas": "一键用我的画布配置",
+      "useCanvasHint": "从扫描器/筛选器一键分析时,复用你 Analyze 画布上的 section,而不是跑完整报告。"
     }
   },
   "lab": {

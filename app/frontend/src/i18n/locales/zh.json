@@ -132,6 +132,7 @@
       "savedFlow": "已保存流程",
       "newFlow": "新建",
       "elapsed": "已用",
+      "schedule": "定时",
       "sectionsCount_one": "{{count}} 个 section",
       "sectionsCount_other": "{{count}} 个 section"
     },
@@ -236,6 +237,28 @@
       "flowLoaded": "流程已加载",
       "canvasReset": "画布已重置为默认模板",
       "completeInReports": "{{ticker}} 的报告 #{{id}} 已生成 —— 在左侧「近期报告」中查看。"
+    },
+    "scheduleDialog": {
+      "title": "定时分析 {{ticker}}",
+      "description": "按计划自动跑这个分析,并把报告邮件发送到你已验证的邮箱。",
+      "frequency": "频率",
+      "daily": "每天",
+      "weekdays": "工作日",
+      "weekly": "每周(周一)",
+      "time": "时间(美东)",
+      "language": "报告语言",
+      "create": "创建定时",
+      "created": "已为 {{ticker}} 创建定时 —— 在「设置 → 定时报告」中管理",
+      "noTicker": "请先在输入节点填入股票代码。"
+    },
+    "runsSidebar": {
+      "title": "运行",
+      "empty": "暂无运行。点击「运行」开始分析。",
+      "running": "运行中",
+      "done": "完成",
+      "failed": "失败",
+      "openReport": "打开报告",
+      "clearFinished": "清除已完成"
     }
   },
   "lab": {

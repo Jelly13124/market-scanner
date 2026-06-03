@@ -132,6 +132,7 @@
       "savedFlow": "Saved flow",
       "newFlow": "New",
       "elapsed": "elapsed",
+      "schedule": "Schedule",
       "sectionsCount_one": "{{count}} section",
       "sectionsCount_other": "{{count}} sections"
     },
@@ -236,6 +237,28 @@
       "flowLoaded": "Flow loaded",
       "canvasReset": "Canvas reset to default template",
       "completeInReports": "Report #{{id}} for {{ticker}} is ready — open it from Recent Reports in the sidebar."
+    },
+    "scheduleDialog": {
+      "title": "Schedule {{ticker}}",
+      "description": "Auto-run this analysis on a schedule and email the report to your verified addresses.",
+      "frequency": "Frequency",
+      "daily": "Daily",
+      "weekdays": "Weekdays",
+      "weekly": "Weekly (Mon)",
+      "time": "Time (ET)",
+      "language": "Report language",
+      "create": "Create schedule",
+      "created": "Scheduled {{ticker}} — manage in Settings → Scheduled reports",
+      "noTicker": "Enter a ticker in the Input node first."
+    },
+    "runsSidebar": {
+      "title": "Runs",
+      "empty": "No runs yet. Click Run to start an analysis.",
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed",
+      "openReport": "Open report",
+      "clearFinished": "Clear finished"
     }
   },
   "lab": {

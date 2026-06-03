@@ -27,6 +27,10 @@ import { toast } from 'sonner';
 import { AnalyzeToolbar } from './analyze-toolbar';
 import { FlowCanvas, type FlowCanvasHandle } from './flow-canvas';
 import {
+  ScheduleTickerDialog,
+  type ScheduleTickerContext,
+} from './schedule-ticker-dialog';
+import {
   PersonaAssignmentsBox,
   SectionStatusPanel,
 } from './section-status-panel';
@@ -44,6 +48,17 @@ export function AnalyzePanel() {
   const [currentReportId, setCurrentReportId] = useState<number | null>(null);
   const [currentDetail, setCurrentDetail] = useState<AnalyzeReportDetail | null>(null);
   const [loadedFlowId, setLoadedFlowId] = useState<number | null>(null);
+  const [scheduleCtx, setScheduleCtx] = useState<ScheduleTickerContext | null>(null);
+
+  const handleSchedule = useCallback(() => {
+    const input = canvasRef.current?.getInputData();
+    const ticker = (input?.ticker ?? '').trim().toUpperCase();
+    if (!ticker) {
+      toast.error(t('analyze.scheduleDialog.noTicker'));
+      return;
+    }
+    setScheduleCtx({ ticker, reportLanguage: input?.report_language ?? 'en' });
+  }, [t]);
 
   const getConfig = useCallback(
     () =>
@@ -173,6 +188,7 @@ export function AnalyzePanel() {
           }
         }}
         onResetToDefault={() => canvasRef.current?.resetToDefault()}
+        onSchedule={handleSchedule}
       />
 
       {/* 2. Canvas dominates the viewport — full width */}
@@ -252,6 +268,8 @@ export function AnalyzePanel() {
           )}
         </Accordion>
       </div>
+
+      <ScheduleTickerDialog ctx={scheduleCtx} onClose={() => setScheduleCtx(null)} />
     </div>
   );
 }

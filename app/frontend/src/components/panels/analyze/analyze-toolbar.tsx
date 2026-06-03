@@ -16,7 +16,7 @@ import {
   REQUIRED_SECTIONS,
   SECTION_ORDER,
 } from '@/types/analyze';
-import { Loader2, Play, Plus, RotateCcw } from 'lucide-react';
+import { CalendarClock, Loader2, Play, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -40,6 +40,8 @@ interface AnalyzeToolbarProps extends FlowListProps {
   onAddInput: () => void;
   /** Re-seed the canvas with the default full-pipeline template. */
   onResetToDefault: () => void;
+  /** Open the "schedule this ticker" dialog (Task 10). Hidden when omitted. */
+  onSchedule?: () => void;
 }
 
 function formatElapsed(s: number): string {
@@ -51,6 +53,7 @@ function formatElapsed(s: number): string {
 export function AnalyzeToolbar({
   running, canRun, onRun, sectionCount,
   presentSections, hasInputNode, onAddSection, onAddInput, onResetToDefault,
+  onSchedule,
   ...flowListProps
 }: AnalyzeToolbarProps) {
   const [elapsed, setElapsed] = useState(0);
@@ -190,6 +193,19 @@ export function AnalyzeToolbar({
         <span className="text-xs text-muted-foreground tabular-nums px-2">
           {t('analyze.toolbar.elapsed')}: {formatElapsed(elapsed)}
         </span>
+      )}
+      {onSchedule && (
+        <Button
+          onClick={onSchedule}
+          disabled={!canRun}
+          size="sm"
+          variant="outline"
+          className="h-7"
+          title={t('analyze.toolbar.schedule')}
+        >
+          <CalendarClock className="size-3 mr-1" />
+          {t('analyze.toolbar.schedule')}
+        </Button>
       )}
       <Button
         onClick={onRun}

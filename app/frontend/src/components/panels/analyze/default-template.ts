@@ -2,11 +2,11 @@
 //
 // Pipeline shape (left to right):
 //
-//   [Input] → [Data Health] → 10 parallel analyses → [Debate] → [Output]
+//   [Input] → [Data Health] → 11 parallel analyses → [Debate] → [Output]
 //
-// The 10 mid-sections (macro / sector / company_fundamentals /
+// The 11 mid-sections (macro / sector / company_fundamentals /
 // financial_statements / valuation / technical / risk_position /
-// scenarios / conviction / event_risk) all consume the same upstream
+// scenarios / conviction / event_risk / catalyst) all consume the same upstream
 // (shared data + data_health verdict) and produce independent
 // SectionPayloads. They feed BOTH Debate (which weighs them) and
 // Output (which writes the final report from them + Debate's verdict).
@@ -39,6 +39,7 @@ const PARALLEL_SECTIONS: string[] = [
   'scenarios',
   'conviction',
   'event_risk',
+  'catalyst',
 ];
 
 /** The 4 backend sections that the single visual Output node represents. */
@@ -59,7 +60,7 @@ const COL_OUTPUT_X = 2560;
 
 const PARALLEL_ROW_TOP = 40;
 const PARALLEL_ROW_H = 200;
-const PARALLEL_ROWS_PER_COL = 5;   // 5 rows × 2 cols = 10 sections
+const PARALLEL_ROWS_PER_COL = 6;   // up to 6 rows × 2 cols = 12 slots (11 sections)
 
 /** Y position for the single-row nodes (Input / Data Health / Debate / Output)
  * so they line up with the vertical middle of the 5-row parallel block. */
@@ -113,7 +114,7 @@ export function getDefaultTemplate(): { nodes: Node[]; edges: Edge[] } {
     animated: true,
   });
 
-  // 3) 10 parallel analyses — 2 columns × 5 rows. Each gets an edge
+  // 3) 11 parallel analyses — 2 columns × up to 6 rows. Each gets an edge
   //    FROM data_health, and edges TO both Debate and Output.
   const debateId = _sectionNodeId('debate');
   PARALLEL_SECTIONS.forEach((name, i) => {

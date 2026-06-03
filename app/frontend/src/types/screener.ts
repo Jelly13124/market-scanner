@@ -137,6 +137,7 @@ export interface ScreenerPreset {
   sort_by: string;
   sort_dir: 'asc' | 'desc';
   schedule_enabled: boolean;
+  cron_expr: string;
   notify_channels: string[] | null;
   last_run_at: string | null;
   last_match_count: number | null;

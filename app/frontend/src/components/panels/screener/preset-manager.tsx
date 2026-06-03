@@ -6,6 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { buildCron, type Frequency } from '@/services/report-schedules-api';
 import { deletePreset, listPresets, patchPreset } from '@/services/screener-service';
 import { ScreenerPreset } from '@/types/screener';
 import { Trash2 } from 'lucide-react';
@@ -17,6 +18,17 @@ interface PresetManagerProps {
   open: boolean;
   onOpenChange: (b: boolean) => void;
   onChanged?: () => void;
+}
+
+/** Inverse of buildCron — split a "m h * * dow" cron into freq + HH:MM for the
+ *  per-preset schedule editor. Falls back to daily 22:05 on anything odd. */
+function parseCron(expr: string): { freq: Frequency; time: string } {
+  const parts = (expr || '').trim().split(/\s+/);
+  if (parts.length !== 5) return { freq: 'daily', time: '22:05' };
+  const [m, h, , , dow] = parts;
+  const time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  const freq: Frequency = dow === '1-5' ? 'weekdays' : dow === '1' ? 'weekly' : 'daily';
+  return { freq, time };
 }
 
 export function PresetManager({ open, onOpenChange, onChanged }: PresetManagerProps) {
@@ -65,6 +77,19 @@ export function PresetManager({ open, onOpenChange, onChanged }: PresetManagerPr
     }
   };
 
+  const handleCron = async (p: ScreenerPreset, cron_expr: string) => {
+    setBusyFor(p.id, true);
+    try {
+      await patchPreset(p.id, { cron_expr });
+      reload();
+      onChanged?.();
+    } catch {
+      toast.error(t('screener.presets.patch_error', 'Failed to update preset'));
+    } finally {
+      setBusyFor(p.id, false);
+    }
+  };
+
   const handleDelete = async (p: ScreenerPreset) => {
     if (!window.confirm(t('screener.presets.delete_confirm', `Delete preset "${p.name}"?`))) return;
     setBusyFor(p.id, true);
@@ -99,8 +124,9 @@ export function PresetManager({ open, onOpenChange, onChanged }: PresetManagerPr
               return (
                 <div
                   key={p.id}
-                  className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm"
+                  className="rounded-md border px-3 py-2 text-sm"
                 >
+                  <div className="flex items-center gap-3">
                   {/* Name + match count */}
                   <div className="flex-1 min-w-0">
                     <span className="font-medium truncate block">{p.name}</span>
@@ -151,6 +177,37 @@ export function PresetManager({ open, onOpenChange, onChanged }: PresetManagerPr
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
+                  </div>
+
+                  {/* Per-preset schedule cadence — shown only when scheduled */}
+                  {p.schedule_enabled && (() => {
+                    const { freq, time } = parseCron(p.cron_expr);
+                    return (
+                      <div className="mt-2 flex items-center gap-2 pl-1">
+                        <span className="text-xs text-muted-foreground">
+                          {t('screener.presets.runs_at', 'Runs')}:
+                        </span>
+                        <select
+                          className="rounded border bg-background px-1.5 py-1 text-xs"
+                          value={freq}
+                          disabled={isDisabled}
+                          onChange={(e) => handleCron(p, buildCron(e.target.value as Frequency, time))}
+                        >
+                          <option value="daily">{t('analyze.scheduleDialog.daily')}</option>
+                          <option value="weekdays">{t('analyze.scheduleDialog.weekdays')}</option>
+                          <option value="weekly">{t('analyze.scheduleDialog.weekly')}</option>
+                        </select>
+                        <input
+                          type="time"
+                          className="rounded border bg-background px-1.5 py-1 text-xs w-24"
+                          value={time}
+                          disabled={isDisabled}
+                          onChange={(e) => handleCron(p, buildCron(freq, e.target.value))}
+                        />
+                        <span className="text-xs text-muted-foreground">ET</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })}

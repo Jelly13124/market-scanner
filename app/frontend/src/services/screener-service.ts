@@ -96,6 +96,7 @@ export async function createPreset(body: {
   sort_by: string;
   sort_dir: 'asc' | 'desc';
   schedule_enabled?: boolean;
+  cron_expr?: string;
   notify_channels?: string[] | null;
 }): Promise<ScreenerPreset> {
   const r = await fetch(`${API_BASE}/screener/presets`, {
@@ -112,6 +113,7 @@ export async function patchPreset(
   patch: Partial<{
     name: string;
     schedule_enabled: boolean;
+    cron_expr: string;
     notify_channels: string[] | null;
   }>
 ): Promise<ScreenerPreset> {

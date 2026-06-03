@@ -231,14 +231,19 @@ class SchedulerService:
             except Exception as e:
                 logger.warning("reregister_user_jobs: report schedule %s failed: %s", sched.id, e)
 
-    def run_now(self, config_id: int) -> int:
+    def run_now(self, config_id: int, *, deliver_emails: bool = True) -> int:
         """Trigger a manual scan; return the new ``run_id`` immediately.
 
         The scan runs on a background daemon thread inside ``ScannerService``;
         clients subscribe to ``/scanner/runs/{run_id}/stream`` for live
         progress.
+
+        ``deliver_emails`` is forwarded to ``execute_async`` — when False the
+        post-scan workflow skips emailing the watchlist/reports. Manual runs
+        opt in via the route's ``send_email`` query param (default off); cron
+        keeps the True default so scheduled scans always deliver.
         """
-        return self._scanner_service.execute_async(config_id)
+        return self._scanner_service.execute_async(config_id, deliver_emails=deliver_emails)
 
     # ------------------------------------------------------------------
     # Private helpers

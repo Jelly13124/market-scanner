@@ -236,8 +236,10 @@ class TestRunNow:
         scheduler.run_now.return_value = 42
         r = client.post(f"/scanner/configs/{cid}/run")
         assert r.status_code == 202
-        assert r.json() == {"run_id": 42, "status": "RUNNING"}
-        scheduler.run_now.assert_called_once_with(cid)
+        # The route now also reports already_running on the response.
+        assert r.json() == {"run_id": 42, "status": "RUNNING", "already_running": False}
+        # Default manual run is opt-out of email delivery (send_email=false).
+        scheduler.run_now.assert_called_once_with(cid, deliver_emails=False)
 
     def test_run_for_unknown_config_404(self, setup):
         client, _, _, _ = setup

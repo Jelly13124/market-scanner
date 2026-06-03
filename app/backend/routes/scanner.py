@@ -218,6 +218,7 @@ def delete_config(
 def run_config_now(
     config_id: int,
     request: Request,
+    send_email: bool = False,
     db: Session = Depends(get_db),
     scheduler: SchedulerService = Depends(get_scheduler_service),
     current_user: User = Depends(get_current_user),
@@ -228,11 +229,17 @@ def run_config_now(
     creates the PENDING ScanRun row synchronously, returns its id, and runs
     the actual scan on a daemon thread. Clients should subscribe to
     ``/scanner/runs/{run_id}/stream`` for live progress.
+
+    ``send_email`` (query param, default False) makes manual delivery opt-in:
+    only when ``?send_email=true`` does the post-scan workflow email the
+    watchlist/reports to the user's verified recipients (still subject to the
+    config's ``email_watchlist``/``email_reports`` flags). A plain manual run
+    does NOT email. Cron runs deliver unconditionally via ``execute``.
     """
     if not ScannerConfigRepository(db).get_by_id(config_id, user_id=current_user.id):
         raise HTTPException(404, f"No scanner config with id {config_id}")
     try:
-        run_id = scheduler.run_now(config_id)
+        run_id = scheduler.run_now(config_id, deliver_emails=send_email)
     except ScanAlreadyRunningError as e:
         # Idempotent: a run is already in flight for this config. Return it so the
         # client re-attaches to its stream instead of seeing a 500.

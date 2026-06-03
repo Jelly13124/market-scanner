@@ -66,6 +66,9 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
   const [progress, setProgress] = useState<ScanProgressEvent | null>(null);
   const [entries, setEntries] = useState<WatchlistEntryResponse[]>([]);
   const [streamError, setStreamError] = useState<string | null>(null);
+  // Opt-in: email the watchlist/reports to verified recipients on a manual run.
+  // Default off; a plain "Run now" does not email.
+  const [sendEmail, setSendEmail] = useState(false);
   const abortRef = useRef<(() => void) | null>(null);
 
   // ---- effects ------------------------------------------------------------
@@ -197,7 +200,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
       // runNow is idempotent: if a scan is already running for this config the
       // backend returns that run (already_running=true) instead of 500'ing, so
       // we simply re-attach to its stream below.
-      const { run_id } = await scannerService.runNow(selectedConfig.id);
+      const { run_id } = await scannerService.runNow(selectedConfig.id, sendEmail);
       setRunId(run_id);
       subscribeToRun(run_id);
     } catch (err) {
@@ -322,6 +325,19 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
         <Button variant="outline" size="sm" onClick={loadConfigs} title={t('scanner.reloadConfigs')}>
           <RefreshCw size={14} />
         </Button>
+        <label
+          className="flex items-center gap-1.5 text-xs text-muted-foreground select-none cursor-pointer"
+          title="Email this run's watchlist/reports to your verified recipients"
+        >
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5 cursor-pointer"
+            checked={sendEmail}
+            onChange={(e) => setSendEmail(e.target.checked)}
+            disabled={!selectedConfig || isRunning}
+          />
+          Email results
+        </label>
         <Button onClick={handleRunNow} disabled={!selectedConfig || isRunning} size="sm">
           <Play size={14} className="mr-1" />
           {isRunning ? 'Running…' : 'Run now'}

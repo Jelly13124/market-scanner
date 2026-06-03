@@ -97,11 +97,19 @@ export const scannerService = {
 
   /** Trigger a manual scan; resolves with the run_id. When a run is already in
    *  flight for this config the backend returns that run with already_running=true
-   *  (instead of erroring), so the caller just re-attaches to its stream. */
-  async runNow(configId: number): Promise<{ run_id: number; status: string; already_running?: boolean }> {
-    const r = await fetch(`${API_BASE_URL}/scanner/configs/${configId}/run`, {
-      method: 'POST',
-    });
+   *  (instead of erroring), so the caller just re-attaches to its stream.
+   *  ``sendEmail`` (default false) opts the manual run into emailing the
+   *  watchlist/reports to the user's verified recipients. */
+  async runNow(
+    configId: number,
+    sendEmail = false,
+  ): Promise<{ run_id: number; status: string; already_running?: boolean }> {
+    const r = await fetch(
+      `${API_BASE_URL}/scanner/configs/${configId}/run?send_email=${sendEmail ? 'true' : 'false'}`,
+      {
+        method: 'POST',
+      },
+    );
     if (!r.ok) throw await _toError(r, 'runNow');
     return r.json();
   },

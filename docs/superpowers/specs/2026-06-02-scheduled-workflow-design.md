@@ -51,7 +51,7 @@ In `SchedulerService._run_job(config_id)` (or a `_post_scan_workflow(config_id, 
 3. If `auto_analyze`: take the top-`analyze_top_n` entries by score; fetch the **owner's** keys (`ApiKeyService(db, config.user_id)`); for each ticker `run_sop(AnalyzeRequest(...), api_keys=...)` → `render_sop` → (if `email_reports`) `email_report_html`. Mirror `_run_report_schedule_job` exactly (per-user keys, never-raises, top-N cap).
 4. Skip cleanly if no verified recipients / no owner LLM key (log, don't crash the cron).
 
-NOTE: the manual `POST /scanner/configs/{id}/run` path should NOT trigger the workflow (only the cron does) — or gate it behind a flag — to avoid surprise emails on a manual run. Decide in the plan.
+**Manual run + "send to email" (decided 2026-06-02):** the cron always runs the post-scan workflow per the config toggles. The manual `POST /scanner/configs/{id}/run` also accepts a `send_email` flag and the Run-now button gets a **"send to email" checkbox**; when checked, the same post-scan workflow runs after the manual scan (respecting the config's email_watchlist / auto_analyze / email_reports). Default OFF, so a plain manual scan never emails.
 
 ### C. Watchlist email
 
@@ -63,17 +63,24 @@ Reuse `ReportSchedule` (Stage 3). Add a small "Schedule" control on the Analyze 
 
 ### E. Analyze sidebar — concurrent run tracking
 
-Refactor `analyze-panel.tsx`: replace the single `running: boolean` with a **runs list** `{id, ticker, status: 'running'|'done'|'failed', startedAt, elapsedMs, reportId?, error?}`. `handleRun` becomes non-blocking (pushes a run, fires the fetch, updates on settle) so multiple tickers can run at once. Add a right sidebar listing runs (spinner + live elapsed for running; ✓ + click-to-open for done; ✗ + message for failed). Run-state lives in a small context/store so it survives within the Analyze tab.
+Refactor `analyze-panel.tsx`: replace the single `running: boolean` with a **runs list** `{id, ticker, status: 'running'|'done'|'failed', startedAt, elapsedMs, reportId?, error?}`. `handleRun` becomes non-blocking (pushes a run, fires the fetch, updates on settle) so multiple tickers can run at once. Add a right sidebar listing runs (spinner + live elapsed for running; ✓ + click-to-open for done; ✗ + message for failed).
+
+**Persistence across tab switches (decided 2026-06-02):** the run-state store MUST live in a context/provider mounted ABOVE the tab switcher (e.g. wrapping `Layout`), NOT inside `AnalyzePanel`. Switching tabs unmounts `AnalyzePanel`; if the runs list lived there it would reset. With the store hoisted, switching away and back leaves the sidebar (running spinners, elapsed timers, completed runs) intact, and in-flight fetches keep updating it. `handleRun` dispatches into this store rather than local `useState`.
 
 ### F. Remove the 3 panel-layout toggle icons (top-right)
 
 Find the layout-toggle control (3 split-pane icons) in the top toolbar/header and remove it (+ any now-dead handlers/state). Surgical.
 
+### G. Settings cleanup + per-user timezone (added 2026-06-02)
+
+- **Remove the "Models" section** from Settings: drop the `models` nav item + its render case + the `Models` import in `settings.tsx`. The Models component file may stay in the tree, just unlinked.
+- **Timezone selector:** add `User.timezone` (String, default `"America/New_York"`; additive migration) + a Settings dropdown of common IANA zones. The scheduler interprets each user's cron in THEIR timezone — the register methods (scanner-config crons AND report-schedule crons) look up the owner's tz and pass it to `CronTrigger.from_crontab(expr, timezone=user_tz)` instead of the global `self._tz`. When a user changes tz, re-register their jobs; startup registration uses each owner's tz.
+
 ## Data model summary
 
-- `ScannerConfig` += 4 columns (additive migration).
+- `ScannerConfig` += 4 columns (`email_watchlist`, `auto_analyze`, `analyze_top_n`, `email_reports`) — additive migration.
+- `User` += `timezone` (String, default America/New_York) — additive migration.
 - `ReportSchedule` — unchanged (reused).
-- No other schema changes.
 
 ## API summary
 
@@ -99,11 +106,15 @@ Find the layout-toggle control (3 split-pane icons) in the top toolbar/header an
 ## Task outline (for writing-plans)
 
 1. Remove the 3 layout icons (+ dead code). [trivial, isolated]
-2. ScannerConfig: model + additive migration + create/update schema + repository passthrough.
-3. Scanner config dialog: the 4 workflow toggles.
-4. `report_delivery.email_watchlist`.
-5. Scanner cron post-scan workflow (email list → top-N analyze → email reports), owner keys, never-crash.
-6. Analyze-UI "Schedule" control (reuse ReportSchedule).
-7. Analyze concurrent-run sidebar (runs store + non-blocking handleRun + sidebar component).
-8. Screener parallel workflow (pending Open Item 1).
-9. Any specific bugs the user enumerates.
+2. Remove the "Models" section from Settings (nav item + render case + import). [trivial]
+3. `User.timezone`: model + additive migration + Settings timezone dropdown (IANA list).
+4. Scheduler per-user timezone: register methods look up the owner's tz; re-register on change; startup uses each owner's tz.
+5. `ScannerConfig`: model + additive migration (4 workflow cols) + create/update schema + repository passthrough.
+6. Scanner config dialog: the 4 workflow toggles (email watchlist / auto-analyze + top-N / email reports).
+7. `report_delivery.email_watchlist`.
+8. Scanner cron post-scan workflow (email list → top-N analyze → email reports), owner keys, never-crash.
+9. Manual run "send to email": `/run` accepts a `send_email` flag → runs the post-scan workflow; Run-now gets a checkbox.
+10. Analyze-UI "Schedule" control (reuse ReportSchedule).
+11. Analyze concurrent-run sidebar: runs store **hoisted above the tab switcher** (persists across tab switch) + non-blocking `handleRun` + the sidebar component.
+12. Screener parallel workflow (pending Open Item 1).
+13. Any further specific bugs the user enumerates.

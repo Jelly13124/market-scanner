@@ -1,9 +1,8 @@
 import { cn } from '@/lib/utils';
-import { CubeIcon } from '@radix-ui/react-icons';
 import { CalendarClock, Key, Mail, Palette } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ApiKeysSettings, Models, ReportRecipientsSettings, ReportSchedulesSettings } from './';
+import { ApiKeysSettings, ReportRecipientsSettings, ReportSchedulesSettings } from './';
 import { ThemeSettings } from './appearance';
 
 interface SettingsProps {
@@ -41,12 +40,6 @@ export function Settings({ className }: SettingsProps) {
       description: t('settings.schedulesDesc'),
     },
     {
-      id: 'models',
-      label: t('settings.models'),
-      icon: CubeIcon,
-      description: t('settings.modelsDesc'),
-    },
-    {
       id: 'theme',
       label: t('settings.theme'),
       icon: Palette,
@@ -56,8 +49,6 @@ export function Settings({ className }: SettingsProps) {
 
   const renderContent = () => {
     switch (selectedSection) {
-      case 'models':
-        return <Models />;
       case 'theme':
         return <ThemeSettings />;
       case 'api':
@@ -67,7 +58,7 @@ export function Settings({ className }: SettingsProps) {
       case 'schedules':
         return <ReportSchedulesSettings />;
       default:
-        return <Models />;
+        return <ApiKeysSettings />;
     }
   };
 

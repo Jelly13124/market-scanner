@@ -42,6 +42,10 @@ const DEFAULT_FORM: ScannerConfigCreateRequest = {
   cron_expr: '0 21 * * 1-5',
   is_enabled: true,
   top_n: 20,
+  auto_sop_top_n: 0,
+  auto_sop_use_personas: false,
+  email_watchlist: false,
+  email_reports: false,
 };
 
 export function ScannerConfigDialog({
@@ -81,6 +85,10 @@ export function ScannerConfigDialog({
         top_n: editing.top_n,
         weights: editing.weights ?? undefined,
         user_watchlist_id: editing.user_watchlist_id ?? undefined,
+        auto_sop_top_n: editing.auto_sop_top_n ?? 0,
+        auto_sop_use_personas: editing.auto_sop_use_personas ?? false,
+        email_watchlist: editing.email_watchlist ?? false,
+        email_reports: editing.email_reports ?? false,
       });
       const preset = CRON_PRESETS.find((p) => p.expr === editing.cron_expr);
       setCronPreset(preset ? editing.cron_expr : 'custom');
@@ -196,6 +204,14 @@ export function ScannerConfigDialog({
       const payload: ScannerConfigCreateRequest = { ...form };
       // Manual ticker entry was removed from the UI; never send custom tickers.
       delete payload.universe_tickers;
+
+      // Auto-SOP off => the persona + report-email toggles are hidden; force
+      // them false so a stale `true` from a prior edit can't leak through.
+      if (!payload.auto_sop_top_n || payload.auto_sop_top_n <= 0) {
+        payload.auto_sop_top_n = 0;
+        payload.auto_sop_use_personas = false;
+        payload.email_reports = false;
+      }
 
       // Phase 5C — watchlist kind requires a chosen UserWatchlist id. Mirror
       // the backend model_validator so the user sees the error inline rather
@@ -347,6 +363,75 @@ export function ScannerConfigDialog({
                 className="font-mono"
               />
             )}
+          </div>
+
+          {/* Schedule & delivery — email + auto-analyze after each scheduled scan. */}
+          <div className="space-y-3 rounded-md border bg-muted/20 px-3 py-3">
+            <div className="text-sm font-medium">{t('scanner.config.deliveryTitle')}</div>
+
+            {/* Email the watchlist after each scheduled scan */}
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id="cfg-email-watchlist"
+                checked={form.email_watchlist ?? false}
+                onCheckedChange={(v) =>
+                  setForm({ ...form, email_watchlist: v === true })
+                }
+              />
+              <label htmlFor="cfg-email-watchlist" className="text-sm font-normal cursor-pointer">
+                {t('scanner.config.emailWatchlist')}
+              </label>
+            </div>
+
+            {/* Auto-SOP top-N */}
+            <div className="space-y-1.5">
+              <label htmlFor="cfg-auto-sop-topn" className="text-sm font-medium">
+                {t('scanner.config.autoSop')}
+              </label>
+              <Input
+                id="cfg-auto-sop-topn"
+                type="number"
+                min={0}
+                max={20}
+                value={form.auto_sop_top_n ?? 0}
+                onChange={(e) =>
+                  setForm({ ...form, auto_sop_top_n: Number(e.target.value) })
+                }
+              />
+              <p className="text-xs text-muted-foreground">{t('scanner.config.autoSopHint')}</p>
+            </div>
+
+            {/* Persona + report-email toggles — only relevant when auto-SOP is on. */}
+            {(form.auto_sop_top_n ?? 0) > 0 && (
+              <div className="space-y-2 pl-1">
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="cfg-auto-sop-personas"
+                    checked={form.auto_sop_use_personas ?? false}
+                    onCheckedChange={(v) =>
+                      setForm({ ...form, auto_sop_use_personas: v === true })
+                    }
+                  />
+                  <label htmlFor="cfg-auto-sop-personas" className="text-sm font-normal cursor-pointer">
+                    {t('scanner.config.autoSopUsePersonas')}
+                  </label>
+                </div>
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="cfg-email-reports"
+                    checked={form.email_reports ?? false}
+                    onCheckedChange={(v) =>
+                      setForm({ ...form, email_reports: v === true })
+                    }
+                  />
+                  <label htmlFor="cfg-email-reports" className="text-sm font-normal cursor-pointer">
+                    {t('scanner.config.emailReports')}
+                  </label>
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-muted-foreground">{t('scanner.config.emailDeliveryHelp')}</p>
           </div>
 
           {/* Top-N + Enabled */}

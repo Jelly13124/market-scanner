@@ -61,6 +61,14 @@ export interface ScannerConfigResponse {
   weights?: Record<string, unknown> | null;
   /** Phase 5C — set when universe_kind === 'watchlist'. */
   user_watchlist_id?: number | null;
+  /** Phase 5E — when > 0, auto-run SOP on the top-N watchlist entries after a scan. 0 = off. */
+  auto_sop_top_n: number;
+  /** Phase 5E — when true, the auto-SOP runs use the persona router. */
+  auto_sop_use_personas: boolean;
+  /** Phase 5E — email the watchlist ticker list to verified recipients after a scheduled scan. */
+  email_watchlist: boolean;
+  /** Phase 5E — also email the auto-SOP reports after a scan. */
+  email_reports: boolean;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -75,6 +83,13 @@ export interface ScannerConfigCreateRequest {
   weights?: Record<string, unknown> | null;
   /** Required when universe_kind === 'watchlist'. */
   user_watchlist_id?: number | null;
+  /** Phase 5E — auto-run SOP on the top-N watchlist entries after a scan. 0 = off. */
+  auto_sop_top_n?: number;
+  auto_sop_use_personas?: boolean;
+  /** Phase 5E — email the watchlist ticker list after each scheduled scan. */
+  email_watchlist?: boolean;
+  /** Phase 5E — also email the auto-SOP reports after each scan. */
+  email_reports?: boolean;
 }
 
 export interface ScannerConfigUpdateRequest {
@@ -86,6 +101,13 @@ export interface ScannerConfigUpdateRequest {
   top_n?: number;
   weights?: Record<string, unknown> | null;
   user_watchlist_id?: number | null;
+  /** Phase 5E — auto-run SOP on the top-N watchlist entries after a scan. 0 = off. */
+  auto_sop_top_n?: number;
+  auto_sop_use_personas?: boolean;
+  /** Phase 5E — email the watchlist ticker list after each scheduled scan. */
+  email_watchlist?: boolean;
+  /** Phase 5E — also email the auto-SOP reports after each scan. */
+  email_reports?: boolean;
 }
 
 export interface ScanRunSummary {

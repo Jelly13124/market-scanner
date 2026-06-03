@@ -9,10 +9,11 @@ import { Button } from '@/components/ui/button';
 import { useAnalyzeRuns } from '@/contexts/analyze-runs-context';
 import { cn } from '@/lib/utils';
 import { getOneClickUseCanvas, setOneClickUseCanvas } from '@/services/analyze-config-snapshot';
-import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { CheckCircle2, Loader2, Sparkles, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { AgentRunDetailDialog } from '@/components/panels/scanner/agent-run-detail';
 import { ReportViewerModal } from './report-viewer-modal';
 
 function fmtElapsed(ms: number): string {
@@ -25,6 +26,7 @@ export function AnalyzeRunsSidebar() {
   const { runs, clearFinished } = useAnalyzeRuns();
   const { t } = useTranslation();
   const [viewId, setViewId] = useState<number | null>(null);
+  const [pipelineViewId, setPipelineViewId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [useCanvas, setUseCanvas] = useState(() => getOneClickUseCanvas());
 
@@ -65,16 +67,20 @@ export function AnalyzeRunsSidebar() {
           runs.map((r) => {
             const elapsed = (r.finishedAt ?? now) - r.startedAt;
             const isDone = r.status === 'done';
+            // Pipeline rows open the live agent-run dialog at any status; SOP
+            // rows open the report only once done.
+            const clickable = r.kind === 'pipeline' ? r.pipelineRunId != null : isDone;
             return (
               <button
                 key={r.id}
                 type="button"
-                disabled={!isDone}
+                disabled={!clickable}
                 onClick={() => {
-                  if (isDone && r.reportId != null) setViewId(r.reportId);
+                  if (r.kind === 'pipeline' && r.pipelineRunId) setPipelineViewId(r.pipelineRunId);
+                  else if (isDone && r.reportId != null) setViewId(r.reportId);
                 }}
                 title={
-                  isDone
+                  clickable
                     ? t('analyze.runsSidebar.openReport')
                     : r.status === 'failed'
                       ? r.error
@@ -82,7 +88,7 @@ export function AnalyzeRunsSidebar() {
                 }
                 className={cn(
                   'w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs',
-                  isDone ? 'hover:bg-accent/60 cursor-pointer' : 'cursor-default',
+                  clickable ? 'hover:bg-accent/60 cursor-pointer' : 'cursor-default',
                 )}
               >
                 {r.status === 'running' && (
@@ -93,6 +99,9 @@ export function AnalyzeRunsSidebar() {
                 )}
                 {r.status === 'failed' && (
                   <XCircle className="size-3 text-red-500 shrink-0" />
+                )}
+                {r.kind === 'pipeline' && (
+                  <Sparkles className="size-3 text-purple-500 shrink-0" />
                 )}
                 <span className="font-medium truncate flex-1">{r.ticker}</span>
                 <span className="tabular-nums text-muted-foreground shrink-0">
@@ -124,6 +133,13 @@ export function AnalyzeRunsSidebar() {
           if (!o) setViewId(null);
         }}
       />
+      {pipelineViewId && (
+        <AgentRunDetailDialog
+          runId={pipelineViewId}
+          open={pipelineViewId != null}
+          onOpenChange={(o) => { if (!o) setPipelineViewId(null); }}
+        />
+      )}
     </aside>
   );
 }

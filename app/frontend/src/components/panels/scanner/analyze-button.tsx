@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useAnalyzeRuns } from '@/contexts/analyze-runs-context';
 import { pipelineService } from '@/services/pipeline-service';
 import { AgentMetadata } from '@/types/pipeline';
 import { Sparkles } from 'lucide-react';
@@ -93,6 +94,7 @@ function AnalyzePickerDialog({
   const [chosen, setChosen] = useState<string>('balanced');
   const [submitting, setSubmitting] = useState(false);
   const { t } = useTranslation();
+  const { startPipelineRun } = useAnalyzeRuns();
   const [error, setError] = useState<string | null>(null);
 
   // Load templates + agent metadata on mount.
@@ -128,6 +130,11 @@ function AnalyzePickerDialog({
         model_name: modelName,
         model_provider: modelProvider,
       });
+      // Surface this run in the Analyze runs sidebar too (unified tracking).
+      startPipelineRun(
+        r.run_id,
+        tickers.length === 1 ? tickers[0] : `${tickers[0]} +${tickers.length - 1}`,
+      );
       onSubmitted(r.run_id);
     } catch (e) {
       setError((e as Error).message);

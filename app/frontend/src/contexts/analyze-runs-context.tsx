@@ -11,19 +11,23 @@ import { uiReportLanguage } from '@/lib/ui-language';
 import { analyzeBus } from '@/services/analyze-bus';
 import { getAnalyzeConfigSnapshot, getOneClickUseCanvas } from '@/services/analyze-config-snapshot';
 import { analyzeService } from '@/services/analyze-service';
+import { pipelineService } from '@/services/pipeline-service';
 import { SECTION_ORDER } from '@/types/analyze';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 
 export interface AnalyzeRun {
-  /** Local id (ticker + timestamp + seq) — NOT the report id. */
+  /** Local id — NOT the report/pipeline id. */
   id: string;
-  ticker: string;
+  ticker: string;               // SOP: the ticker; pipeline: a short label
+  /** 'sop' = a /research/analyze report; 'pipeline' = a multi-agent run. */
+  kind: 'sop' | 'pipeline';
   status: 'running' | 'done' | 'failed';
   startedAt: number;            // epoch ms
   finishedAt?: number;          // epoch ms (done | failed)
-  reportId?: number;            // set when done
-  detail?: AnalyzeReportDetail; // set when done (drives the panel's inline view)
+  reportId?: number;            // SOP done → open the report
+  detail?: AnalyzeReportDetail; // SOP done → drives the panel's inline view
+  pipelineRunId?: string;       // pipeline → open the AgentRunDetail dialog
   error?: string;               // set when failed
 }
 
@@ -31,6 +35,8 @@ interface AnalyzeRunsContextValue {
   runs: AnalyzeRun[];
   /** Fire an analysis non-blocking; it appears in the sidebar immediately. */
   startRun: (req: AnalyzeRunRequest) => void;
+  /** Track an already-triggered multi-agent pipeline run by its run_id. */
+  startPipelineRun: (runId: string, label: string) => void;
   /** Drop all finished (done/failed) runs; keep the still-running ones. */
   clearFinished: () => void;
   /** Most-recently-FINISHED done run (or null) — the panel mirrors it inline. */
@@ -55,7 +61,7 @@ export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
   const startRun = useCallback((req: AnalyzeRunRequest) => {
     const id = `${req.ticker}-${Date.now()}-${_seq++}`;
     setRuns((prev) => [
-      { id, ticker: req.ticker, status: 'running', startedAt: Date.now() },
+      { id, ticker: req.ticker, kind: 'sop', status: 'running', startedAt: Date.now() },
       ...prev,
     ]);
     analyzeService
@@ -81,6 +87,35 @@ export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
                   finishedAt: Date.now(),
                   error: e instanceof Error ? e.message : String(e),
                 }
+              : r,
+          ),
+        );
+      });
+  }, []);
+
+  const startPipelineRun = useCallback((runId: string, label: string) => {
+    const id = `pipeline-${runId}`;
+    setRuns((prev) => [
+      { id, ticker: label, kind: 'pipeline', status: 'running', startedAt: Date.now(), pipelineRunId: runId },
+      ...prev,
+    ]);
+    pipelineService
+      .pollUntilDone(runId)
+      .then((detail) => {
+        setRuns((prev) =>
+          prev.map((r) =>
+            r.id === id
+              ? { ...r, status: detail.status === 'ERROR' ? 'failed' : 'done', finishedAt: Date.now() }
+              : r,
+          ),
+        );
+        analyzeBus.notifyReportsChanged();
+      })
+      .catch((e: unknown) => {
+        setRuns((prev) =>
+          prev.map((r) =>
+            r.id === id
+              ? { ...r, status: 'failed', finishedAt: Date.now(), error: e instanceof Error ? e.message : String(e) }
               : r,
           ),
         );
@@ -116,14 +151,14 @@ export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const latestDone = runs
-    .filter((r) => r.status === 'done')
+    .filter((r) => r.status === 'done' && r.kind === 'sop')
     .reduce<AnalyzeRun | null>(
       (best, r) => (!best || (r.finishedAt ?? 0) > (best.finishedAt ?? 0) ? r : best),
       null,
     );
 
   return (
-    <AnalyzeRunsContext.Provider value={{ runs, startRun, clearFinished, latestDone }}>
+    <AnalyzeRunsContext.Provider value={{ runs, startRun, startPipelineRun, clearFinished, latestDone }}>
       {children}
     </AnalyzeRunsContext.Provider>
   );

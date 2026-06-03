@@ -12,6 +12,7 @@ class PresetCreate(BaseModel):
     sort_by: str = "market_cap"
     sort_dir: Literal["asc", "desc"] = "desc"
     schedule_enabled: bool = False
+    cron_expr: str = "5 22 * * *"
     notify_channels: list[Literal["email", "webhook"]] | None = None
 
 
@@ -22,6 +23,7 @@ class PresetPatch(BaseModel):
     sort_by: str | None = None
     sort_dir: Literal["asc", "desc"] | None = None
     schedule_enabled: bool | None = None
+    cron_expr: str | None = None
     notify_channels: list[Literal["email", "webhook"]] | None = None
 
 
@@ -34,6 +36,7 @@ class PresetOut(BaseModel):
     sort_by: str
     sort_dir: str
     schedule_enabled: bool
+    cron_expr: str
     notify_channels: list[str] | None
     last_run_at: datetime | None
     last_match_count: int | None

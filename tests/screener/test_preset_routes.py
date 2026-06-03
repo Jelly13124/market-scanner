@@ -1,6 +1,7 @@
 from __future__ import annotations
 from datetime import date
 from decimal import Decimal
+from unittest.mock import MagicMock
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -12,6 +13,7 @@ from app.backend.database.models import Base
 from app.backend.repositories.screener_repository import ScreenerRepository, SnapshotRow
 from app.backend.routes.auth import router as auth_router
 from app.backend.routes.screener import router as screener_router
+from app.backend.services.scheduler_service import get_scheduler_service
 
 
 @pytest.fixture()
@@ -32,6 +34,7 @@ def client():
     app.include_router(auth_router)
     app.include_router(screener_router)
     app.dependency_overrides[get_db] = override
+    app.dependency_overrides[get_scheduler_service] = lambda: MagicMock()
     db = TS()
     ScreenerRepository(db).bulk_upsert([
         SnapshotRow(ticker="AAPL", market="US", snapshot_date=date(2026, 5, 28),

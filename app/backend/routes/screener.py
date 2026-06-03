@@ -12,6 +12,7 @@ import logging
 from datetime import date, datetime, timezone
 from typing import Annotated
 
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import func, select
@@ -32,6 +33,7 @@ from app.backend.models.screener_schemas import (
 from app.backend.models.screener_preset_schemas import PresetCreate, PresetOut, PresetPatch
 from app.backend.repositories.screener_preset_repository import ScreenerPresetRepository
 from app.backend.repositories.screener_repository import ScreenerRepository
+from app.backend.services.scheduler_service import SchedulerService, get_scheduler_service
 from app.backend.services.snapshot_refresh import get_refresh_state, start_refresh
 from src.screener.column_metadata import COLUMN_METADATA
 
@@ -167,6 +169,14 @@ def snapshot_refresh_status() -> SnapshotRefreshStateOut:
     return SnapshotRefreshStateOut(**get_refresh_state())
 
 
+def _validate_cron(expr: str) -> None:
+    """400 on an invalid cron expression (mirrors report_schedules)."""
+    try:
+        CronTrigger.from_crontab(expr)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, f"Invalid cron expression: {expr!r}") from e
+
+
 @router.get("/presets", response_model=list[PresetOut])
 def list_presets(
     db: Session = Depends(get_db),
@@ -180,13 +190,20 @@ def create_preset(
     body: PresetCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    scheduler: SchedulerService = Depends(get_scheduler_service),
 ) -> PresetOut:
+    _validate_cron(body.cron_expr)
     p = ScreenerPresetRepository(db).create(
         name=body.name, market=body.market, filters=body.filters,
         sort_by=body.sort_by, sort_dir=body.sort_dir,
-        schedule_enabled=body.schedule_enabled, notify_channels=body.notify_channels,
+        schedule_enabled=body.schedule_enabled, cron_expr=body.cron_expr,
+        notify_channels=body.notify_channels,
         user_id=current_user.id,
     )
+    try:
+        scheduler.register_screener_preset(p)
+    except Exception as e:
+        logger.warning("register screener preset %s failed: %s", p.id, e)
     return PresetOut.model_validate(p)
 
 
@@ -196,10 +213,17 @@ def patch_preset(
     body: PresetPatch,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    scheduler: SchedulerService = Depends(get_scheduler_service),
 ) -> PresetOut:
+    if body.cron_expr is not None:
+        _validate_cron(body.cron_expr)
     p = ScreenerPresetRepository(db).patch(preset_id, body.model_dump(exclude_unset=True), user_id=current_user.id)
     if p is None:
         raise HTTPException(404, f"No preset {preset_id}")
+    try:
+        scheduler.register_screener_preset(p)
+    except Exception as e:
+        logger.warning("re-register screener preset %s failed: %s", p.id, e)
     return PresetOut.model_validate(p)
 
 
@@ -208,9 +232,14 @@ def delete_preset(
     preset_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    scheduler: SchedulerService = Depends(get_scheduler_service),
 ) -> Response:
     if not ScreenerPresetRepository(db).delete(preset_id, user_id=current_user.id):
         raise HTTPException(404, f"No preset {preset_id}")
+    try:
+        scheduler.unregister_screener_preset(preset_id)
+    except Exception as e:
+        logger.warning("unregister screener preset %s failed: %s", preset_id, e)
     return Response(status_code=204)
 
 

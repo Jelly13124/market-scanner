@@ -79,8 +79,10 @@ class TestLifecycle:
             ScannerConfigRepository(session).create(name="b", universe_kind="sp500", is_enabled=False, user_id=1)
             ScannerConfigRepository(session).create(name="c", universe_kind="sp500", is_enabled=True, user_id=1)
         svc.start()
-        # 2 enabled scanner configs + 1 singleton daily pipeline job + 1 daily research job + 1 screener snapshot job + 1 screener preset job
-        assert svc._scheduler.add_job.call_count == 6
+        # 2 enabled scanner configs + 1 daily pipeline + 1 daily research + 1 screener
+        # snapshot. Screener presets now register PER-PRESET crons on demand; none
+        # are enabled here, so the old single global preset job is gone.
+        assert svc._scheduler.add_job.call_count == 5
         job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
         assert "daily-pipeline" in job_ids
         assert "research_daily" in job_ids
@@ -89,8 +91,9 @@ class TestLifecycle:
         """Pipeline and research jobs are independent of scanner configs —
         both must register even when no scanner configs exist."""
         svc.start()
-        # No configs, but daily pipeline + daily research + screener snapshot + screener preset still registered
-        assert svc._scheduler.add_job.call_count == 4
+        # No configs, but daily pipeline + daily research + screener snapshot still
+        # registered. (Screener presets register per-preset; none enabled here.)
+        assert svc._scheduler.add_job.call_count == 3
         job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
         assert "daily-pipeline" in job_ids
         assert "research_daily" in job_ids
@@ -171,7 +174,7 @@ class TestRunNow:
             svc = SchedulerService(session_factory, scanner)
         result = svc.run_now(7)
         assert result == 42
-        scanner.execute_async.assert_called_once_with(7)
+        scanner.execute_async.assert_called_once_with(7, deliver_emails=True)
         scanner.execute.assert_not_called()
 
 

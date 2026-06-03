@@ -139,12 +139,20 @@ class SchedulerService:
         except Exception as e:
             logger.warning("Failed to register screener snapshot job: %s", e)
 
-        # Register the singleton daily screener-preset cron — 22:05 ET
-        # every day, 5 min after the snapshot so fresh rows are available.
+        # Register a per-preset cron for each enabled screener preset (each in
+        # its owner's timezone). Replaces the old single global 22:05 preset
+        # cron so users can pick a per-preset frequency/time; the snapshot cron
+        # above still rebuilds the rows the presets filter.
         try:
-            self._register_preset_job()
+            with self._session_factory() as session:
+                presets = ScreenerPresetRepository(session).list_enabled()
+            for p in presets:
+                try:
+                    self.register_screener_preset(p)
+                except Exception as e:
+                    logger.warning("Failed to register screener preset %s: %s", p.id, e)
         except Exception as e:
-            logger.warning("Failed to register screener preset job: %s", e)
+            logger.warning("Failed to load screener presets: %s", e)
 
         # Register each user's enabled report-delivery schedules (Stage 3).
         try:
@@ -214,11 +222,12 @@ class SchedulerService:
         restart. Each ``_register`` / ``register_report_schedule`` re-resolves
         the user's tz via ``_user_tz``. Per-job failures are logged, not raised,
         so one bad cron can't abort the rest."""
-        from app.backend.database.models import ReportSchedule
+        from app.backend.database.models import ReportSchedule, ScreenerPreset
 
         with self._session_factory() as session:
             configs = ScannerConfigRepository(session).list_for_user(user_id, enabled_only=True)
             schedules = session.query(ReportSchedule).filter(ReportSchedule.user_id == user_id, ReportSchedule.is_enabled.is_(True)).all()
+            presets = session.query(ScreenerPreset).filter(ScreenerPreset.user_id == user_id, ScreenerPreset.schedule_enabled.is_(True)).all()
 
         for cfg in configs:
             try:
@@ -230,6 +239,11 @@ class SchedulerService:
                 self.register_report_schedule(sched)
             except Exception as e:
                 logger.warning("reregister_user_jobs: report schedule %s failed: %s", sched.id, e)
+        for preset in presets:
+            try:
+                self.register_screener_preset(preset)
+            except Exception as e:
+                logger.warning("reregister_user_jobs: screener preset %s failed: %s", preset.id, e)
 
     def run_now(self, config_id: int, *, deliver_emails: bool = True) -> int:
         """Trigger a manual scan; return the new ``run_id`` immediately.
@@ -335,6 +349,45 @@ class SchedulerService:
         if self._scheduler.get_job(job_id):
             self._scheduler.remove_job(job_id)
             logger.info("Unregistered report-schedule job %s", job_id)
+
+    # ------------------------------------------------------------------
+    # Per-preset screener crons — called by REST routes after preset CRUD
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _screener_preset_job_id(preset_id: int) -> str:
+        return f"screener-preset-{preset_id}"
+
+    def register_screener_preset(self, preset) -> None:
+        """(Re)register a screener preset's per-preset cron in the owner's tz.
+        No-op (and removes any existing job) when the preset's schedule is
+        disabled. Mirrors register_report_schedule."""
+        self.unregister_screener_preset(preset.id)
+        if not preset.schedule_enabled:
+            return
+        tz = self._user_tz(preset.user_id)
+        try:
+            trigger = CronTrigger.from_crontab(preset.cron_expr, timezone=tz)
+        except (ValueError, TypeError) as e:
+            raise ValueError(f"Invalid cron expression {preset.cron_expr!r}: {e}") from e
+        job_id = self._screener_preset_job_id(preset.id)
+        self._scheduler.add_job(
+            _run_single_preset_job,
+            trigger=trigger,
+            id=job_id,
+            args=[preset.id],
+            replace_existing=True,
+            max_instances=1,
+            misfire_grace_time=3600,
+            coalesce=True,
+        )
+        logger.info("Registered screener-preset job %s (cron=%r, tz=%s)", job_id, preset.cron_expr, tz)
+
+    def unregister_screener_preset(self, preset_id: int) -> None:
+        job_id = self._screener_preset_job_id(preset_id)
+        if self._scheduler.get_job(job_id):
+            self._scheduler.remove_job(job_id)
+            logger.info("Unregistered screener-preset job %s", job_id)
 
     # ------------------------------------------------------------------
     # Daily scanner→agent pipeline job
@@ -777,6 +830,52 @@ def _run_preset_job_body() -> None:
                     dispatcher.dispatch_screener_match(payload=payload, event_type="screener.match", user_id=p.user_id)
             except Exception as e:
                 logger.exception("preset %s failed: %s", getattr(p, "id", "?"), e)
+    finally:
+        db.close()
+
+
+def _run_single_preset_job(preset_id: int) -> None:
+    """Run ONE schedule-enabled screener preset against the latest snapshot on
+    its own per-preset cron; notify the owner on a non-empty match. Mirrors
+    _run_preset_job_body but for a single preset (per-user cadence). Failures
+    log + swallow so APScheduler never sees a raised job."""
+    from datetime import date as _date, datetime as _dt, timezone as _tz
+
+    from app.backend.database.models import ScreenerPreset
+
+    db = SessionLocal()
+    try:
+        p = db.query(ScreenerPreset).filter(ScreenerPreset.id == preset_id).first()
+        if p is None or not p.schedule_enabled:
+            return
+        screener = ScreenerRepository(db)
+        market = [p.market] if p.market else None
+        rows, total = screener.query(
+            market=market, filters=p.filters_json or {},
+            sort_by=p.sort_by, sort_dir=p.sort_dir, limit=200,
+        )
+        ScreenerPresetRepository(db).mark_run(p.id, match_count=total, when=_dt.now(_tz.utc))
+        if total > 0 and (p.notify_channels or []):
+            payload = {
+                "preset_id": p.id,
+                "preset_name": p.name,
+                "match_count": total,
+                "snapshot_date": (rows[0].snapshot_date.isoformat() if rows else _date.today().isoformat()),
+                "rows": [
+                    {
+                        "ticker": r.ticker,
+                        "price": str(r.price) if r.price is not None else None,
+                        "pe_ttm": str(r.pe_ttm) if r.pe_ttm is not None else None,
+                        "change_pct": str(r.change_pct) if r.change_pct is not None else None,
+                    }
+                    for r in rows[:25]
+                ],
+            }
+            NotificationDispatcher(SessionLocal).dispatch_screener_match(
+                payload=payload, event_type="screener.match", user_id=p.user_id,
+            )
+    except Exception as e:
+        logger.exception("screener preset %s failed: %s", preset_id, e)
     finally:
         db.close()
 

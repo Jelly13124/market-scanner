@@ -20,12 +20,14 @@ class ScreenerPresetRepository:
     def create(self, *, name: str, market: str | None, filters: dict,
                sort_by: str = "market_cap", sort_dir: str = "desc",
                schedule_enabled: bool = False,
+               cron_expr: str = "5 22 * * *",
                notify_channels: list[str] | None = None,
                user_id: int) -> ScreenerPreset:
         row = ScreenerPreset(
             name=name, market=market, filters_json=filters or {},
             sort_by=sort_by, sort_dir=sort_dir,
-            schedule_enabled=schedule_enabled, notify_channels=notify_channels,
+            schedule_enabled=schedule_enabled, cron_expr=cron_expr,
+            notify_channels=notify_channels,
             user_id=user_id,
         )
         self.db.add(row); self.db.commit(); self.db.refresh(row)
@@ -57,7 +59,7 @@ class ScreenerPresetRepository:
         if row is None:
             return None
         allowed = {"name", "market", "filters_json", "sort_by", "sort_dir",
-                   "schedule_enabled", "notify_channels"}
+                   "schedule_enabled", "cron_expr", "notify_channels"}
         if "filters" in fields:
             fields = {**fields, "filters_json": fields.pop("filters")}
         for k, v in fields.items():

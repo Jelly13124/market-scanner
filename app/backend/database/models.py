@@ -667,6 +667,10 @@ class ScreenerPreset(Base):
     sort_by = Column(String(32), nullable=False, default="market_cap")
     sort_dir = Column(String(4), nullable=False, default="desc")
     schedule_enabled = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    # Per-preset cron cadence, evaluated in the owner's timezone. server_default
+    # = 22:05 daily so rows predating this column keep the old global preset-cron
+    # time; users can now set a per-preset frequency/time.
+    cron_expr = Column(String(100), nullable=False, server_default="5 22 * * *")
     notify_channels = Column(JSON)  # ["email","webhook"]
     last_run_at = Column(DateTime(timezone=True))
     last_match_count = Column(Integer)

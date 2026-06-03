@@ -65,6 +65,17 @@ class ScannerConfigBase(BaseModel):
         False,
         description="If true, the auto-SOP runs use the persona router",
     )
+    # Email the watchlist ticker list to the user's verified recipients after a
+    # scan. ``email_reports`` additionally emails the auto-SOP reports. Delivery
+    # is wired in a later task.
+    email_watchlist: bool = Field(
+        False,
+        description="If true, email the watchlist ticker list after each scan",
+    )
+    email_reports: bool = Field(
+        False,
+        description="If true, also email the auto-SOP reports after each scan",
+    )
 
     @model_validator(mode="after")
     def _custom_requires_tickers(self):
@@ -99,6 +110,8 @@ class ScannerConfigUpdateRequest(BaseModel):
     # untouched. Field constraints duplicated so update payloads validate.
     auto_sop_top_n: Optional[int] = Field(None, ge=0, le=50)
     auto_sop_use_personas: Optional[bool] = None
+    email_watchlist: Optional[bool] = None
+    email_reports: Optional[bool] = None
 
 
 class ScannerConfigResponse(ScannerConfigBase):

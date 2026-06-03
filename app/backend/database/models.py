@@ -116,6 +116,11 @@ class ScannerConfig(Base):
         default=False,
         server_default=sa.false(),
     )
+    # When True, email the watchlist ticker list to the user's verified report
+    # recipients after a scan completes. Delivery wiring is a later task.
+    email_watchlist = Column(Boolean, nullable=False, default=False, server_default=sa.false())
+    # When True, also email the auto-SOP reports to those recipients.
+    email_reports = Column(Boolean, nullable=False, default=False, server_default=sa.false())
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
 

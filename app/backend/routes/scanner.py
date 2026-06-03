@@ -142,6 +142,8 @@ def create_config(
         user_watchlist_id=body.user_watchlist_id,
         auto_sop_top_n=body.auto_sop_top_n,
         auto_sop_use_personas=body.auto_sop_use_personas,
+        email_watchlist=body.email_watchlist,
+        email_reports=body.email_reports,
         user_id=current_user.id,
     )
     try:

@@ -41,6 +41,8 @@ class ScannerConfigRepository:
         user_watchlist_id: Optional[int] = None,
         auto_sop_top_n: int = 0,
         auto_sop_use_personas: bool = False,
+        email_watchlist: bool = False,
+        email_reports: bool = False,
         user_id: Optional[int] = None,
     ) -> ScannerConfig:
         config = ScannerConfig(
@@ -54,6 +56,8 @@ class ScannerConfigRepository:
             user_watchlist_id=user_watchlist_id,
             auto_sop_top_n=auto_sop_top_n,
             auto_sop_use_personas=auto_sop_use_personas,
+            email_watchlist=email_watchlist,
+            email_reports=email_reports,
             user_id=user_id,
         )
         self.db.add(config)
@@ -112,6 +116,8 @@ class ScannerConfigRepository:
         user_watchlist_id: Optional[int] = None,
         auto_sop_top_n: Optional[int] = None,
         auto_sop_use_personas: Optional[bool] = None,
+        email_watchlist: Optional[bool] = None,
+        email_reports: Optional[bool] = None,
         _set_watchlist_id: bool = False,
     ) -> Optional[ScannerConfig]:
         """Partial update. ``_set_watchlist_id`` is the explicit flag the
@@ -144,6 +150,10 @@ class ScannerConfigRepository:
             config.auto_sop_top_n = auto_sop_top_n
         if auto_sop_use_personas is not None:
             config.auto_sop_use_personas = auto_sop_use_personas
+        if email_watchlist is not None:
+            config.email_watchlist = email_watchlist
+        if email_reports is not None:
+            config.email_reports = email_reports
         self.db.commit()
         self.db.refresh(config)
         return config

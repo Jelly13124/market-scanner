@@ -204,8 +204,17 @@ def run_workflow_backtest(
 
     # Build (or accept) the as-of bundles, then the dispatcher.
     if bundles is None:
+        import datetime as _dt
+
         span_start = min(scan_dates) if scan_dates else None
         span_end = max(scan_dates) if scan_dates else None
+        if span_start and span_end:
+            # Lookback so agents (run_hedge_fund uses scan_date-250d) + scanner
+            # detectors have price history BEFORE the earliest scan date; forward
+            # buffer so the portfolio sim has bars to mark + exit positions AFTER
+            # the latest scan date. 400/120 days mirror the scanner-eval prefetch.
+            span_start = (_dt.date.fromisoformat(span_start[:10]) - _dt.timedelta(days=400)).isoformat()
+            span_end = (_dt.date.fromisoformat(span_end[:10]) + _dt.timedelta(days=120)).isoformat()
         bundles = build_bundles(
             universe_tickers, provider_factory, span_start, span_end, enrich=False,
         )

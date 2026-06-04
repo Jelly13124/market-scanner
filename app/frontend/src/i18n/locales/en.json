@@ -263,6 +263,12 @@
       "useCanvasHint": "One-click analyses from Scanner/Screener reuse your Analyze canvas sections instead of running a full report."
     }
   },
+  "onboarding": {
+    "gate": {
+      "tooltip": "Add an API key first",
+      "addKey": "Add API key"
+    }
+  },
   "lab": {
     "title": "Strategy Lab",
     "strategies": "Strategies",

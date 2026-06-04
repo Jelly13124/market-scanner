@@ -263,6 +263,12 @@
       "useCanvasHint": "从扫描器/筛选器一键分析时,复用你 Analyze 画布上的 section,而不是跑完整报告。"
     }
   },
+  "onboarding": {
+    "gate": {
+      "tooltip": "请先添加 API Key",
+      "addKey": "添加 API Key"
+    }
+  },
   "lab": {
     "title": "策略实验室",
     "strategies": "策略列表",

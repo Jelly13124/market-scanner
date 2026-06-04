@@ -16,11 +16,14 @@ import {
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/button';
 import { useAnalyzeRuns } from '@/contexts/analyze-runs-context';
+import { useApiKeysStatus } from '@/contexts/api-keys-status-context';
+import { useTabsContext } from '@/contexts/tabs-context';
 import { useReportHtml } from '@/hooks/use-report-html';
 import { uiReportLanguage } from '@/lib/ui-language';
 import { analyzeService } from '@/services/analyze-service';
 import { analyzeBus, type AnalyzeRequest as AnalyzeBusRequest } from '@/services/analyze-bus';
 import { setAnalyzeConfigSnapshot } from '@/services/analyze-config-snapshot';
+import { TabService } from '@/services/tab-service';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
 import { ExternalLink, Mail } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -43,6 +46,11 @@ import { VerdictCard } from './verdict-card';
 export function AnalyzePanel() {
   const canvasRef = useRef<FlowCanvasHandle | null>(null);
   const { t } = useTranslation();
+  const { hasKeys } = useApiKeysStatus();
+  const { openTab } = useTabsContext();
+  const openApiKeys = useCallback(() => {
+    openTab({ id: 'settings', ...TabService.createSettingsTab() });
+  }, [openTab]);
 
   // Trigger re-render so the palette knows when '+' buttons should be disabled.
   const [canvasTick, setCanvasTick] = useState(0);
@@ -192,6 +200,8 @@ export function AnalyzePanel() {
         }}
         onResetToDefault={() => canvasRef.current?.resetToDefault()}
         onSchedule={handleSchedule}
+        hasKeys={hasKeys}
+        onAddKey={openApiKeys}
       />
 
       {/* 2. Canvas dominates the viewport — full width */}

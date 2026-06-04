@@ -16,7 +16,7 @@ import {
   REQUIRED_SECTIONS,
   SECTION_ORDER,
 } from '@/types/analyze';
-import { CalendarClock, Loader2, Play, Plus, RotateCcw } from 'lucide-react';
+import { CalendarClock, KeyRound, Loader2, Play, Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -42,6 +42,10 @@ interface AnalyzeToolbarProps extends FlowListProps {
   onResetToDefault: () => void;
   /** Open the "schedule this ticker" dialog (Task 10). Hidden when omitted. */
   onSchedule?: () => void;
+  /** When false, Run is disabled + an "Add API key" button appears. Defaults true. */
+  hasKeys?: boolean;
+  /** Open Settings → API Keys. Shown only when hasKeys is false. */
+  onAddKey?: () => void;
 }
 
 function formatElapsed(s: number): string {
@@ -54,6 +58,8 @@ export function AnalyzeToolbar({
   running, canRun, onRun, sectionCount,
   presentSections, hasInputNode, onAddSection, onAddInput, onResetToDefault,
   onSchedule,
+  hasKeys = true,
+  onAddKey,
   ...flowListProps
 }: AnalyzeToolbarProps) {
   const [elapsed, setElapsed] = useState(0);
@@ -207,12 +213,24 @@ export function AnalyzeToolbar({
           {t('analyze.toolbar.schedule')}
         </Button>
       )}
+      {!hasKeys && onAddKey && (
+        <Button
+          onClick={onAddKey}
+          size="sm"
+          variant="outline"
+          className="h-7 border-amber-500/60 text-amber-600"
+          title={t('onboarding.gate.tooltip')}
+        >
+          <KeyRound className="size-3 mr-1" />
+          {t('onboarding.gate.addKey')}
+        </Button>
+      )}
       <Button
         onClick={onRun}
-        disabled={running || !canRun}
+        disabled={running || !canRun || !hasKeys}
         size="sm"
         className="h-7"
-        title={canRun ? t('analyze.toolbar.run') : t('analyze.errors.noInput')}
+        title={!hasKeys ? t('onboarding.gate.tooltip') : (canRun ? t('analyze.toolbar.run') : t('analyze.errors.noInput'))}
       >
         {running ? (
           <>

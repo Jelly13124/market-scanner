@@ -175,7 +175,8 @@
       "run": "Run {{count}} reports",
       "capNote": "At most {{cap}} at a time — only the first {{cap}} will run.",
       "progress": "Batch analysis {{done}}/{{total}} (failed {{failed}})",
-      "done": "Batch done — {{done}}/{{total}} reports ready (failed {{failed}})"
+      "done": "Batch done — {{done}}/{{total}} reports ready (failed {{failed}})",
+      "emailReports": "Email each report to my verified addresses"
     },
     "section": {
       "persona": "Persona",

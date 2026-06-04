@@ -175,7 +175,8 @@
       "run": "跑 {{count}} 个报告",
       "capNote": "最多 {{cap}} 只 — 仅运行前 {{cap}} 只。",
       "progress": "批量分析 {{done}}/{{total}}（失败 {{failed}}）",
-      "done": "批量完成 — {{done}}/{{total}} 份报告就绪（失败 {{failed}}）"
+      "done": "批量完成 — {{done}}/{{total}} 份报告就绪（失败 {{failed}}）",
+      "emailReports": "把每份报告邮件发到我已验证的邮箱"
     },
     "section": {
       "persona": "人格",

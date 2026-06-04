@@ -12,6 +12,7 @@
 // never stops the rest).
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -23,9 +24,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
-import { analyzeBus } from '@/services/analyze-bus';
+import { useAnalyzeRuns } from '@/contexts/analyze-runs-context';
 import { analyzeService } from '@/services/analyze-service';
-import type { Market, Objective, ReportLanguage } from '@/types/analyze';
+import type { AnalyzeReportDetail, AnalyzeRunRequest, Market, Objective, ReportLanguage } from '@/types/analyze';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -57,7 +58,8 @@ export interface BatchReportProgress {
  */
 export async function runBatchReports(
   tickers: string[],
-  opts: { objective: Objective; market: Market; reportLanguage: ReportLanguage },
+  opts: { objective: Objective; market: Market; reportLanguage: ReportLanguage; emailReports: boolean },
+  runOne: (req: AnalyzeRunRequest) => Promise<AnalyzeReportDetail | null>,
   onProgress: (p: BatchReportProgress) => void,
 ): Promise<BatchReportProgress> {
   const total = tickers.length;
@@ -71,24 +73,27 @@ export async function runBatchReports(
       cursor += 1;
       if (i >= tickers.length) return;
       const ticker = tickers[i];
-      try {
-        await analyzeService.runAnalyze({
-          ticker,
-          objective: opts.objective,
-          market: opts.market,
-          // null => backend runs the full default section set (all 16).
-          included_sections: null,
-          use_personas: false,
-          report_language: opts.reportLanguage,
-        });
-        // Stream into Recent Reports as soon as this one lands.
-        analyzeBus.notifyReportsChanged();
-      } catch {
+      // runOne (= the runs-sidebar's runTracked) tracks the run in the sidebar,
+      // never rejects, and resolves with the report detail (or null on failure).
+      const detail = await runOne({
+        ticker,
+        objective: opts.objective,
+        market: opts.market,
+        // null => backend runs the full default section set.
+        included_sections: null,
+        use_personas: false,
+        report_language: opts.reportLanguage,
+      });
+      if (detail) {
+        if (opts.emailReports) {
+          // Email failures must not fail the batch.
+          try { await analyzeService.emailReport(detail.id); } catch { /* ignore */ }
+        }
+      } else {
         failed += 1;
-      } finally {
-        done += 1;
-        onProgress({ done, total, failed });
       }
+      done += 1;
+      onProgress({ done, total, failed });
     }
   }
 
@@ -121,8 +126,10 @@ export function BatchReportDialog({
   onStarted,
 }: BatchReportDialogProps) {
   const { t, i18n } = useTranslation();
+  const { runTracked } = useAnalyzeRuns();
   const [objective, setObjective] = useState<Objective>('general_research');
   const [market, setMarket] = useState<Market>(defaultMarket);
+  const [emailReports, setEmailReports] = useState(false);
 
   const capped = tickers.slice(0, BATCH_REPORT_CAP);
   const n = capped.length;
@@ -148,7 +155,8 @@ export function BatchReportDialog({
 
     void runBatchReports(
       toRun,
-      { objective, market, reportLanguage },
+      { objective, market, reportLanguage, emailReports },
+      runTracked,
       (p) => {
         toast.loading(
           t('analyze.batch.progress', {
@@ -216,6 +224,12 @@ export function BatchReportDialog({
               </SelectContent>
             </Select>
           </div>
+
+          {/* Email each finished report to the user's verified recipients. */}
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <Checkbox checked={emailReports} onCheckedChange={(v) => setEmailReports(v === true)} />
+            <span>{t('analyze.batch.emailReports', 'Email each report to my verified addresses')}</span>
+          </label>
 
           {overCap && (
             <p className="text-xs text-amber-500">

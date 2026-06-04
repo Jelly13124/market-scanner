@@ -35,6 +35,9 @@ interface AnalyzeRunsContextValue {
   runs: AnalyzeRun[];
   /** Fire an analysis non-blocking; it appears in the sidebar immediately. */
   startRun: (req: AnalyzeRunRequest) => void;
+  /** Like startRun but awaitable — resolves with the report detail (or null on
+   *  failure). For batch callers that pool + email each result. */
+  runTracked: (req: AnalyzeRunRequest) => Promise<AnalyzeReportDetail | null>;
   /** Track an already-triggered multi-agent pipeline run by its run_id. */
   startPipelineRun: (runId: string, label: string) => void;
   /** Drop all finished (done/failed) runs; keep the still-running ones. */
@@ -58,13 +61,15 @@ let _seq = 0;
 export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
   const [runs, setRuns] = useState<AnalyzeRun[]>([]);
 
-  const startRun = useCallback((req: AnalyzeRunRequest) => {
+  // Core runner: push a tracked run, fire it, resolve with the report detail
+  // (or null on failure) so batch callers can await + email each result.
+  const runTracked = useCallback((req: AnalyzeRunRequest): Promise<AnalyzeReportDetail | null> => {
     const id = `${req.ticker}-${Date.now()}-${_seq++}`;
     setRuns((prev) => [
       { id, ticker: req.ticker, kind: 'sop', status: 'running', startedAt: Date.now() },
       ...prev,
     ]);
-    analyzeService
+    return analyzeService
       .runAnalyze(req)
       .then((detail) => {
         setRuns((prev) =>
@@ -76,6 +81,7 @@ export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
         );
         // Refresh the sidebar Recent Reports list.
         analyzeBus.notifyReportsChanged();
+        return detail;
       })
       .catch((e: unknown) => {
         setRuns((prev) =>
@@ -90,8 +96,14 @@ export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
               : r,
           ),
         );
+        return null;
       });
   }, []);
+
+  // Fire-and-forget wrapper used by the panel + the analyze bus.
+  const startRun = useCallback((req: AnalyzeRunRequest) => {
+    void runTracked(req);
+  }, [runTracked]);
 
   const startPipelineRun = useCallback((runId: string, label: string) => {
     const id = `pipeline-${runId}`;
@@ -158,7 +170,7 @@ export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
     );
 
   return (
-    <AnalyzeRunsContext.Provider value={{ runs, startRun, startPipelineRun, clearFinished, latestDone }}>
+    <AnalyzeRunsContext.Provider value={{ runs, startRun, runTracked, startPipelineRun, clearFinished, latestDone }}>
       {children}
     </AnalyzeRunsContext.Provider>
   );

@@ -2931,3 +2931,7 @@ Brainstorm → spec (`docs/superpowers/specs/2026-06-03-onboarding-design.md`) �
 - T6 sidebar Home entry (`HomeAction` → closeAllTabs; Home is the no-tabs state, NOT a tab type). Commit 5c0013e.
 - T7 first-visit Analyze hint banner (localStorage-dismissed). Commit a970999.
 - DECISION (user): API-key gate is HARD (disable Run), not soft. Tour (spotlight walkthrough) deferred — NOT in v1.
+
+## Session — workflow_backtest (offline TDD build)
+
+- T1 `v2/workflow_backtest/` package skeleton + `Decision`/`ArmResult` dataclasses (types.py) — TDD, test_types.py 2 passed. Commit 0768742.

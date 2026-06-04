@@ -75,3 +75,9 @@ outputs/
 
 # Alembic (keep migration files, but ignore generated/cache files)
 app/backend/alembic/versions/__pycache__/
+
+# Workflow backtest run artifacts — keep findings_agent_backtest.md + decisions.csv,
+# ignore the resumable per-cell JSON + the run log
+workflow_backtest/cell_*.json
+workflow_backtest_run.log
+workflow_backtest_preflight/

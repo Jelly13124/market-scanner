@@ -267,6 +267,17 @@
     "gate": {
       "tooltip": "请先添加 API Key",
       "addKey": "添加 API Key"
+    },
+    "home": {
+      "title": "欢迎使用 Quant Lab",
+      "subtitle": "AI 股票深度研究 · 市场扫描 · 策略回测 —— 用你自己的 API Key。",
+      "exploreLabel": "或直接进入某个功能",
+      "cards": {
+        "analyze": { "title": "Analyze", "desc": "深挖一只股，生成完整报告" },
+        "scanner": { "title": "Scanner", "desc": "批量扫描一个股票池 + 自动分析" },
+        "screener": { "title": "Screener", "desc": "按你的条件筛选股票" },
+        "lab": { "title": "策略实验室", "desc": "搭建 + 回测策略" }
+      }
     }
   },
   "lab": {

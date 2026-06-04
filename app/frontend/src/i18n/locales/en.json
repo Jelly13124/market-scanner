@@ -267,6 +267,17 @@
     "gate": {
       "tooltip": "Add an API key first",
       "addKey": "Add API key"
+    },
+    "home": {
+      "title": "Welcome to Quant Lab",
+      "subtitle": "AI deep-dive research · market scanning · backtesting — with your own API key.",
+      "exploreLabel": "Or jump into a tool",
+      "cards": {
+        "analyze": { "title": "Analyze", "desc": "Deep-dive one stock into a full report" },
+        "scanner": { "title": "Scanner", "desc": "Batch-scan a universe + auto-analyze" },
+        "screener": { "title": "Screener", "desc": "Filter stocks by your criteria" },
+        "lab": { "title": "Strategy Lab", "desc": "Build + backtest a strategy" }
+      }
     }
   },
   "lab": {

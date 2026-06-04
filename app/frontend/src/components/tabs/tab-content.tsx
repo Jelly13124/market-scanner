@@ -1,7 +1,7 @@
+import { HomeScreen } from '@/components/home/home-screen';
 import { useTabsContext } from '@/contexts/tabs-context';
 import { cn } from '@/lib/utils';
 import { TabService } from '@/services/tab-service';
-import { FileText, FolderOpen } from 'lucide-react';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -41,22 +41,8 @@ export function TabContent({ className }: TabContentProps) {
 
   if (!activeTab) {
     return (
-      <div className={cn(
-        "h-full w-full flex items-center justify-center bg-background text-muted-foreground",
-        className
-      )}>
-        <div className="text-center space-y-4">
-          <FolderOpen size={48} className="mx-auto text-muted-foreground/50" />
-          <div>
-            <div className="text-xl font-medium mb-2">{t('tabBar.welcome')}</div>
-            <div className="text-sm max-w-md">
-              {t('tabBar.welcomeHint')}
-            </div>
-          </div>
-          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground/70">
-            <FileText size={14} />
-          </div>
-        </div>
+      <div className={cn('h-full w-full', className)}>
+        <HomeScreen />
       </div>
     );
   }

@@ -18,9 +18,9 @@ clamped to that date):
      empty scanner_context.
 
 After all dates: forward-return attribution per arm (UNCLAMPED ``fd`` so
-outcomes aren't truncated to the as-of point), Welch A/B of BUY 21d returns
-per regime, equal-weight fixed-hold portfolio sim per arm (post-cutoff dates),
-then ``report.write``.
+outcomes aren't truncated to the as-of point), Welch A/B of direction-adjusted
+21d SIGNAL returns of directional bets (long+short) per regime, equal-weight
+fixed-hold portfolio sim per arm (post-cutoff dates), then ``report.write``.
 """
 
 from __future__ import annotations
@@ -263,8 +263,9 @@ def run_workflow_backtest(
     )
 
     decision_rows: list[dict] = []
-    # forward-return rows keyed for A/B: {(regime_name, arm): [ret_21d, ...]}
-    buys_by_regime_arm: dict[tuple, list] = {}
+    # direction-adjusted SIGNAL returns keyed for A/B:
+    #   {(regime_name, arm): [signal_ret_21d, ...]} over ALL bets (long + short)
+    bets_by_regime_arm: dict[tuple, list] = {}
     regime_labels: dict[str, str] = {}
 
     for scan_date in scan_dates:
@@ -277,7 +278,7 @@ def run_workflow_backtest(
             if ar is None:
                 continue
             decision_list = list(ar.decisions.values())
-            # forward returns for BUYs on this date/arm
+            # forward returns for directional bets (buy+short) on this date/arm
             fwd_rows = attach_forward_returns(
                 decision_list, fd, scan_date=scan_date, windows=_FWD_WINDOWS,
                 benchmark_ticker=_BENCHMARK, benchmark_prices=bench_prices,
@@ -299,17 +300,19 @@ def run_workflow_backtest(
                     "ret_42d": fr.get("ret_42d"),
                     "ret_63d": fr.get("ret_63d"),
                     "alpha_21d": fr.get("alpha_21d"),
+                    "signal_ret_21d": fr.get("signal_ret_21d"),
                 })
             for r in fwd_rows:
-                buys_by_regime_arm.setdefault((regime_name, arm), []).append(r.get("ret_21d"))
+                # direction-adjusted signal return credits good long OR short calls
+                bets_by_regime_arm.setdefault((regime_name, arm), []).append(r.get("signal_ret_21d"))
 
-    # --- A/B Welch per regime (scanner buys vs random buys) ---------------
+    # --- A/B Welch per regime (scanner bets vs random bets, direction-adjusted) ---
     ab_by_regime: dict[str, dict] = {}
-    regimes = sorted({rn for (rn, _a) in buys_by_regime_arm} | set(regime_labels))
+    regimes = sorted({rn for (rn, _a) in bets_by_regime_arm} | set(regime_labels))
     for rn in regimes:
-        scanner_buys = buys_by_regime_arm.get((rn, "scanner"), [])
-        random_buys = buys_by_regime_arm.get((rn, "random"), [])
-        ab = ab_welch(scanner_buys, random_buys)
+        scanner_bets = bets_by_regime_arm.get((rn, "scanner"), [])
+        random_bets = bets_by_regime_arm.get((rn, "random"), [])
+        ab = ab_welch(scanner_bets, random_bets)
         ab["regime_label"] = regime_labels.get(rn, "")
         ab_by_regime[rn] = ab
 
@@ -325,9 +328,9 @@ def run_workflow_backtest(
             ar = results_by_date.get(scan_date, {}).get(arm)
             if ar is None:
                 continue
-            buys = [d for d in ar.decisions.values() if d.action == "buy"]
-            if buys:
-                decisions_by_date.setdefault(scan_date, []).extend(buys)
+            bets = [d for d in ar.decisions.values() if d.action in ("buy", "short")]
+            if bets:
+                decisions_by_date.setdefault(scan_date, []).extend(bets)
         try:
             sim = simulate(
                 decisions_by_date, close_map, trading_days=trading_days, hold_days=hold_days,

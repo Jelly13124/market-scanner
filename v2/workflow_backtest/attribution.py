@@ -2,11 +2,14 @@
 
 Two pieces:
 
-  * ``attach_forward_returns`` — for each BUY decision, compute what the
-    ticker actually did over the forward windows (raw return, benchmark
-    return, alpha) by reusing ``compute_forward_returns``. The fd passed
-    here is the UNCLAMPED full-series client so OUTCOMES aren't clipped to
-    the as-of date (the caller deliberately passes a non-as-of fd).
+  * ``attach_forward_returns`` — for each DIRECTIONAL decision (buy → long,
+    short → short), compute what the ticker actually did over the forward
+    windows (raw return, benchmark return, alpha) by reusing
+    ``compute_forward_returns``, then derive the direction-adjusted SIGNAL
+    return (``side * ret``) so a correct short on a falling stock scores as
+    a win. The fd passed here is the UNCLAMPED full-series client so OUTCOMES
+    aren't clipped to the as-of date (the caller deliberately passes a
+    non-as-of fd).
 
   * ``ab_welch`` — Welch two-sample t-test (unequal variances) comparing
     two arms' return distributions (e.g. scanner picks vs random baseline).
@@ -47,25 +50,39 @@ def ab_welch(a, b):
     return {"mean_a": mean_a, "mean_b": mean_b, "diff": diff, "t": t, "n_a": n_a, "n_b": n_b}
 
 
+_SIDE_BY_ACTION = {"buy": 1, "short": -1}
+
+
 def attach_forward_returns(decisions, fd, *, scan_date, windows=(21, 42, 63),
                            benchmark_ticker="SPY", benchmark_prices=None):
-    """Attach realized forward returns to each BUY decision.
+    """Attach realized forward returns to each DIRECTIONAL decision.
 
-    For every Decision with ``action == "buy"``, call
-    ``compute_forward_returns`` and emit a row::
+    A decision is a directional bet iff ``action in {"buy", "short"}``:
+    ``buy`` → ``side=+1`` (long), ``short`` → ``side=-1`` (short).
+    ``hold``/``sell``/``cover`` are NOT opening bets and are skipped.
 
-        {"ticker", "scan_date", "action", "confidence", **fwd_return_dict}
+    For each bet, call ``compute_forward_returns`` and emit a row::
 
-    Non-buy decisions are skipped — we attribute BUYs. ``fd`` should be the
-    UNCLAMPED full-series client so forward OUTCOMES aren't truncated to the
-    scan_date (intentional asymmetry vs the as-of fd used for the signal).
+        {"ticker", "scan_date", "action", "side", "confidence",
+         **fwd_return_dict, "signal_ret_{N}d": side * ret_{N}d, ...}
+
+    The SIGNAL return is the direction-adjusted realized return — a correct
+    short on a -5% move scores +5% — so the A/B credits good directional
+    calls, long OR short. ``fd`` should be the UNCLAMPED full-series client so
+    forward OUTCOMES aren't truncated to the scan_date (intentional asymmetry
+    vs the as-of fd used for the signal).
     """
     rows = []
     for d in decisions:
-        if getattr(d, "action", None) != "buy":
+        side = _SIDE_BY_ACTION.get(getattr(d, "action", None))
+        if side is None:
             continue
         fr = compute_forward_returns(fd, ticker=d.ticker, scan_date=scan_date, windows=windows,
                                      benchmark_ticker=benchmark_ticker, benchmark_prices=benchmark_prices)
-        rows.append({"ticker": d.ticker, "scan_date": scan_date, "action": d.action,
-                     "confidence": getattr(d, "confidence", None), **fr})
+        row = {"ticker": d.ticker, "scan_date": scan_date, "action": d.action,
+               "side": side, "confidence": getattr(d, "confidence", None), **fr}
+        for n in windows:
+            ret = fr.get(f"ret_{n}d")
+            row[f"signal_ret_{n}d"] = (side * ret) if ret is not None else None
+        rows.append(row)
     return rows

@@ -3,9 +3,10 @@
 Two artifacts land in ``out_dir``:
 
   * ``findings_agent_backtest.md`` — human-readable summary with an
-    "## A/B by regime" section (scanner-buys vs random-buys forward-return
-    deltas + Welch t per regime) and an "## Absolute (post-cutoff)" section
-    (per-arm portfolio metrics restricted to post-cutoff dates).
+    "## A/B by regime" section (scanner vs random direction-adjusted SIGNAL
+    return deltas of directional bets (long+short) + Welch t per regime) and an
+    "## Absolute (post-cutoff)" section (per-arm portfolio metrics restricted to
+    post-cutoff dates).
   * ``decisions.csv`` — one row per (scan_date, arm, ticker) decision, flat
     enough to pivot in a spreadsheet.
 
@@ -36,7 +37,7 @@ def _fmt(x, pct=False):
 def _write_decisions_csv(path, decision_rows):
     fields = ["scan_date", "arm", "regime_name", "regime_label", "is_post_cutoff",
               "ticker", "action", "quantity", "confidence", "ret_21d", "ret_42d",
-              "ret_63d", "alpha_21d"]
+              "ret_63d", "alpha_21d", "signal_ret_21d"]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         w = csv.DictWriter(fh, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
@@ -65,7 +66,8 @@ def write(out_dir, results) -> dict:
     # --- A/B by regime ----------------------------------------------------
     lines.append("## A/B by regime")
     lines.append("")
-    lines.append("Forward 21d return of BUY decisions: scanner arm vs random arm.")
+    lines.append("Direction-adjusted 21d SIGNAL return of directional bets (long+short): "
+                 "scanner arm vs random arm.")
     lines.append("")
     lines.append("| regime | label | n_scanner | n_random | mean_scanner | mean_random | diff | welch_t |")
     lines.append("|---|---|---|---|---|---|---|---|")

@@ -1,28 +1,35 @@
-"""Equal-weight, weekly-rebalance, fixed-hold portfolio simulator.
+"""Equal-weight, weekly-rebalance, fixed-hold portfolio simulator (long+short).
 
-Walks an ordered trading-day calendar, entering the BUY decisions emitted on
-each scan_date and exiting each position after a fixed number of trading days.
-Positions are marked to market daily to build an equity curve, which is fed to
+Walks an ordered trading-day calendar, entering the directional decisions
+(buy → long, short → short) emitted on each scan_date and exiting each position
+after a fixed number of trading days. Positions are marked to market daily to
+build an equity curve, which is fed to
 ``PerformanceMetricsCalculator.compute_metrics`` for sharpe/sortino/drawdown.
 
-Accounting model (no leverage, fractional shares):
+Accounting model — P&L-based so long and short are handled uniformly:
+
+    equity(t) = starting_capital + realized_pnl
+                + sum(side * shares * (price_t - entry_price) for open positions)
 
   * At each trading day ``dt`` (in calendar order):
       1. EXIT any open position whose entry was ``hold_days`` trading-days ago —
-         sell at ``dt`` close, deduct cost on the sell notional, return proceeds
-         to cash.
-      2. ENTER if ``dt`` is a scan_date with BUY decisions — split the
-         CURRENTLY-AVAILABLE cash equally across the BUY tickers that have a
-         price on ``dt``, buy fractional shares at ``dt`` close, deduct cost on
-         the buy notional.
-      3. MARK all open positions to ``dt`` close → portfolio value =
-         cash + sum(shares * close).
-  * Cost per leg = notional * (commission_bps + slippage_bps) / 1e4.
-  * A trading day with no exits and no decisions leaves cash/positions
-    unchanged (value is flat when nothing is held).
+         realize ``side * shares * (exit_price - entry_price)`` into realized_pnl
+         and charge the exit-leg cost on the exit notional.
+      2. ENTER if ``dt`` is a scan_date with directional decisions — split an
+         equal CASH NOTIONAL across the buy/short tickers that have a price on
+         ``dt`` (notional = starting_capital / n_bets), buy/short fractional
+         shares at ``dt`` close, charge the entry-leg cost on the notional.
+      3. MARK all open positions to ``dt`` close → equity per the formula above.
+  * Cost per leg = notional * (commission_bps + slippage_bps) / 1e4, charged to
+    realized_pnl at BOTH entry and exit.
+  * A short's unrealized/realized P&L uses ``side = -1`` so a price DROP is a
+    gain; a long uses ``side = +1``. Notional is freed (position closed) at exit.
+  * A trading day with no exits and no decisions leaves equity unchanged.
 """
 
 from __future__ import annotations
+
+import datetime as _dt
 
 from src.backtesting.metrics import PerformanceMetricsCalculator
 
@@ -37,27 +44,32 @@ def simulate(
     commission_bps=5.0,
     slippage_bps=5.0,
 ):
-    """Simulate an equal-weight weekly-rebalance fixed-hold portfolio.
+    """Simulate an equal-weight weekly-rebalance fixed-hold portfolio (long+short).
 
     Args:
-        decisions_by_date: ``{scan_date: list[Decision]}`` — BUY decisions to
-            ENTER on that date (non-"buy" actions are skipped).
+        decisions_by_date: ``{scan_date: list[Decision]}`` — directional
+            decisions to ENTER on that date. ``buy`` opens a long (side=+1),
+            ``short`` opens a short (side=-1); ``hold``/``sell``/``cover`` are
+            skipped (not opening bets).
         prices_by_ticker: ``{ticker: {date: close}}`` — daily closes used for
             entry/exit/mark-to-market.
         trading_days: ordered ``list[str]`` — the calendar to walk; equity is
             marked once per day.
         hold_days: trading-days to hold each position before exiting.
-        starting_capital: initial cash.
+        starting_capital: initial capital (P&L baseline).
         commission_bps / slippage_bps: per-leg cost in basis points of notional.
 
     Returns:
         ``{"equity_curve": list[dict], "metrics": dict, "trades": list[dict]}``
-        where each equity-curve point is ``{"Date", "Portfolio Value"}``.
+        where each equity-curve point is ``{"Date", "Portfolio Value"}`` and
+        each trade row includes a ``"side"`` (+1 long / -1 short).
     """
     cost_rate = (commission_bps + slippage_bps) / 1e4
+    side_by_action = {"buy": 1, "short": -1}
 
-    cash = float(starting_capital)
-    # Open positions keyed by ticker: {ticker: {"shares", "entry_idx", "entry_date", "entry_price"}}
+    realized_pnl = 0.0
+    # Open positions keyed by ticker:
+    #   {ticker: {"side", "shares", "entry_idx", "entry_date", "entry_price"}}
     open_positions: dict[str, dict] = {}
     trades: list[dict] = []
     equity_curve: list[dict] = []
@@ -77,11 +89,15 @@ def simulate(
                 if exit_price is None:
                     # No price to exit on today — keep the position; try again later.
                     continue
-                notional = pos["shares"] * exit_price
-                cash += notional - notional * cost_rate
+                side = pos["side"]
+                # Realize the directional P&L; charge exit-leg cost on the notional.
+                realized_pnl += side * pos["shares"] * (exit_price - pos["entry_price"])
+                exit_notional = pos["shares"] * exit_price
+                realized_pnl -= exit_notional * cost_rate
                 trades.append(
                     {
                         "ticker": ticker,
+                        "side": side,
                         "entry_date": pos["entry_date"],
                         "exit_date": dt,
                         "entry_price": pos["entry_price"],
@@ -91,21 +107,23 @@ def simulate(
                 )
                 del open_positions[ticker]
 
-        # (2) ENTER new BUYs if dt is a scan_date with decisions.
+        # (2) ENTER new directional bets if dt is a scan_date with decisions.
         day_decisions = decisions_by_date.get(dt) or []
-        buys = [d for d in day_decisions if getattr(d, "action", None) == "buy"]
-        priceable = [d for d in buys if price_on(d.ticker, dt) is not None]
+        bets = [d for d in day_decisions if side_by_action.get(getattr(d, "action", None)) is not None]
+        priceable = [d for d in bets if price_on(d.ticker, dt) is not None]
         if priceable:
-            alloc = cash / len(priceable)
+            # Equal CASH NOTIONAL per bet, sized off starting capital so long and
+            # short legs get the same gross exposure regardless of prior P&L.
+            notional = float(starting_capital) / len(priceable)
             for d in priceable:
+                side = side_by_action[d.action]
                 entry_price = price_on(d.ticker, dt)
-                # Equal cash split; cost is taken out of the allocated slice so we
-                # never spend more cash than available.
-                shares = alloc / (entry_price * (1.0 + cost_rate))
-                notional = shares * entry_price
-                cash -= notional + notional * cost_rate
-                if d.ticker in open_positions:
-                    # Already holding (re-entry on same ticker): average in.
+                shares = notional / entry_price
+                # Entry-leg cost hits realized P&L now; the notional is "deployed"
+                # and freed at exit (no separate cash ledger — equity is P&L-based).
+                realized_pnl -= notional * cost_rate
+                if d.ticker in open_positions and open_positions[d.ticker]["side"] == side:
+                    # Already holding same-side (re-entry on same ticker): average in.
                     existing = open_positions[d.ticker]
                     total_shares = existing["shares"] + shares
                     existing["entry_price"] = (
@@ -116,22 +134,29 @@ def simulate(
                     existing["entry_date"] = dt
                 else:
                     open_positions[d.ticker] = {
+                        "side": side,
                         "shares": shares,
                         "entry_idx": idx,
                         "entry_date": dt,
                         "entry_price": entry_price,
                     }
 
-        # (3) MARK to market: portfolio value = cash + held shares * today's close.
-        holdings_value = 0.0
+        # (3) MARK to market: equity = start + realized + sum(unrealized P&L).
+        unrealized = 0.0
         for ticker, pos in open_positions.items():
             mark = price_on(ticker, dt)
             if mark is None:
-                # No mark today — fall back to last known entry price to stay no-NaN.
+                # No mark today — fall back to entry price (zero unrealized) to stay no-NaN.
                 mark = pos["entry_price"]
-            holdings_value += pos["shares"] * mark
-        equity_curve.append({"Date": dt, "Portfolio Value": cash + holdings_value})
+            unrealized += pos["side"] * pos["shares"] * (mark - pos["entry_price"])
+        equity_curve.append({"Date": dt, "Portfolio Value": float(starting_capital) + realized_pnl + unrealized})
 
-    metrics = PerformanceMetricsCalculator().compute_metrics(equity_curve)
+    # compute_metrics expects datetime "Date" (PortfolioValuePoint contract) so
+    # its max_drawdown_date .strftime works; the public curve keeps ISO strings.
+    def _to_dt(d):
+        return _dt.datetime.fromisoformat(d[:10]) if isinstance(d, str) else d
+
+    metrics_curve = [{"Date": _to_dt(p["Date"]), "Portfolio Value": p["Portfolio Value"]} for p in equity_curve]
+    metrics = PerformanceMetricsCalculator().compute_metrics(metrics_curve)
 
     return {"equity_curve": equity_curve, "metrics": metrics, "trades": trades}

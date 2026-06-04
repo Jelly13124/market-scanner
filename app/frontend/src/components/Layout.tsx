@@ -3,6 +3,7 @@ import { TabBar } from '@/components/tabs/tab-bar';
 import { TabContent } from '@/components/tabs/tab-content';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { AnalyzeRunsProvider } from '@/contexts/analyze-runs-context';
+import { ApiKeysStatusProvider } from '@/contexts/api-keys-status-context';
 import { LayoutProvider } from '@/contexts/layout-context';
 import { TabsProvider, useTabsContext } from '@/contexts/tabs-context';
 import { useLayoutKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
@@ -105,9 +106,11 @@ export function Layout({ children }: LayoutProps) {
     <AnalyzeRunsProvider>
       <SidebarProvider defaultOpen={true}>
         <TabsProvider>
-          <LayoutProvider>
-            <LayoutContent>{children}</LayoutContent>
-          </LayoutProvider>
+          <ApiKeysStatusProvider>
+            <LayoutProvider>
+              <LayoutContent>{children}</LayoutContent>
+            </LayoutProvider>
+          </ApiKeysStatusProvider>
         </TabsProvider>
       </SidebarProvider>
     </AnalyzeRunsProvider>

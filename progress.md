@@ -2918,3 +2918,16 @@ User asked (going to sleep, autonomous + decide-on-issues): (A) scanner/screener
 - A unified-tracking: moved bus→run firing from AnalyzePanel into the always-mounted AnalyzeRunsProvider (subscribes to analyzeBus, fires startRun with a standard full-report config + uiReportLanguage). Scanner/Screener/Watchlist one-click now tracks in the sidebar reliably — independent of whether the analyze canvas mounted (old path used a 60ms setTimeout that silently no-op'd if canvas wasn't ready). Panel keeps canvas-prefill only. DECISION: bus runs use defaults, not the canvas config. Commit cf75f38.
 - D screener per-user cron: added `ScreenerPreset.cron_expr` (migration c5d2f0a1e9b7, server_default "5 22 * * *", alembic-migration-reviewer APPROVED w/ live up/down dry-run). Replaced the global 22:05 preset job with per-preset jobs (`register_screener_preset` mirrors register_report_schedule, owner tz) + `_run_single_preset_job`; re-register on CRUD + tz change; snapshot cron unchanged. Schemas/repo/routes carry cron_expr + validate; preset-manager UI shows freq/time editor per scheduled preset. Backend 78 green (fixed 3 test breaks: scheduler dep override, schema fixture, job counts 6→5/4→3; + a pre-existing stale run_now assertion). Commits 5bd7fb9 (backend) + 7e5e240 (frontend).
 - NOTE for review: A's "bus runs use default config (all sections), not the canvas" is a deliberate behavior change — flag if the user wanted canvas config respected. D's per-preset micro-labels "Runs:"/"ET" stay English (freq options are translated via analyze.scheduleDialog).
+
+## Session — 2026-06-03 (new-user onboarding, frontend-only)
+
+Brainstorm → spec (`docs/superpowers/specs/2026-06-03-onboarding-design.md`) → plan (`docs/superpowers/plans/2026-06-03-onboarding.md`) → implemented 7 tasks. All frontend, no backend/DB change; reuses existing services. tsc clean throughout.
+
+- T1 `ApiKeysStatusProvider` + `useApiKeysStatus()` (contexts/api-keys-status-context.tsx) — `hasKeys` = ≥1 active LLM-provider key (the 8 UPPERCASE env-var keys; data-only FINANCIAL_DATASETS doesn't count). Mounted in Layout above the tab switcher. Commit 7da2f50.
+- T2 hard gate: Analyze Run disabled when !hasKeys + amber "Add API key" → opens Settings. Commit ab06542.
+- T3 hard gate: Scanner "Run now" gated + add-key affordance; `api-keys.tsx` saveKey/clearKey call `refresh()` → gate lifts without reload. Commit 3221661.
+- T4 Home screen (components/home/home-screen.tsx) renders in tab-content's `!activeTab` branch (replaced the FolderOpen welcome) — hero + feature cards (openTab). Commit fadafc7.
+- T5 getting-started checklist (4 steps: key/report/watchlist/schedule, auto-ticked from real probes; "Try NVDA" = requestAnalyze; dismissable). Commit 4089c9e.
+- T6 sidebar Home entry (`HomeAction` → closeAllTabs; Home is the no-tabs state, NOT a tab type). Commit 5c0013e.
+- T7 first-visit Analyze hint banner (localStorage-dismissed). Commit a970999.
+- DECISION (user): API-key gate is HARD (disable Run), not soft. Tour (spotlight walkthrough) deferred — NOT in v1.

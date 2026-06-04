@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { useApiKeysStatus } from '@/contexts/api-keys-status-context';
 import { apiKeysService } from '@/services/api-keys-api';
 import { Eye, EyeOff, Key, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -91,6 +92,7 @@ export function ApiKeysSettings() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { t } = useTranslation();
+  const { refresh: refreshKeyStatus } = useApiKeysStatus();
 
   // Load API keys from backend on component mount
   useEffect(() => {
@@ -154,6 +156,7 @@ export function ApiKeysSettings() {
       }
       setSavedKeys(prev => ({ ...prev, [key]: value }));
       setSaveStatus(prev => ({ ...prev, [key]: 'saved' }));
+      void refreshKeyStatus();
     } catch (err) {
       console.error(`Failed to save API key ${key}:`, err);
       setSaveStatus(prev => ({ ...prev, [key]: 'error' }));
@@ -174,6 +177,7 @@ export function ApiKeysSettings() {
       setApiKeys(prev => { const n = { ...prev }; delete n[key]; return n; });
       setSavedKeys(prev => { const n = { ...prev }; delete n[key]; return n; });
       setSaveStatus(prev => { const n = { ...prev }; delete n[key]; return n; });
+      void refreshKeyStatus();
     } catch (err) {
       console.error(`Failed to delete API key ${key}:`, err);
       setError(`Failed to delete ${key}. Please try again.`);

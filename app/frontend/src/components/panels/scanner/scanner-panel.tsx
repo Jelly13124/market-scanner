@@ -14,7 +14,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { useApiKeysStatus } from '@/contexts/api-keys-status-context';
+import { useTabsContext } from '@/contexts/tabs-context';
 import { scannerService } from '@/services/scanner-service';
+import { TabService } from '@/services/tab-service';
 import { useRequestAnalyze } from '@/hooks/use-request-analyze';
 import { toast } from 'sonner';
 import type {
@@ -23,7 +26,7 @@ import type {
   ScannerConfigResponse,
   WatchlistEntryResponse,
 } from '@/types/scanner';
-import { Pencil, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { KeyRound, Pencil, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentRunsList } from './agent-runs-list';
@@ -40,6 +43,9 @@ interface ScannerPanelProps {
 export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
   const { t } = useTranslation();
   const requestAnalyze = useRequestAnalyze();
+  const { hasKeys } = useApiKeysStatus();
+  const { openTab } = useTabsContext();
+  const openApiKeys = () => openTab({ id: 'settings', ...TabService.createSettingsTab() });
   // ---- config state -------------------------------------------------------
   const [configs, setConfigs] = useState<ScannerConfigResponse[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(initialConfigId ?? null);
@@ -338,10 +344,22 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
           />
           Email results
         </label>
-        <Button onClick={handleRunNow} disabled={!selectedConfig || isRunning} size="sm">
+        <Button onClick={handleRunNow} disabled={!selectedConfig || isRunning || !hasKeys} size="sm">
           <Play size={14} className="mr-1" />
           {isRunning ? 'Running…' : 'Run now'}
         </Button>
+        {!hasKeys && (
+          <Button
+            onClick={openApiKeys}
+            size="sm"
+            variant="outline"
+            className="h-8 border-amber-500/60 text-amber-600"
+            title={t('onboarding.gate.tooltip')}
+          >
+            <KeyRound size={14} className="mr-1" />
+            {t('onboarding.gate.addKey')}
+          </Button>
+        )}
       </div>
 
       {/* Error banners */}

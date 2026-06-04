@@ -34,6 +34,20 @@ def _fmt(x, pct=False):
     return f"{v * 100:.2f}%" if pct else f"{v:.3f}"
 
 
+def _pct_raw(x):
+    """Format a value that is ALREADY a percent (no ×100) — e.g. compute_metrics
+    returns max_drawdown pre-multiplied by 100."""
+    if x is None:
+        return "-"
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return str(x)
+    if v != v:  # NaN
+        return "-"
+    return f"{v:.2f}%"
+
+
 def _write_decisions_csv(path, decision_rows):
     fields = ["scan_date", "arm", "regime_name", "regime_label", "is_post_cutoff",
               "ticker", "action", "quantity", "confidence", "ret_21d", "ret_42d",
@@ -94,7 +108,7 @@ def write(out_dir, results) -> dict:
         metrics = m.get("metrics") or {}
         lines.append(
             f"| {arm} | {_fmt(m.get('final_value'))} | {_fmt(m.get('total_return'), pct=True)} | "
-            f"{_fmt(metrics.get('sharpe_ratio'))} | {_fmt(metrics.get('max_drawdown'), pct=True)} | "
+            f"{_fmt(metrics.get('sharpe_ratio'))} | {_pct_raw(metrics.get('max_drawdown'))} | "
             f"{m.get('n_trades', 0)} |"
         )
     if not abs_metrics:

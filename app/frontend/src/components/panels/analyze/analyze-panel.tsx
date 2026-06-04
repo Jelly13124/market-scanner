@@ -25,7 +25,7 @@ import { analyzeBus, type AnalyzeRequest as AnalyzeBusRequest } from '@/services
 import { setAnalyzeConfigSnapshot } from '@/services/analyze-config-snapshot';
 import { TabService } from '@/services/tab-service';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
-import { ExternalLink, Mail } from 'lucide-react';
+import { ExternalLink, Info, Mail, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -51,6 +51,13 @@ export function AnalyzePanel() {
   const openApiKeys = useCallback(() => {
     openTab({ id: 'settings', ...TabService.createSettingsTab() });
   }, [openTab]);
+  const [hintDismissed, setHintDismissed] = useState(() => {
+    try { return localStorage.getItem('analyze-hint-dismissed') === '1'; } catch { return false; }
+  });
+  const dismissHint = () => {
+    try { localStorage.setItem('analyze-hint-dismissed', '1'); } catch { /* ignore */ }
+    setHintDismissed(true);
+  };
 
   // Trigger re-render so the palette knows when '+' buttons should be disabled.
   const [canvasTick, setCanvasTick] = useState(0);
@@ -177,6 +184,20 @@ export function AnalyzePanel() {
   return (
     <div className="flex h-full overflow-hidden">
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+      {!hintDismissed && (
+        <div className="flex items-start gap-2 border-b bg-amber-500/10 px-3 py-2 text-xs">
+          <Info className="size-3.5 mt-0.5 shrink-0 text-amber-600" />
+          <span className="flex-1">{t('onboarding.analyzeHint.text')}</span>
+          <button
+            type="button"
+            onClick={dismissHint}
+            className="shrink-0 text-muted-foreground hover:text-foreground"
+            title={t('onboarding.analyzeHint.dismiss')}
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
       {/* 1. Toolbar */}
       <AnalyzeToolbar
         running={false}

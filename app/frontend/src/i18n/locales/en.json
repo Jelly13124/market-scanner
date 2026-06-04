@@ -297,6 +297,10 @@
         "openWatchlist": "Open Watchlist →",
         "openSchedules": "Open Settings →"
       }
+    },
+    "analyzeHint": {
+      "text": "👋 This is the analysis canvas — type a ticker in the Input node, then click Run (top-right) to generate a deep report.",
+      "dismiss": "Got it"
     }
   },
   "lab": {

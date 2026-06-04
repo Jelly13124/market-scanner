@@ -297,6 +297,10 @@
         "openWatchlist": "打开自选 →",
         "openSchedules": "打开设置 →"
       }
+    },
+    "analyzeHint": {
+      "text": "👋 这是分析画布 —— 在 Input 节点里输入股票代码，然后点右上角的 Run 生成深度报告。",
+      "dismiss": "知道了"
     }
   },
   "lab": {

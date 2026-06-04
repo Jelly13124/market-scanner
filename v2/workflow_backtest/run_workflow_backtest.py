@@ -414,6 +414,12 @@ def main(argv=None):
               "(v2/workflow_backtest/test_runner_smoke.py); no paid run performed.")
         return 0
 
+    # Live (paid) path needs API keys in os.environ. The SPY fetch below runs
+    # BEFORE _live_seams() (which transitively loads .env via src.main), so load
+    # it here explicitly — otherwise the provider 401s and the schedule is empty.
+    from dotenv import load_dotenv
+    load_dotenv()
+
     # Live (paid) path: resolve the real universe + a SPY-based regime schedule,
     # then bind the live seams. Kept lazy so an offline `--help` stays cheap.
     from v2.scanner.universes import load_universe

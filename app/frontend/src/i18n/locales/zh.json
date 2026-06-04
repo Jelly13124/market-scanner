@@ -278,6 +278,23 @@
         "screener": { "title": "Screener", "desc": "按你的条件筛选股票" },
         "lab": { "title": "策略实验室", "desc": "搭建 + 回测策略" }
       }
+    },
+    "checklist": {
+      "title": "上手清单",
+      "allSet": "✓ 都搞定了",
+      "dismiss": "收起",
+      "steps": {
+        "key": "添加你的 API Key（没它什么都跑不了）",
+        "analyze": "跑第一份分析",
+        "watch": "保存一个自选股",
+        "schedule": "设置定时报告"
+      },
+      "actions": {
+        "addKey": "去添加 →",
+        "tryNvda": "试试 NVDA →",
+        "openWatchlist": "打开自选 →",
+        "openSchedules": "打开设置 →"
+      }
     }
   },
   "lab": {

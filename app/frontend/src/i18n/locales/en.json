@@ -278,6 +278,23 @@
         "screener": { "title": "Screener", "desc": "Filter stocks by your criteria" },
         "lab": { "title": "Strategy Lab", "desc": "Build + backtest a strategy" }
       }
+    },
+    "checklist": {
+      "title": "Getting started",
+      "allSet": "✓ You're all set",
+      "dismiss": "Dismiss",
+      "steps": {
+        "key": "Add your API key (nothing runs without it)",
+        "analyze": "Run your first analysis",
+        "watch": "Save a watchlist",
+        "schedule": "Set up a scheduled report"
+      },
+      "actions": {
+        "addKey": "Add key →",
+        "tryNvda": "Try NVDA →",
+        "openWatchlist": "Open Watchlist →",
+        "openSchedules": "Open Settings →"
+      }
     }
   },
   "lab": {

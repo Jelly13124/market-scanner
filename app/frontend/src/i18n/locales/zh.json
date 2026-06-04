@@ -67,6 +67,8 @@
     "settings": "设置"
   },
   "sidebar": {
+    "home": "主页",
+    "homeTooltip": "回到欢迎 / 上手页",
     "watchlists": "自选清单",
     "analyze": "分析",
     "scanner": "扫描器",

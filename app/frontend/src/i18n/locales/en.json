@@ -67,6 +67,8 @@
     "settings": "Settings"
   },
   "sidebar": {
+    "home": "Home",
+    "homeTooltip": "Back to the welcome / getting-started screen",
     "watchlists": "Watchlists",
     "analyze": "Analyze",
     "scanner": "Scanner",

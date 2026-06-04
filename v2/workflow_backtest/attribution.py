@@ -1,0 +1,71 @@
+"""Forward-return attribution + A/B Welch t-test for workflow backtests.
+
+Two pieces:
+
+  * ``attach_forward_returns`` — for each BUY decision, compute what the
+    ticker actually did over the forward windows (raw return, benchmark
+    return, alpha) by reusing ``compute_forward_returns``. The fd passed
+    here is the UNCLAMPED full-series client so OUTCOMES aren't clipped to
+    the as-of date (the caller deliberately passes a non-as-of fd).
+
+  * ``ab_welch`` — Welch two-sample t-test (unequal variances) comparing
+    two arms' return distributions (e.g. scanner picks vs random baseline).
+    Hand-rolled on the stdlib so we don't pull in scipy.
+"""
+
+from __future__ import annotations
+
+import math
+import statistics
+
+from v2.backtesting.forward_returns import compute_forward_returns
+
+
+def ab_welch(a, b):
+    """Welch two-sample t (unequal variances).
+
+    Returns ``{"mean_a","mean_b","diff","t","n_a","n_b"}`` where
+    ``diff = mean_a - mean_b`` and
+    ``t = diff / sqrt(var_a/n_a + var_b/n_b)`` (sample variance, ddof=1).
+
+    None entries are dropped from each list before computing. Means/diff
+    are computed when n>=1 (else None); ``t`` is None unless both n_a>=2
+    and n_b>=2 (variance is undefined for n<2).
+    """
+    aa = [x for x in a if x is not None]
+    bb = [x for x in b if x is not None]
+    n_a, n_b = len(aa), len(bb)
+    mean_a = statistics.mean(aa) if aa else None
+    mean_b = statistics.mean(bb) if bb else None
+    diff = (mean_a - mean_b) if (mean_a is not None and mean_b is not None) else None
+    t = None
+    if n_a >= 2 and n_b >= 2:
+        va = statistics.variance(aa)
+        vb = statistics.variance(bb)
+        denom = math.sqrt(va / n_a + vb / n_b)
+        t = (diff / denom) if denom > 0 else 0.0
+    return {"mean_a": mean_a, "mean_b": mean_b, "diff": diff, "t": t, "n_a": n_a, "n_b": n_b}
+
+
+def attach_forward_returns(decisions, fd, *, scan_date, windows=(21, 42, 63),
+                           benchmark_ticker="SPY", benchmark_prices=None):
+    """Attach realized forward returns to each BUY decision.
+
+    For every Decision with ``action == "buy"``, call
+    ``compute_forward_returns`` and emit a row::
+
+        {"ticker", "scan_date", "action", "confidence", **fwd_return_dict}
+
+    Non-buy decisions are skipped — we attribute BUYs. ``fd`` should be the
+    UNCLAMPED full-series client so forward OUTCOMES aren't truncated to the
+    scan_date (intentional asymmetry vs the as-of fd used for the signal).
+    """
+    rows = []
+    for d in decisions:
+        if getattr(d, "action", None) != "buy":
+            continue
+        fr = compute_forward_returns(fd, ticker=d.ticker, scan_date=scan_date, windows=windows,
+                                     benchmark_ticker=benchmark_ticker, benchmark_prices=benchmark_prices)
+        rows.append({"ticker": d.ticker, "scan_date": scan_date, "action": d.action,
+                     "confidence": getattr(d, "confidence", None), **fr})
+    return rows

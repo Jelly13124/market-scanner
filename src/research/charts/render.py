@@ -397,6 +397,265 @@ def _legacy_line_kline(closes: list[float], kind: str) -> bytes:
 
 
 # ---------------------------------------------------------------------------
+# Fundamental / valuation / relative-strength panels (Phase 11)
+# ---------------------------------------------------------------------------
+
+
+def _get_field(obj: Any, name: str):
+    """Read a field from a Pydantic model, dict, or duck-typed object.
+
+    Mirrors the defensiveness of ``_to_dataframe``: tolerates ``.get`` on
+    dicts and ``getattr`` on objects, returning None when absent.
+    """
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj.get(name)
+    return getattr(obj, name, None)
+
+
+def _sorted_by_period(financials: list) -> list:
+    """Sort financial rows by ``report_period`` ascending.
+
+    Rows without a usable report_period sort last (empty-string key) so a
+    malformed entry never crashes the comparison.
+    """
+    if not financials:
+        return []
+    return sorted(
+        financials,
+        key=lambda f: str(_get_field(f, "report_period") or ""),
+    )
+
+
+def _extract_closes(prices: list) -> list[float]:
+    """Pull a list of close prices from Price objects / dicts / raw floats.
+
+    Best-effort: rows that can't be coerced to float are skipped. Mirrors the
+    OHLCV defensiveness of ``_to_dataframe`` but keeps closes-only callers.
+    """
+    if not prices:
+        return []
+    out: list[float] = []
+    for p in prices:
+        if isinstance(p, (int, float)):
+            try:
+                out.append(float(p))
+            except (TypeError, ValueError):
+                continue
+            continue
+        val = _get_field(p, "close")
+        if val is None:
+            continue
+        try:
+            out.append(float(val))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def render_fundamental_trends_png(
+    financials: list,
+    *,
+    title: str | None = None,
+) -> bytes:
+    """Margin & growth trend lines across reporting periods.
+
+    Plots gross/operating/net margin and revenue_growth (all as %) on a single
+    axis, one line per series. Series that are entirely None are skipped.
+    Needs >=2 periods with at least one usable series, else "No data" PNG.
+    """
+    rows = _sorted_by_period(financials)
+    if len(rows) < 2:
+        return _no_data_png("Insufficient fundamental history")
+
+    labels = [str(_get_field(f, "report_period") or "") for f in rows]
+
+    # (field, legend label, color, linewidth) — revenue_growth de-emphasised.
+    specs = [
+        ("gross_margin", "Gross margin", "#2563eb", 1.6),
+        ("operating_margin", "Operating margin", "#8b5cf6", 1.6),
+        ("net_margin", "Net margin", "#16a34a", 1.6),
+        ("revenue_growth", "Revenue growth", "#f59e0b", 1.2),
+    ]
+
+    xs = list(range(len(rows)))
+    plotted = 0
+    fig, ax = plt.subplots(figsize=_FIGSIZE_DEFAULT, dpi=_DPI)
+    for field, label, color, lw in specs:
+        ys: list[float | None] = []
+        any_val = False
+        for f in rows:
+            v = _get_field(f, field)
+            if v is None:
+                ys.append(None)
+            else:
+                try:
+                    ys.append(float(v) * 100.0)  # ratios -> percent
+                    any_val = True
+                except (TypeError, ValueError):
+                    ys.append(None)
+        if not any_val:
+            continue
+        # Mask None so matplotlib draws gaps rather than dropping to 0.
+        ys_arr = np.array([np.nan if v is None else v for v in ys], dtype=float)
+        style = "--" if field == "revenue_growth" else "-"
+        ax.plot(
+            xs, ys_arr, color=color, linewidth=lw, linestyle=style,
+            marker="o", markersize=3, label=label,
+        )
+        plotted += 1
+
+    if plotted == 0:
+        plt.close(fig)
+        return _no_data_png("Insufficient fundamental history")
+
+    ax.set_title(title or "Margin & Growth Trends", fontsize=11)
+    ax.set_ylabel("Percent (%)")
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    ax.axhline(0.0, color="#9ca3af", linewidth=0.6, linestyle=":")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=8)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def render_valuation_band_png(
+    financials: list,
+    *,
+    current_value: float | None = None,
+    metric: str = "price_to_earnings_ratio",
+    title: str | None = None,
+) -> bytes:
+    """A valuation multiple over time with a shaded historical min-max band.
+
+    Marks the most-recent value with a labelled dot. When ``current_value`` is
+    supplied, draws a dashed "current" reference line. Needs >=2 non-None
+    points for the chosen ``metric``, else "No data" PNG.
+    """
+    rows = _sorted_by_period(financials)
+
+    labels: list[str] = []
+    values: list[float] = []
+    for f in rows:
+        v = _get_field(f, metric)
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        labels.append(str(_get_field(f, "report_period") or ""))
+        values.append(fv)
+
+    if len(values) < 2:
+        return _no_data_png("Insufficient valuation history")
+
+    xs = list(range(len(values)))
+    lo = min(values)
+    hi = max(values)
+
+    _METRIC_LABELS = {
+        "price_to_earnings_ratio": "P/E",
+        "price_to_sales_ratio": "P/S",
+        "peg_ratio": "PEG",
+        "price_to_book_ratio": "P/B",
+    }
+    metric_label = _METRIC_LABELS.get(metric, metric)
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE_DEFAULT, dpi=_DPI)
+    # Shaded min-max band across the full width.
+    ax.axhspan(lo, hi, color="#dbeafe", alpha=0.6, label=f"min-max ({lo:.1f}-{hi:.1f})")
+    ax.plot(xs, values, color="#2563eb", linewidth=1.6, marker="o", markersize=3,
+            label=metric_label)
+
+    # Mark the latest value with a labelled dot.
+    last_x, last_y = xs[-1], values[-1]
+    ax.scatter([last_x], [last_y], color="#e11d48", s=40, zorder=5)
+    ax.annotate(
+        f"{last_y:.1f}",
+        xy=(last_x, last_y),
+        xytext=(5, 5), textcoords="offset points",
+        color="#e11d48", fontsize=9, fontweight="bold",
+    )
+
+    if current_value is not None:
+        try:
+            cv = float(current_value)
+            ax.axhline(cv, color="#16a34a", linewidth=1.2, linestyle="--",
+                       label=f"current ({cv:.1f})")
+        except (TypeError, ValueError):
+            pass
+
+    ax.set_title(title or f"Valuation Band ({metric_label})", fontsize=11)
+    ax.set_ylabel(metric_label)
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=8)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def render_relative_strength_png(
+    prices: list,
+    benchmark_prices: list,
+    *,
+    ticker_label: str = "Ticker",
+    benchmark_label: str = "Benchmark",
+    title: str | None = None,
+) -> bytes:
+    """Ticker vs benchmark, both rebased to 100 at the first common bar.
+
+    Series are aligned by truncating to the shorter length from the END (so
+    both finish "today"), then each is divided by its own first close * 100.
+    Needs >=2 closes on each side, else "No data" PNG.
+    """
+    t_closes = _extract_closes(prices)
+    b_closes = _extract_closes(benchmark_prices)
+    if len(t_closes) < 2 or len(b_closes) < 2:
+        return _no_data_png("Insufficient data for relative strength")
+
+    # Align by truncating to the shorter length, keeping the most recent bars.
+    n = min(len(t_closes), len(b_closes))
+    t_closes = t_closes[-n:]
+    b_closes = b_closes[-n:]
+
+    t0 = t_closes[0]
+    b0 = b_closes[0]
+    if not t0 or not b0:  # guard zero / falsy first close (div-by-zero)
+        return _no_data_png("Insufficient data for relative strength")
+
+    t_rebased = [c / t0 * 100.0 for c in t_closes]
+    b_rebased = [c / b0 * 100.0 for c in b_closes]
+    xs = list(range(n))
+
+    fig, ax = plt.subplots(figsize=_FIGSIZE_DEFAULT, dpi=_DPI)
+    ax.plot(xs, t_rebased, color="#2563eb", linewidth=1.6, label=ticker_label)
+    ax.plot(xs, b_rebased, color="#9ca3af", linewidth=1.4, linestyle="--",
+            label=benchmark_label)
+    ax.axhline(100.0, color="#cbd5e1", linewidth=0.8, linestyle=":")
+
+    ax.set_title(title or "Relative Strength (rebased=100)", fontsize=11)
+    ax.set_xlabel("Bar")
+    ax.set_ylabel("Index (start=100)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best", fontsize=9)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=_DPI, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
 # Equity curve (unchanged from Phase 5)
 # ---------------------------------------------------------------------------
 

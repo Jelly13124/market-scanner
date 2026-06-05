@@ -395,6 +395,15 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
         )
 
     _fins = getattr(shared, "financials", None) or []
+    # P/E "current" marker from the live snapshot, captured before we possibly
+    # swap _fins for multi-period yfinance history (the hybrid provider returns
+    # only 1 fundamentals period, so trend/band charts need a history source).
+    _cur_pe = getattr(_fins[0], "price_to_earnings_ratio", None) if _fins else None
+    if len(_fins) < 2:
+        from src.research.charts.fundamentals_fetch import fetch_fundamental_history
+        _hist = fetch_fundamental_history(request.ticker, scan_date)
+        if len(_hist) >= 2:
+            _fins = _hist
     if len(_fins) >= 2:
         _attach_chart(
             "financial_statements",
@@ -402,7 +411,6 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
             alt="Fundamental trends",
             caption="Gross / operating / net margin + revenue growth over reported periods.",
         )
-        _cur_pe = getattr(_fins[0], "price_to_earnings_ratio", None)
         _attach_chart(
             "valuation",
             lambda: render_valuation_band_png(

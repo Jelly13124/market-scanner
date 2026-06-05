@@ -260,6 +260,34 @@ def _inject_section_body(html: str, h2_text: str, body_html: str) -> str:
     return html[:start] + "\n" + body_html + "\n" + html[cutoff:]
 
 
+def _section_chart_imgs(payload) -> str:
+    """Generic counterpart to ``_technical_chart_imgs``: embed inline charts
+    for ANY section that carries a ``charts`` list in its structured dict.
+
+    Each item is ``{"src": <data-uri>, "alt": str, "caption": str}``. Lets the
+    financial-statements / valuation / sector sections show their own figures
+    without bespoke per-section wiring. No-op when there is no ``charts`` list.
+    """
+    structured = payload.structured if payload is not None else None
+    if not isinstance(structured, dict):
+        return ""
+    charts = structured.get("charts")
+    if not isinstance(charts, list):
+        return ""
+    parts: list[str] = []
+    for ch in charts:
+        if not isinstance(ch, dict) or not ch.get("src"):
+            continue
+        parts.append(
+            f'\n<figure style="margin:1rem 0;">'
+            f'<img src="{ch["src"]}" alt="{ch.get("alt", "chart")}" '
+            f'style="max-width:100%;height:auto;">'
+            f'<figcaption style="font-size:.85rem;color:var(--muted);margin-top:.3rem;">'
+            f'{ch.get("caption", "")}</figcaption></figure>'
+        )
+    return "".join(parts)
+
+
 def _technical_chart_imgs(payload, *, report_id: int | None) -> str:
     """Build the trailing <figure> block appended to the Technical section.
 
@@ -487,6 +515,7 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
             )
         if section_name == "technical":
             body_html += _technical_chart_imgs(payload, report_id=report_id)
+        body_html += _section_chart_imgs(payload)
         html = _inject_section_body(html, h2_text, body_html)
 
     # Append appendix sections (no <h2> in skeleton).

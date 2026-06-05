@@ -28,6 +28,9 @@ from src.research.charts.render import (
     render_equity_curve_b64,
     render_intraday_png,
     render_weekly_kline_png,
+    render_fundamental_trends_png,
+    render_valuation_band_png,
+    render_relative_strength_png,
 )
 from src.research.models import (
     AnalyzeReport,
@@ -368,6 +371,58 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
             structured=new_structured,
             skipped=False,
             persona_used=tech.persona_used,
+        )
+
+    # ---- inline charts for non-technical sections (best-effort) ----------
+    # Embedded via html_render._section_chart_imgs (structured["charts"]).
+    # Guarded on data sufficiency so we never emit a "No data" placeholder.
+    def _attach_chart(section_name: str, render_fn, *, alt: str, caption: str) -> None:
+        payload = sections.get(section_name)
+        if payload is None or payload.skipped:
+            return
+        try:
+            src = png_to_b64_uri(render_fn())
+        except Exception as e:
+            logger.exception("section chart %s failed: %s", section_name, e)
+            return
+        structured = dict(payload.structured) if isinstance(payload.structured, dict) else {}
+        structured["charts"] = list(structured.get("charts") or []) + [
+            {"src": src, "alt": alt, "caption": caption}
+        ]
+        sections[section_name] = SectionPayload(
+            name=payload.name, markdown=payload.markdown, structured=structured,
+            skipped=payload.skipped, persona_used=payload.persona_used,
+        )
+
+    _fins = getattr(shared, "financials", None) or []
+    if len(_fins) >= 2:
+        _attach_chart(
+            "financial_statements",
+            lambda: render_fundamental_trends_png(_fins, title=f"{request.ticker} Margins & Growth"),
+            alt="Fundamental trends",
+            caption="Gross / operating / net margin + revenue growth over reported periods.",
+        )
+        _cur_pe = getattr(_fins[0], "price_to_earnings_ratio", None)
+        _attach_chart(
+            "valuation",
+            lambda: render_valuation_band_png(
+                _fins, current_value=_cur_pe, metric="price_to_earnings_ratio",
+                title=f"{request.ticker} Valuation Band (P/E)",
+            ),
+            alt="Valuation band",
+            caption="P/E over reported periods with historical min-max band; latest value marked.",
+        )
+    _prices = getattr(shared, "prices", None) or []
+    _sector_px = getattr(shared, "sector_etf_prices", None) or []
+    if len(_prices) >= 2 and len(_sector_px) >= 2:
+        _attach_chart(
+            "sector",
+            lambda: render_relative_strength_png(
+                _prices, _sector_px, ticker_label=request.ticker,
+                benchmark_label="Sector ETF", title=f"{request.ticker} vs Sector ETF",
+            ),
+            alt="Relative strength",
+            caption="Price vs sector ETF, both rebased to 100 at window start.",
         )
 
     return AnalyzeReport(

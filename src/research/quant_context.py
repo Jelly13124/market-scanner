@@ -153,6 +153,14 @@ def _sma(closes: list[float], n: int) -> float | None:
     return sum(closes[-n:]) / n
 
 
+def _ret_over(closes: list[float], n: int) -> float | None:
+    """Simple return over the last ``n`` bars; None if insufficient history."""
+    if len(closes) < n + 1:
+        return None
+    a, b = closes[-n - 1], closes[-1]
+    return (b / a - 1.0) if a else None
+
+
 # ---------------------------------------------------------------------------
 # Helpers to coerce Price / FinancialMetrics objects to plain floats
 # ---------------------------------------------------------------------------
@@ -221,6 +229,8 @@ def build_quant_context(shared: Any, ticker: str) -> str:
     scan_date = _get(shared, "scan_date") or "today"
 
     highs, lows, closes, vols = _ohlcv(prices)
+    _, _, sector_closes, _ = _ohlcv(_get(shared, "sector_etf_prices") or [])
+    _, _, spy_closes, _ = _ohlcv(_get(shared, "spy_prices") or [])
 
     # ---- price + trend ----
     last_close = closes[-1] if closes else None
@@ -264,6 +274,34 @@ def build_quant_context(shared: Any, ticker: str) -> str:
     eps_growth = _get(fin, "earnings_per_share_growth")
     debt_eq = _get(fin, "debt_to_equity")
     market_cap = _get(fin, "market_cap") or _get(facts, "market_cap")
+    # Previously-unsurfaced fields the LLM was inventing from memory. They
+    # already exist on FinancialMetrics — surface them so the narrative cites
+    # real values instead of fabricating PEG / EV multiples / FCF.
+    ev = _get(fin, "enterprise_value")
+    ev_ebitda = _get(fin, "enterprise_value_to_ebitda_ratio")
+    ev_rev = _get(fin, "enterprise_value_to_revenue_ratio")
+    peg = _get(fin, "peg_ratio")
+    fcf_yield = _get(fin, "free_cash_flow_yield")
+    fcf_ps = _get(fin, "free_cash_flow_per_share")
+    op_margin = _get(fin, "operating_margin")
+    roa = _get(fin, "return_on_assets")
+    roic = _get(fin, "return_on_invested_capital")
+    current_ratio = _get(fin, "current_ratio")
+    quick_ratio = _get(fin, "quick_ratio")
+    interest_cov = _get(fin, "interest_coverage")
+
+    # ---- relative performance vs sector ETF + SPY (grounded, not from memory) ----
+    def _rel(n):
+        t = _ret_over(closes, n)
+        s = _ret_over(sector_closes, n)
+        m = _ret_over(spy_closes, n)
+        return (
+            t,
+            (t - s) if (t is not None and s is not None) else None,
+            (t - m) if (t is not None and m is not None) else None,
+        )
+    t20, rel_sec_20, rel_spy_20 = _rel(20)
+    t60, rel_sec_60, rel_spy_60 = _rel(60)
 
     # ---- earnings ----
     last_q = earnings[0] if earnings else None
@@ -283,9 +321,9 @@ def build_quant_context(shared: Any, ticker: str) -> str:
     a_low = _get(analyst_targets, "low_target") if analyst_targets else None
     upside = ((a_mean / last_close - 1) if (a_mean and last_close) else None)
 
-    # ---- news (top 5) ----
+    # ---- news (top 12) ----
     news_lines = []
-    for n in (news or [])[:5]:
+    for n in (news or [])[:12]:
         title = _get(n, "title", "")
         date = _get(n, "date", "")
         src = _get(n, "source", "")
@@ -340,12 +378,28 @@ FUNDAMENTALS (latest quarter on file)
   P/E: {_fmt(pe, 2)}
   P/B: {_fmt(pb, 2)}
   P/S: {_fmt(ps, 2)}
+  PEG: {_fmt(peg, 2)}
+  EV/EBITDA: {_fmt(ev_ebitda, 2)}
+  EV/Revenue: {_fmt(ev_rev, 2)}
+  enterprise_value: {_fmt(ev, 0) if ev else "n/a"}
+  FCF_yield: {_fmt_pct(fcf_yield)}
+  FCF_per_share: {_fmt(fcf_ps, 2)}
   gross_margin: {_fmt_pct(gm)}
+  operating_margin: {_fmt_pct(op_margin)}
   net_margin: {_fmt_pct(nm)}
   ROE: {_fmt_pct(roe)}
+  ROA: {_fmt_pct(roa)}
+  ROIC: {_fmt_pct(roic)}
   revenue_growth_yoy: {_fmt_pct(rev_growth)}
   eps_growth_yoy: {_fmt_pct(eps_growth)}
   debt_to_equity: {_fmt(debt_eq, 2)}
+  current_ratio: {_fmt(current_ratio, 2)}
+  quick_ratio: {_fmt(quick_ratio, 2)}
+  interest_coverage: {_fmt(interest_cov, 2)}
+
+RELATIVE PERFORMANCE (price return vs benchmarks — use these for any "outperformed/underperformed" claim)
+  ticker 20d return: {_fmt_pct(t20)}   vs sector ETF: {_fmt_pct(rel_sec_20)}   vs SPY: {_fmt_pct(rel_spy_20)}
+  ticker 60d return: {_fmt_pct(t60)}   vs sector ETF: {_fmt_pct(rel_sec_60)}   vs SPY: {_fmt_pct(rel_spy_60)}
 
 LAST EARNINGS REPORT
   period: {q_period or "n/a"}
@@ -357,7 +411,7 @@ ANALYST CONSENSUS (forward target prices)
   high: {_fmt(a_high)}
   low:  {_fmt(a_low)}
 
-RECENT NEWS (top 5 headlines)
+RECENT NEWS (top 12 headlines — the ONLY source for company-specific events/products/holdings)
 {news_block}
 
 === END QUANT CONTEXT ===
@@ -383,5 +437,15 @@ CRITICAL DATA RULES (read before writing):
   5. If the QUANT CONTEXT is sparse (many n/a's), state explicitly in
      your output that data coverage is limited and which fields are
      missing. Do NOT fabricate to fill the gap.
+  6. NON-NUMERIC company facts — product metrics (ARR, MAU, user/subscriber
+     counts, bookings), institutional holdings / 13F filings, M&A or
+     acquisitions, executive / leadership changes, named competitor
+     statistics, or specific analyst-firm calls — may ONLY be stated if they
+     appear in the RECENT NEWS headlines above. Do NOT recall them from
+     training memory: that knowledge is stale (training cutoff) and
+     unverifiable. If it is not in the news, omit it or tag it "(unverified)".
+  7. For relative performance ("outperformed / underperformed the sector or
+     the market by X%"), use ONLY the RELATIVE PERFORMANCE block. Do NOT name
+     a specific thematic benchmark ETF unless it is the one provided.
 
 """

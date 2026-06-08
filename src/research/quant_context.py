@@ -34,6 +34,126 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from src.research.institutional_flow import fetch_gamma_exposure
+
+
+# ---------------------------------------------------------------------------
+# Institutional-flow (dealer gamma / GEX) injection — gatable + cached
+# ---------------------------------------------------------------------------
+#
+# The dealer-gamma block is added to the QUANT CONTEXT so the research agent
+# sees options-implied institutional positioning. Two knobs:
+#
+#   * a process-level enable flag (`set_flow_enabled`) so the paper-trading
+#     A/B harness can turn the block OFF around a baseline sleeve, and
+#   * a per-ticker fetch cache so the ~13 section calls for one ticker share a
+#     single `fetch_gamma_exposure` round-trip (it touches yfinance).
+
+_FLOW_ENABLED: bool = True
+
+# Per-ticker cache of the gamma-exposure dict (or None on no-data/failure).
+# Keyed on ticker; lives for the process lifetime, cleared via
+# `clear_gamma_cache()` (the per-run pipeline + tests reset it explicitly).
+_GAMMA_CACHE: dict[str, dict | None] = {}
+
+
+def set_flow_enabled(value: bool) -> None:
+    """Toggle the dealer-gamma block globally (default ON).
+
+    The paper-trading A/B runner calls ``set_flow_enabled(False)`` around the
+    baseline sleeve so that arm of the experiment sees no gamma positioning.
+    """
+    global _FLOW_ENABLED
+    _FLOW_ENABLED = bool(value)
+
+
+def flow_enabled() -> bool:
+    """Whether the dealer-gamma block is currently injected."""
+    return _FLOW_ENABLED
+
+
+def clear_gamma_cache() -> None:
+    """Drop all cached gamma-exposure results (per-run / test reset)."""
+    _GAMMA_CACHE.clear()
+
+
+def _get_gamma(ticker: str) -> dict | None:
+    """Return the cached gamma-exposure dict for ``ticker``.
+
+    Computes ``fetch_gamma_exposure(ticker)`` on first request and caches the
+    result (including ``None``) so repeated section calls don't refetch.
+    Best-effort: any exception is swallowed, cached as ``None``, and returned.
+    """
+    if ticker in _GAMMA_CACHE:
+        return _GAMMA_CACHE[ticker]
+    try:
+        result = fetch_gamma_exposure(ticker)
+    except Exception:  # noqa: BLE001 — best-effort; never break context build
+        result = None
+    _GAMMA_CACHE[ticker] = result
+    return result
+
+
+def _fmt_gamma_dollars(num: float | None) -> str:
+    """Compact signed dollar formatter for gamma values.
+
+    >=1e9 → ``$X.XXB`` / ``-$X.XXB``; otherwise ``$XXXm`` / ``-$XXXm``
+    (millions, 0 decimals). Sub-million values still render in ``m`` so the
+    unit stays consistent. ``None``/NaN → ``n/a``.
+    """
+    if num is None or (isinstance(num, float) and math.isnan(num)):
+        return "n/a"
+    sign = "-" if num < 0 else ""
+    mag = abs(num)
+    if mag >= 1e9:
+        return f"{sign}${mag / 1e9:.2f}B"
+    return f"{sign}${mag / 1e6:.0f}m"
+
+
+def _gamma_block(ticker: str) -> str:
+    """Render the dealer-gamma positioning block for ``ticker``.
+
+    Returns ``""`` (omit silently — never inject empty/garbage) when:
+      * the flow flag is OFF,
+      * no gamma data is available (fetch returned None), or
+      * the regime is "flat" or there are no gamma walls.
+
+    Otherwise renders a compact block citing regime, net GEX (per 1% move),
+    the gamma-flip strike, and the top gamma walls.
+    """
+    if not flow_enabled():
+        return ""
+
+    g = _get_gamma(ticker)
+    if not g:
+        return ""
+
+    regime = g.get("regime")
+    walls = g.get("walls") or []
+    if regime == "flat" or not walls:
+        return ""
+
+    if regime == "negative":
+        regime_line = "NEGATIVE (dealers short gamma -> moves AMPLIFIED / squeeze-prone)"
+    elif regime == "positive":
+        regime_line = "POSITIVE (dealers long gamma -> moves DAMPENED / pinned to walls)"
+    else:
+        regime_line = str(regime).upper()
+
+    net_gex = _fmt_gamma_dollars(g.get("total_gex"))
+
+    flip = g.get("gamma_flip")
+    flip_line = f"{_fmt(flip)}   (above = net long-gamma/stable, " "below = short-gamma/unstable)" if flip is not None else "n/a"
+
+    wall_strs = []
+    for w in walls[:5]:
+        strike = w.get("strike")
+        gd = _fmt_gamma_dollars(w.get("gamma_dollars"))
+        wall_strs.append(f"{_fmt(strike)} ({gd})")
+    walls_line = ", ".join(wall_strs)
+
+    return "\nINSTITUTIONAL POSITIONING — DEALER GAMMA " "(options-implied, snapshot)\n" f"  regime: {regime_line}\n" f"  net GEX: {net_gex} per 1% move\n" f"  gamma flip: {flip_line}\n" "  gamma walls (dealer hedging levels = support/resistance): " f"{walls_line}\n"
+
 
 # ---------------------------------------------------------------------------
 # Indicator math (no pandas dependency — pure stdlib for portability)
@@ -83,10 +203,7 @@ def _macd(closes: list[float], fast: int = 12, slow: int = 26, sig: int = 9):
         return None, None, None
     ema_fast = _ema(closes, fast)
     ema_slow = _ema(closes, slow)
-    macd_line = [
-        f - s if not (math.isnan(f) or math.isnan(s)) else float("nan")
-        for f, s in zip(ema_fast, ema_slow)
-    ]
+    macd_line = [f - s if not (math.isnan(f) or math.isnan(s)) else float("nan") for f, s in zip(ema_fast, ema_slow)]
     # Signal = EMA of MACD line over `sig`
     valid_macd = [m for m in macd_line if not math.isnan(m)]
     if len(valid_macd) < sig:
@@ -98,15 +215,14 @@ def _macd(closes: list[float], fast: int = 12, slow: int = 26, sig: int = 9):
     return macd_last, signal_last, hist
 
 
-def _kdj(highs: list[float], lows: list[float], closes: list[float],
-         n: int = 9, k_sm: int = 3, d_sm: int = 3):
+def _kdj(highs: list[float], lows: list[float], closes: list[float], n: int = 9, k_sm: int = 3, d_sm: int = 3):
     """Returns (K, D, J) last values. Standard A-share / TradingView KDJ."""
     if len(closes) < n:
         return None, None, None
     rsv = []
     for i in range(n - 1, len(closes)):
-        h = max(highs[i - n + 1:i + 1])
-        l = min(lows[i - n + 1:i + 1])
+        h = max(highs[i - n + 1 : i + 1])
+        l = min(lows[i - n + 1 : i + 1])
         rsv.append(100 * (closes[i] - l) / (h - l)) if h != l else rsv.append(50.0)
     # K = SMA of RSV smoothing k_sm (commonly EMA with alpha=1/3)
     k = [50.0]
@@ -235,7 +351,7 @@ def build_quant_context(shared: Any, ticker: str) -> str:
     # ---- price + trend ----
     last_close = closes[-1] if closes else None
     prev_close = closes[-2] if len(closes) >= 2 else None
-    today_pct = ((last_close / prev_close - 1) if (last_close and prev_close) else None)
+    today_pct = (last_close / prev_close - 1) if (last_close and prev_close) else None
     sma20, sma50, sma200 = _sma(closes, 20), _sma(closes, 50), _sma(closes, 200)
     dist_sma20 = (last_close / sma20 - 1) if (last_close and sma20) else None
     dist_sma50 = (last_close / sma50 - 1) if (last_close and sma50) else None
@@ -300,6 +416,7 @@ def build_quant_context(shared: Any, ticker: str) -> str:
             (t - s) if (t is not None and s is not None) else None,
             (t - m) if (t is not None and m is not None) else None,
         )
+
     t20, rel_sec_20, rel_spy_20 = _rel(20)
     t60, rel_sec_60, rel_spy_60 = _rel(60)
 
@@ -319,7 +436,7 @@ def build_quant_context(shared: Any, ticker: str) -> str:
     a_mean = _get(analyst_targets, "mean_target") if analyst_targets else None
     a_high = _get(analyst_targets, "high_target") if analyst_targets else None
     a_low = _get(analyst_targets, "low_target") if analyst_targets else None
-    upside = ((a_mean / last_close - 1) if (a_mean and last_close) else None)
+    upside = (a_mean / last_close - 1) if (a_mean and last_close) else None
 
     # ---- news (top 12) ----
     news_lines = []
@@ -413,9 +530,14 @@ ANALYST CONSENSUS (forward target prices)
 
 RECENT NEWS (top 12 headlines — the ONLY source for company-specific events/products/holdings)
 {news_block}
-
-=== END QUANT CONTEXT ===
 """
+
+    # Phase 11+: append the dealer-gamma (GEX) positioning block when enabled
+    # and non-empty. Placed inside the QUANT CONTEXT (before the close marker)
+    # so it is grounded data the DATA RULES directive governs.
+    body += _gamma_block(ticker)
+
+    body += "\n=== END QUANT CONTEXT ===\n"
     return body
 
 
@@ -447,5 +569,11 @@ CRITICAL DATA RULES (read before writing):
   7. For relative performance ("outperformed / underperformed the sector or
      the market by X%"), use ONLY the RELATIVE PERFORMANCE block. Do NOT name
      a specific thematic benchmark ETF unless it is the one provided.
+  8. The DEALER GAMMA block (if present) is options-implied positioning — a
+     snapshot/model of where dealer hedging sits, NOT a trade signal or
+     forecast. Cite the regime and gamma walls as context (e.g. squeeze-prone
+     vs pinned, hedging levels that may act as support/resistance); do NOT
+     treat walls as guaranteed price targets or the regime as a directional
+     call.
 
 """

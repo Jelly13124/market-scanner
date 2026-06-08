@@ -206,6 +206,7 @@ def run_once(
                 agent_fn=agent_fn,
                 top_n=top_n,
                 hold_days=sleeve_hold_days,
+                targets=targets,  # reuse step-1 targets — don't run scan/agent twice
             )
             summaries[sleeve_name] = summary
             logger.info(

@@ -103,3 +103,26 @@ def test_equal_weight_uses_only_priceable_targets(session):
     pos = session.query(PaperPosition).filter_by(ticker="AAA", status="open").one()
     assert pos.shares == 10.0, "unpriceable BBB's capital must redistribute to AAA"
     assert session.query(PaperPosition).filter_by(ticker="BBB").count() == 0
+
+
+def test_run_week_uses_precomputed_targets_without_rerunning_seams(session):
+    # When targets are passed in, run_week must NOT call the scan/agent seam
+    # again (run_once precomputes them — otherwise scanner_agent's LLM runs 2x).
+    def _boom(*a, **k):
+        raise AssertionError("seam must not be called when targets are precomputed")
+
+    broker = FakeBroker(starting_cash=1000.0, prices={"AAA": 100.0})
+    run_week(
+        sleeve_name="scanner_only",
+        scan_date="2026-01-05",
+        week_key="2026-W01",
+        broker=broker,
+        session=session,
+        run_scan_fn=_boom,
+        agent_fn=_boom,
+        top_n=2,
+        hold_days=30,
+        targets=["AAA"],
+    )
+    pos = session.query(PaperPosition).filter_by(ticker="AAA", status="open").one()
+    assert pos.shares == 10.0  # entered from the precomputed target; seam never ran

@@ -75,6 +75,7 @@ def run_week(
     agent_fn: AgentFn | None = None,
     top_n: int = 5,
     hold_days: int | None = 30,
+    targets: list[str] | None = None,
 ) -> dict:
     """Run one weekly rebalance for ``sleeve_name`` and return a summary.
 
@@ -179,13 +180,17 @@ def run_week(
         held = set()
 
     # --- 3. Targets for this week. -------------------------------------------
-    targets = compute_targets(
-        sleeve_name,
-        scan_date,
-        run_scan_fn=run_scan_fn,
-        agent_fn=agent_fn,
-        top_n=top_n,
-    )
+    # Caller may pass precomputed targets (run_once does, so the scanner/agent
+    # seam isn't run twice — otherwise scanner_agent's LLM analysis runs once
+    # for the price-prefetch and again here).
+    if targets is None:
+        targets = compute_targets(
+            sleeve_name,
+            scan_date,
+            run_scan_fn=run_scan_fn,
+            agent_fn=agent_fn,
+            top_n=top_n,
+        )
 
     # --- 4. Enter new targets equal-weight from available cash. ---------------
     new = [t for t in targets if t not in held]

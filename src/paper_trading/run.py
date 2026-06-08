@@ -192,6 +192,10 @@ def run_once(
 
             # 4. Reconstruct the broker at those marks and run the week.
             broker = reconstruct_broker(sleeve_name, session, prices=prices, starting_cash=starting_cash)
+            # spy_benchmark is buy-and-hold: never age it out, else SPY churns
+            # every hold_days and the A/B benchmark (graduation clause "sharpe >=
+            # spy") becomes invalid.
+            sleeve_hold_days = None if sleeve_name == "spy_benchmark" else hold_days
             summary = run_week(
                 sleeve_name=sleeve_name,
                 scan_date=scan_date,
@@ -201,7 +205,7 @@ def run_once(
                 run_scan_fn=run_scan_fn,
                 agent_fn=agent_fn,
                 top_n=top_n,
-                hold_days=hold_days,
+                hold_days=sleeve_hold_days,
             )
             summaries[sleeve_name] = summary
             logger.info(

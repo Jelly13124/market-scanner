@@ -190,8 +190,10 @@ def run_week(
     # --- 4. Enter new targets equal-weight from available cash. ---------------
     new = [t for t in targets if t not in held]
     if new:
-        cash = float(broker.get_account()["cash"])
-        notional_each = cash / max(1, len(new))
+        # Price every new target FIRST, then split cash only across the ones we
+        # can actually price — otherwise an unpriceable name's share of capital
+        # is left idle and the sleeve is under-invested vs its peers (A/B bias).
+        priced: list[tuple[str, float]] = []
         for ticker in new:
             try:
                 price = broker.get_last_price(ticker)
@@ -201,7 +203,11 @@ def run_week(
             if price is None or price <= 0:
                 logger.warning("run_week: no valid price for %s; skipping entry", ticker)
                 continue
+            priced.append((ticker, price))
 
+        cash = float(broker.get_account()["cash"])
+        notional_each = cash / max(1, len(priced))
+        for ticker, price in priced:
             qty = math.floor(notional_each / price)
             if qty < 1:
                 logger.info(

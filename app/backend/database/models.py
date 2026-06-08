@@ -704,3 +704,82 @@ class OAuthAccount(Base):
     email = Column(String(255))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     __table_args__ = (UniqueConstraint("provider", "provider_account_id", name="uq_oauth_provider_account"),)
+
+
+class PaperSleeve(Base):
+    """One book in the paper-trading forward test.
+
+    Three sleeves run side by side off the same scanner output so their
+    equity curves are directly comparable:
+      * ``scanner_agent``  — scanner picks filtered through the LLM agents
+      * ``scanner_only``   — scanner picks taken straight, no agent
+      * ``spy_benchmark``  — buy-and-hold SPY control
+    ``name`` is unique so each book is addressed by its stable key.
+    """
+
+    __tablename__ = "paper_sleeves"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # "scanner_agent" | "scanner_only" | "spy_benchmark"
+    name = Column(String(50), nullable=False, unique=True, index=True)
+    starting_cash = Column(Float, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class PaperPosition(Base):
+    """One lot held (or formerly held) by a sleeve.
+
+    Opened at ``entry_date``/``entry_price`` with ``status='open'``; the
+    weekly mark-to-market close fills ``exit_date``/``exit_price`` and flips
+    ``status`` to 'closed'. Exit fields stay null while the lot is open.
+    """
+
+    __tablename__ = "paper_positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sleeve_id = Column(Integer, ForeignKey("paper_sleeves.id"), nullable=False, index=True)
+    ticker = Column(String(20), nullable=False, index=True)
+    shares = Column(Float, nullable=False)
+    entry_date = Column(String(10), nullable=False)  # ISO YYYY-MM-DD
+    entry_price = Column(Float, nullable=False)
+    exit_date = Column(String(10), nullable=True)  # ISO YYYY-MM-DD; null while open
+    exit_price = Column(Float, nullable=True)
+    status = Column(String(10), nullable=False, default="open")  # 'open' | 'closed'
+
+
+class PaperOrder(Base):
+    """Audit log of every order the broker attempted for a sleeve.
+
+    Records both fills and rejections so the absence of a row means the
+    broker never tried. ``week_key`` (ISO week, e.g. "2026-W24") groups the
+    orders belonging to one weekly rebalance.
+    """
+
+    __tablename__ = "paper_orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sleeve_id = Column(Integer, ForeignKey("paper_sleeves.id"), nullable=False, index=True)
+    ticker = Column(String(20), nullable=False, index=True)
+    side = Column(String(10), nullable=False)  # 'buy' | 'sell'
+    qty = Column(Float, nullable=False)
+    price = Column(Float, nullable=False)
+    status = Column(String(10), nullable=False)  # 'filled' | 'rejected'
+    week_key = Column(String(10), nullable=False, index=True)  # ISO week, e.g. "2026-W24"
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class PaperEquityMark(Base):
+    """Daily mark-to-market equity for a sleeve — one row per (sleeve, date).
+
+    The unique (sleeve_id, date) constraint makes the daily write idempotent
+    and gives every sleeve a single comparable equity curve.
+    """
+
+    __tablename__ = "paper_equity_marks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sleeve_id = Column(Integer, ForeignKey("paper_sleeves.id"), nullable=False, index=True)
+    date = Column(String(10), nullable=False, index=True)  # ISO YYYY-MM-DD
+    equity = Column(Float, nullable=False)
+
+    __table_args__ = (UniqueConstraint("sleeve_id", "date", name="uq_paper_equity_sleeve_date"),)

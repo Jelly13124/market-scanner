@@ -297,3 +297,243 @@ def fetch_gamma_exposure(ticker: str, *, max_expiries: int = 8, fetch_fn=None) -
         return None
 
     return {"ticker": ticker, "spot": spot, **compute_gex(spot, chains)}
+
+
+# ===========================================================================
+# Second signal: FINRA Reg-SHO daily short volume ("off-exchange pressure")
+# ===========================================================================
+#
+# FINRA publishes a free, no-auth daily file of consolidated short-sale volume
+# by symbol. We read it as an *off-exchange short-pressure PROXY*:
+#
+#     short_pct = ShortVolume / TotalVolume   (a 0..1 fraction)
+#
+# IMPORTANT (honesty): this is NOT true ATS/dark-pool volume. That requires the
+# FINRA-authenticated *weekly* ATS files. The daily Reg-SHO short-volume feed is
+# a public proxy — a large fraction is routine market-maker hedging, so the
+# level is *not* directional on its own. Label it as a proxy everywhere.
+#
+# File: https://cdn.finra.org/equity/regsho/daily/CNMSshvol{YYYYMMDD}.txt
+#   * Needs a browser-ish User-Agent header; bare requests can be refused.
+#   * Weekends / holidays have no file → HTTP 403. We walk back day by day.
+#   * Pipe-delimited; header row:
+#       Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market
+#   * A symbol may appear on MULTIPLE rows (one per Market code). We AGGREGATE:
+#     sum ShortVolume and TotalVolume across all of a symbol's rows for the day.
+
+# CDN endpoint template for the consolidated (CNMS) daily short-volume file.
+_FINRA_REGSHO_URL = "https://cdn.finra.org/equity/regsho/daily/CNMSshvol{date}.txt"
+
+# Some servers (FINRA's CDN included) refuse requests without a browser-like
+# User-Agent. A minimal one is enough.
+_FINRA_HEADERS = {"User-Agent": "Mozilla/5.0"}
+
+
+def _fetch_finra_day(date_str: str, *, http_get=None) -> str | None:
+    """GET the FINRA Reg-SHO daily short-volume file for ``date_str``.
+
+    Parameters
+    ----------
+    date_str : str
+        The trading date as ``YYYYMMDD`` (the format embedded in the filename).
+    http_get : callable, optional
+        Injectable HTTP seam ``http_get(url, headers=, timeout=) -> response``
+        with ``.status_code`` and ``.text``. Defaults to ``requests.get``
+        (lazily imported so the dependency is only needed for live fetches).
+        Tests pass a stub so no network call happens.
+
+    Returns
+    -------
+    str | None
+        The raw file text on HTTP 200, else ``None`` (weekend/holiday → 403,
+        or any transport error — best-effort, never raises).
+    """
+    get = http_get
+    if get is None:
+        import requests  # lazy: only needed for the live path
+
+        get = requests.get
+
+    url = _FINRA_REGSHO_URL.format(date=date_str)
+    try:
+        resp = get(url, headers=_FINRA_HEADERS, timeout=15)
+    except Exception:  # noqa: BLE001 — best-effort; treat any failure as no-data
+        return None
+
+    if getattr(resp, "status_code", None) != 200:
+        return None
+    return resp.text
+
+
+def _parse_finra_short_volume(text: str, ticker: str) -> tuple[float, float] | None:
+    """Aggregate one ticker's (short_volume, total_volume) from a FINRA file.
+
+    The file is pipe-delimited with a header row. A symbol can appear on several
+    rows (one per ``Market`` code); we sum ShortVolume and TotalVolume across all
+    of the ticker's rows. Malformed rows (missing columns / non-numeric volumes)
+    are skipped silently rather than poisoning the aggregate.
+
+    Returns ``(short_volume, total_volume)`` if the ticker appears on ≥1 valid
+    row with a positive total volume, else ``None``.
+    """
+    if not text:
+        return None
+
+    want = ticker.strip().upper()
+    short_total = 0.0
+    total_total = 0.0
+    found = False
+
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|")
+        # Need at least Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume.
+        if len(parts) < 5:
+            continue
+        symbol = parts[1].strip().upper()
+        if symbol != want:
+            continue
+        try:
+            short_v = float(parts[2])
+            total_v = float(parts[4])
+        except (TypeError, ValueError):
+            # Header row ("ShortVolume"/"TotalVolume") or a corrupt row — skip.
+            continue
+        short_total += short_v
+        total_total += total_v
+        found = True
+
+    if not found or total_total <= 0.0:
+        return None
+    return short_total, total_total
+
+
+def fetch_short_volume(
+    ticker: str,
+    *,
+    lookback_days: int = 10,
+    today: str | None = None,
+    day_fetch=None,
+) -> dict | None:
+    """Build an off-exchange short-pressure proxy for ``ticker`` from FINRA.
+
+    Walks back from ``today`` up to ``lookback_days`` *calendar* days, fetching
+    each day's FINRA Reg-SHO file and collecting this ticker's aggregated
+    ``(short_volume, total_volume, short_pct)`` for every date a file exists
+    (newest first). Days with no file (weekend/holiday → 403/None) are skipped.
+
+    Parameters
+    ----------
+    ticker : str
+        Symbol to extract, e.g. ``"AAPL"``.
+    lookback_days : int
+        Max number of calendar days to walk back (default 10).
+    today : str, optional
+        Anchor date as ``YYYY-MM-DD`` or ``YYYYMMDD``. Defaults to
+        ``date.today()`` — but tests always pass an explicit value so the walk
+        is deterministic and never touches the real clock in an uncontrollable
+        way.
+    day_fetch : callable, optional
+        Injectable per-day seam ``day_fetch(date_str_YYYYMMDD) -> str | None``.
+        Defaults to :func:`_fetch_finra_day`. Tests pass a stub so no network
+        call happens.
+
+    Returns
+    -------
+    dict | None
+        On ≥1 available day::
+
+            {
+                "ticker":        str,
+                "date":          str,    # latest date with data, YYYY-MM-DD
+                "short_pct":     float,  # latest short_volume / total_volume
+                "short_volume":  float,  # latest day's aggregated short volume
+                "total_volume":  float,  # latest day's aggregated total volume
+                "avg_short_pct": float,  # mean short_pct over all collected days
+                "trend":         str,    # "rising"/"falling"/"flat" (latest vs
+                                         #   mean of the older days)
+                "n_days":        int,    # number of days with data collected
+            }
+
+        ``None`` if no day had data, or on any failure (best-effort — the walk
+        never raises).
+    """
+    from datetime import date, timedelta
+
+    fetch = day_fetch or _fetch_finra_day
+
+    try:
+        anchor = _parse_anchor_date(today)
+    except Exception:  # noqa: BLE001 — bad input → no signal rather than crash
+        return None
+
+    # Collected per-day records, newest first. Each: (date_iso, short_pct,
+    # short_volume, total_volume).
+    days: list[tuple[str, float, float, float]] = []
+
+    try:
+        for offset in range(max(int(lookback_days), 0)):
+            d = anchor - timedelta(days=offset)
+            date_str = d.strftime("%Y%m%d")
+            text = fetch(date_str)
+            if not text:
+                continue  # weekend/holiday/no-file — skip
+            agg = _parse_finra_short_volume(text, ticker)
+            if agg is None:
+                continue  # ticker absent / no usable rows that day
+            short_v, total_v = agg
+            short_pct = short_v / total_v if total_v > 0.0 else 0.0
+            days.append((d.strftime("%Y-%m-%d"), short_pct, short_v, total_v))
+    except Exception:  # noqa: BLE001 — best-effort; partial data still usable below
+        pass
+
+    if not days:
+        return None
+
+    latest_date, latest_pct, latest_short, latest_total = days[0]
+    pcts = [rec[1] for rec in days]
+    avg_pct = sum(pcts) / len(pcts)
+
+    # Trend: compare the latest day against the mean of the *older* days. With
+    # only one day of data there is nothing to compare → "flat".
+    older = pcts[1:]
+    if older:
+        older_avg = sum(older) / len(older)
+        # 1 percentage-point (0.01) dead-band so micro-noise reads "flat".
+        if latest_pct > older_avg + 0.01:
+            trend = "rising"
+        elif latest_pct < older_avg - 0.01:
+            trend = "falling"
+        else:
+            trend = "flat"
+    else:
+        trend = "flat"
+
+    return {
+        "ticker": ticker,
+        "date": latest_date,
+        "short_pct": latest_pct,
+        "short_volume": latest_short,
+        "total_volume": latest_total,
+        "avg_short_pct": avg_pct,
+        "trend": trend,
+        "n_days": len(days),
+    }
+
+
+def _parse_anchor_date(today: str | None):
+    """Resolve the walk anchor to a ``datetime.date``.
+
+    Accepts ``None`` (→ today), ``YYYY-MM-DD``, or ``YYYYMMDD``. Raises
+    ``ValueError`` on an unparseable string (the caller turns that into None).
+    """
+    from datetime import date, datetime
+
+    if today is None:
+        return date.today()
+    s = str(today).strip()
+    if "-" in s:
+        return datetime.strptime(s, "%Y-%m-%d").date()
+    return datetime.strptime(s, "%Y%m%d").date()

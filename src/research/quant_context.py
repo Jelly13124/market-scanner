@@ -34,7 +34,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from src.research.institutional_flow import fetch_gamma_exposure
+from src.research.institutional_flow import fetch_gamma_exposure, fetch_short_volume
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +56,11 @@ _FLOW_ENABLED: bool = True
 # `clear_gamma_cache()` (the per-run pipeline + tests reset it explicitly).
 _GAMMA_CACHE: dict[str, dict | None] = {}
 
+# Per-ticker cache of the FINRA short-volume dict (or None on no-data/failure).
+# Same lifecycle as _GAMMA_CACHE — the short-volume signal touches FINRA's CDN,
+# so the ~13 section calls for one ticker share a single multi-day walk.
+_SHORTVOL_CACHE: dict[str, dict | None] = {}
+
 
 def set_flow_enabled(value: bool) -> None:
     """Toggle the dealer-gamma block globally (default ON).
@@ -73,8 +78,19 @@ def flow_enabled() -> bool:
 
 
 def clear_gamma_cache() -> None:
-    """Drop all cached gamma-exposure results (per-run / test reset)."""
+    """Drop all cached institutional-flow results (per-run / test reset).
+
+    Clears both the dealer-gamma and FINRA short-volume caches so a fresh run
+    (or test) starts clean. Kept under the original name for back-compat;
+    :func:`clear_flow_caches` is the descriptive alias.
+    """
     _GAMMA_CACHE.clear()
+    _SHORTVOL_CACHE.clear()
+
+
+def clear_flow_caches() -> None:
+    """Alias for :func:`clear_gamma_cache`: drop all institutional-flow caches."""
+    clear_gamma_cache()
 
 
 def _get_gamma(ticker: str) -> dict | None:
@@ -91,6 +107,23 @@ def _get_gamma(ticker: str) -> dict | None:
     except Exception:  # noqa: BLE001 — best-effort; never break context build
         result = None
     _GAMMA_CACHE[ticker] = result
+    return result
+
+
+def _get_short_volume(ticker: str) -> dict | None:
+    """Return the cached FINRA short-volume dict for ``ticker``.
+
+    Computes ``fetch_short_volume(ticker)`` on first request and caches the
+    result (including ``None``) so repeated section calls don't refetch.
+    Best-effort: any exception is swallowed, cached as ``None``, and returned.
+    """
+    if ticker in _SHORTVOL_CACHE:
+        return _SHORTVOL_CACHE[ticker]
+    try:
+        result = fetch_short_volume(ticker)
+    except Exception:  # noqa: BLE001 — best-effort; never break context build
+        result = None
+    _SHORTVOL_CACHE[ticker] = result
     return result
 
 
@@ -153,6 +186,38 @@ def _gamma_block(ticker: str) -> str:
     walls_line = ", ".join(wall_strs)
 
     return "\nINSTITUTIONAL POSITIONING — DEALER GAMMA " "(options-implied, snapshot)\n" f"  regime: {regime_line}\n" f"  net GEX: {net_gex} per 1% move\n" f"  gamma flip: {flip_line}\n" "  gamma walls (dealer hedging levels = support/resistance): " f"{walls_line}\n"
+
+
+def _short_volume_block(ticker: str) -> str:
+    """Render the FINRA off-exchange short-pressure block for ``ticker``.
+
+    Returns ``""`` (omit silently) when the flow flag is OFF or no short-volume
+    data is available. Otherwise renders a compact, explicitly-labelled-as-proxy
+    line set citing the latest short% (with date), the multi-day average, and
+    the trend. This is the SECOND institutional-flow signal, rendered in the
+    same INSTITUTIONAL POSITIONING area as dealer gamma.
+    """
+    if not flow_enabled():
+        return ""
+
+    sv = _get_short_volume(ticker)
+    if not sv:
+        return ""
+
+    short_pct = sv.get("short_pct")
+    avg_pct = sv.get("avg_short_pct")
+    date = sv.get("date")
+    n_days = sv.get("n_days")
+    trend = str(sv.get("trend") or "flat").upper()
+
+    # Unsigned percent: a short *fraction* is a level (always >=0), not a delta,
+    # so the "+/-" that _fmt_pct prepends would be misleading here.
+    def _pct(x: float | None) -> str:
+        if x is None or (isinstance(x, float) and math.isnan(x)):
+            return "n/a"
+        return f"{x * 100:.1f}%"
+
+    return "\nOFF-EXCHANGE SHORT PRESSURE " "(FINRA Reg-SHO daily short volume — a proxy, NOT true dark-pool/ATS)\n" f"  latest short volume: {_pct(short_pct)} of total " f"({date}), {n_days}-day avg {_pct(avg_pct)}, trend {trend}\n"
 
 
 # ---------------------------------------------------------------------------
@@ -537,6 +602,10 @@ RECENT NEWS (top 12 headlines — the ONLY source for company-specific events/pr
     # so it is grounded data the DATA RULES directive governs.
     body += _gamma_block(ticker)
 
+    # Second institutional-flow signal: FINRA off-exchange short pressure.
+    # Rendered directly after the gamma block, in the same positioning area.
+    body += _short_volume_block(ticker)
+
     body += "\n=== END QUANT CONTEXT ===\n"
     return body
 
@@ -574,6 +643,9 @@ CRITICAL DATA RULES (read before writing):
      forecast. Cite the regime and gamma walls as context (e.g. squeeze-prone
      vs pinned, hedging levels that may act as support/resistance); do NOT
      treat walls as guaranteed price targets or the regime as a directional
-     call.
+     call. Likewise the OFF-EXCHANGE SHORT PRESSURE block is a FINRA Reg-SHO
+     PROXY, not true dark-pool/ATS volume — routine market-making inflates the
+     short% (often ~40-50% even for calm names), so it is NOT directional on
+     its own; cite the level/trend as context, not as a bearish signal.
 
 """

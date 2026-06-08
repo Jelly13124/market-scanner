@@ -7,7 +7,7 @@ REAL market prices. No broker key is needed for the default path; the optional
 ``AlpacaBroker`` adapter is a separate future-execution seam.
 
 Subcommands (combinable):
-    --once     Run THIS week's rebalance for all 3 sleeves.
+    --once     Run THIS week's rebalance for all sleeves.
     --marks    Mark every sleeve to market for today (daily MTM).
     --report   Write the Markdown + HTML report to ``--out-dir``.
 
@@ -152,74 +152,102 @@ def run_once(
     hold_days: int | None = DEFAULT_HOLD_DAYS,
     starting_cash: float = DEFAULT_STARTING_CASH,
 ) -> dict[str, dict]:
-    """Run this week's rebalance for all 3 sleeves; never crash on one sleeve.
+    """Run this week's rebalance for all sleeves; never crash on one sleeve.
 
     For each sleeve: compute the union of (held + target) tickers, fetch a live
     ``prices`` mark for each, reconstruct the sleeve's broker from the DB at
     those marks, then drive :func:`run_week`. One sleeve raising is logged and
     skipped so the others still run.
 
+    Per-sleeve institutional-flow gating: before each sleeve computes its targets
+    (the agent runs inside ``compute_targets``), the research agent's flow context
+    is toggled ON only for ``scanner_agent_flow`` and OFF for every other sleeve.
+    So ``scanner_agent`` (flow OFF) vs ``scanner_agent_flow`` (flow ON) is a clean
+    with/without-flow A/B — the agent runs TWICE per week, once each way. The
+    default (flow ON for normal Analyze) is restored in a ``finally`` so a paper
+    run never leaks a disabled flag into the rest of the process.
+
     Returns ``{sleeve_name: run_week summary | {"error": str}}``.
     """
     from .engine import run_week
 
+    # Lazily bind the flow gate; if quant_context can't be imported, fall back to
+    # a no-op so the paper run still works (just without per-sleeve gating).
+    try:
+        from src.research.quant_context import set_flow_enabled
+    except Exception:  # noqa: BLE001 — flow gating is best-effort, never block the run
+        logger.warning("run_once: quant_context.set_flow_enabled unavailable; flow gating disabled (no-op)", exc_info=True)
+
+        def set_flow_enabled(_value: bool) -> None:
+            return None
+
     summaries: dict[str, dict] = {}
-    for sleeve_name in SLEEVE_NAMES:
-        try:
-            # 1. Targets this week (so we can pre-fetch their marks).
-            targets = compute_targets(
-                sleeve_name,
-                scan_date,
-                run_scan_fn=run_scan_fn,
-                agent_fn=agent_fn,
-                top_n=top_n,
-            )
-            # 2. Held tickers (open positions) from the DB.
-            from app.backend.database.models import PaperPosition, PaperSleeve
+    try:
+        for sleeve_name in SLEEVE_NAMES:
+            try:
+                # 0. Gate institutional-flow context for THIS sleeve's agent run.
+                # Only scanner_agent_flow sees flow; scanner_agent (and the
+                # non-agent sleeves) run flow-OFF. Set BEFORE compute_targets,
+                # which is where the agent actually runs.
+                set_flow_enabled(sleeve_name == "scanner_agent_flow")
 
-            sleeve_row = session.query(PaperSleeve).filter_by(name=sleeve_name).one_or_none()
-            held: list[str] = []
-            if sleeve_row is not None:
-                held = [p.ticker for p in session.query(PaperPosition).filter_by(sleeve_id=sleeve_row.id, status="open").all()]
+                # 1. Targets this week (so we can pre-fetch their marks).
+                targets = compute_targets(
+                    sleeve_name,
+                    scan_date,
+                    run_scan_fn=run_scan_fn,
+                    agent_fn=agent_fn,
+                    top_n=top_n,
+                )
+                # 2. Held tickers (open positions) from the DB.
+                from app.backend.database.models import PaperPosition, PaperSleeve
 
-            # 3. Live marks for the union (held + target).
-            universe = list(dict.fromkeys([*held, *targets]))
-            prices: dict[str, float] = {}
-            for ticker in universe:
-                px = price_fn(ticker)
-                if px is not None and px > 0:
-                    prices[ticker] = px
+                sleeve_row = session.query(PaperSleeve).filter_by(name=sleeve_name).one_or_none()
+                held: list[str] = []
+                if sleeve_row is not None:
+                    held = [p.ticker for p in session.query(PaperPosition).filter_by(sleeve_id=sleeve_row.id, status="open").all()]
 
-            # 4. Reconstruct the broker at those marks and run the week.
-            broker = reconstruct_broker(sleeve_name, session, prices=prices, starting_cash=starting_cash)
-            # spy_benchmark is buy-and-hold: never age it out, else SPY churns
-            # every hold_days and the A/B benchmark (graduation clause "sharpe >=
-            # spy") becomes invalid.
-            sleeve_hold_days = None if sleeve_name == "spy_benchmark" else hold_days
-            summary = run_week(
-                sleeve_name=sleeve_name,
-                scan_date=scan_date,
-                week_key=week_key,
-                broker=broker,
-                session=session,
-                run_scan_fn=run_scan_fn,
-                agent_fn=agent_fn,
-                top_n=top_n,
-                hold_days=sleeve_hold_days,
-                targets=targets,  # reuse step-1 targets — don't run scan/agent twice
-            )
-            summaries[sleeve_name] = summary
-            logger.info(
-                "run_once: %s entered=%s exited=%s n_orders=%d cash=%.2f",
-                sleeve_name,
-                summary.get("entered"),
-                summary.get("exited"),
-                summary.get("n_orders"),
-                summary.get("cash_after"),
-            )
-        except Exception as exc:  # noqa: BLE001 — one bad sleeve must not sink the run
-            logger.exception("run_once: sleeve %s failed", sleeve_name)
-            summaries[sleeve_name] = {"error": f"{type(exc).__name__}: {exc}"}
+                # 3. Live marks for the union (held + target).
+                universe = list(dict.fromkeys([*held, *targets]))
+                prices: dict[str, float] = {}
+                for ticker in universe:
+                    px = price_fn(ticker)
+                    if px is not None and px > 0:
+                        prices[ticker] = px
+
+                # 4. Reconstruct the broker at those marks and run the week.
+                broker = reconstruct_broker(sleeve_name, session, prices=prices, starting_cash=starting_cash)
+                # spy_benchmark is buy-and-hold: never age it out, else SPY churns
+                # every hold_days and the A/B benchmark (graduation clause "sharpe >=
+                # spy") becomes invalid.
+                sleeve_hold_days = None if sleeve_name == "spy_benchmark" else hold_days
+                summary = run_week(
+                    sleeve_name=sleeve_name,
+                    scan_date=scan_date,
+                    week_key=week_key,
+                    broker=broker,
+                    session=session,
+                    run_scan_fn=run_scan_fn,
+                    agent_fn=agent_fn,
+                    top_n=top_n,
+                    hold_days=sleeve_hold_days,
+                    targets=targets,  # reuse step-1 targets — don't run scan/agent twice
+                )
+                summaries[sleeve_name] = summary
+                logger.info(
+                    "run_once: %s entered=%s exited=%s n_orders=%d cash=%.2f",
+                    sleeve_name,
+                    summary.get("entered"),
+                    summary.get("exited"),
+                    summary.get("n_orders"),
+                    summary.get("cash_after"),
+                )
+            except Exception as exc:  # noqa: BLE001 — one bad sleeve must not sink the run
+                logger.exception("run_once: sleeve %s failed", sleeve_name)
+                summaries[sleeve_name] = {"error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        # Restore the default so a paper run never leaves normal Analyze flow-OFF.
+        set_flow_enabled(True)
     return summaries
 
 
@@ -229,7 +257,7 @@ def run_once(
 
 
 def paper_weekly_job() -> None:
-    """Weekly rebalance for all 3 sleeves (scheduler/cron entrypoint).
+    """Weekly rebalance for all sleeves (scheduler/cron entrypoint).
 
     Self-contained: opens its own session, builds the live seams, derives the
     scan date (today) + week key, and runs. Swallows nothing structural but
@@ -287,7 +315,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="python -m src.paper_trading.run",
         description="Paper-trading forward test: weekly rebalance, daily marks, report.",
     )
-    parser.add_argument("--once", action="store_true", help="Run THIS week's rebalance for all 3 sleeves.")
+    parser.add_argument("--once", action="store_true", help="Run THIS week's rebalance for all sleeves.")
     parser.add_argument("--marks", action="store_true", help="Mark all sleeves to market for the scan date.")
     parser.add_argument("--report", action="store_true", help="Write the Markdown + HTML report to --out-dir.")
     parser.add_argument("--scan-date", default=None, help="As-of date YYYY-MM-DD (default: today).")
@@ -314,7 +342,7 @@ def main(argv=None) -> int:
 
     session = SessionLocal()
     try:
-        # --once: weekly rebalance for all 3 sleeves at live marks.
+        # --once: weekly rebalance for all sleeves at live marks.
         if args.once:
             run_scan_fn, agent_fn, price_fn, universe_tickers = _live_seams(
                 universe=args.universe,

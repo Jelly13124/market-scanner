@@ -185,4 +185,40 @@ def test_unknown_sleeve_returns_empty() -> None:
 
 
 def test_sleeve_names_constant() -> None:
-    assert SLEEVE_NAMES == ("scanner_agent", "scanner_only", "spy_benchmark")
+    assert SLEEVE_NAMES == ("scanner_agent", "scanner_only", "spy_benchmark", "scanner_agent_flow")
+
+
+# -- scanner_agent_flow -------------------------------------------------------
+
+
+def test_scanner_agent_flow_matches_scanner_agent_same_stubs() -> None:
+    """scanner_agent_flow is identical to scanner_agent in compute_targets.
+
+    The ONLY difference between the two sleeves is the flow flag the runner sets
+    around the agent call — NOT the target logic here. So given the same stubs,
+    both must produce the exact same buys (in scan rank order).
+    """
+    run_scan_fn = _scan(["AAA", "BBB", "CCC"])
+    agent_fn = _agent(
+        {
+            "AAA": {"action": "buy"},
+            "BBB": {"action": "short"},
+            "CCC": {"action": "buy"},
+        }
+    )
+
+    agent_targets = compute_targets("scanner_agent", "2026-06-01", run_scan_fn=run_scan_fn, agent_fn=agent_fn)
+    flow_targets = compute_targets("scanner_agent_flow", "2026-06-01", run_scan_fn=run_scan_fn, agent_fn=agent_fn)
+
+    assert flow_targets == ["AAA", "CCC"]
+    assert flow_targets == agent_targets
+
+
+def test_scanner_agent_flow_missing_agent_fn_returns_empty() -> None:
+    targets = compute_targets(
+        "scanner_agent_flow",
+        "2026-06-01",
+        run_scan_fn=_scan(["AAA", "BBB"]),
+        agent_fn=None,
+    )
+    assert targets == []

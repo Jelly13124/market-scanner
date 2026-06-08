@@ -32,8 +32,11 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
-# The three live A/B sleeves, in a stable order for later tasks to iterate.
-SLEEVE_NAMES: tuple[str, ...] = ("scanner_agent", "scanner_only", "spy_benchmark")
+# The live A/B sleeves, in a stable order for later tasks to iterate.
+# ``scanner_agent_flow`` is identical to ``scanner_agent`` (scan -> agent -> buys);
+# they differ ONLY in whether the agent runs with institutional-flow context (the
+# runner toggles ``set_flow_enabled`` per sleeve), making them a with/without-flow A/B.
+SLEEVE_NAMES: tuple[str, ...] = ("scanner_agent", "scanner_only", "spy_benchmark", "scanner_agent_flow")
 
 RunScanFn = Callable[[str, int], "Optional[list[str]]"]
 AgentFn = Callable[[list[str], str], "Optional[dict[str, dict]]"]
@@ -89,13 +92,16 @@ def compute_targets(
     if sleeve_name == "scanner_only":
         return _safe_scan(run_scan_fn, scan_date, top_n)
 
-    if sleeve_name == "scanner_agent":
+    if sleeve_name in ("scanner_agent", "scanner_agent_flow"):
+        # Identical logic for both: the flow difference is the runner toggling
+        # set_flow_enabled around this call, not a branch here.
         tickers = _safe_scan(run_scan_fn, scan_date, top_n)
         if not tickers:
             return []
         if agent_fn is None:
             logger.warning(
-                "scanner_agent sleeve called without agent_fn for scan_date=%s; treating as no conviction",
+                "%s sleeve called without agent_fn for scan_date=%s; treating as no conviction",
+                sleeve_name,
                 scan_date,
             )
             return []

@@ -143,3 +143,61 @@ def test_buy_unknown_symbol_has_no_mark_and_is_rejected() -> None:
 def test_fakebroker_satisfies_broker_client_protocol() -> None:
     broker = FakeBroker(starting_cash=1_000.0, prices={})
     assert isinstance(broker, BrokerClient)
+
+
+def test_load_state_seeds_cash_and_positions_without_replaying_fills() -> None:
+    # Reconstruct a broker as the live runner does: starting_cash is the
+    # sleeve's deposit, but load_state installs the DB-derived cash + open lots.
+    broker = FakeBroker(starting_cash=100_000.0, prices={"AAPL": 250.0, "MSFT": 400.0})
+
+    broker.load_state(
+        cash=12_345.67,
+        positions={
+            "AAPL": {"shares": 100.0, "avg_price": 180.0},  # cost basis preserved
+            "MSFT": {"shares": 50.0, "avg_price": 300.0},
+        },
+    )
+
+    assert broker.get_account()["cash"] == 12_345.67
+    assert broker.get_positions() == {
+        "AAPL": {"shares": 100.0, "avg_price": 180.0},
+        "MSFT": {"shares": 50.0, "avg_price": 300.0},
+    }
+    # equity = cash + shares * CURRENT price (not avg): 12_345.67 + 100*250 + 50*400
+    assert broker.get_account()["equity"] == 12_345.67 + 100 * 250.0 + 50 * 400.0
+
+
+def test_load_state_copies_positions_and_can_sell_after_seed() -> None:
+    broker = FakeBroker(starting_cash=100_000.0, prices={"AAPL": 250.0})
+    seed = {"AAPL": {"shares": 10.0, "avg_price": 180.0}}
+    broker.load_state(cash=0.0, positions=seed)
+
+    # Mutating the caller's dict must not leak into the broker.
+    seed["AAPL"]["shares"] = 999.0
+    assert broker.get_positions()["AAPL"]["shares"] == 10.0
+
+    # The seeded lot is sellable through the normal fill engine.
+    result = broker.submit_market_order("AAPL", "sell", 4)
+    assert result["status"] == "filled"
+    assert result["qty"] == 4
+    assert broker.get_account()["cash"] == 4 * 250.0
+    assert broker.get_positions()["AAPL"]["shares"] == 6.0
+
+
+def test_alpaca_broker_requires_keys() -> None:
+    # With no env keys, AlpacaBroker should raise a clear error — but only AFTER
+    # the lazy alpaca import. If alpaca-py isn't installed, the import itself
+    # raises ImportError; either way construction fails (never silently succeeds).
+    import os
+
+    saved = (os.environ.pop("ALPACA_API_KEY", None), os.environ.pop("ALPACA_SECRET_KEY", None))
+    try:
+        with pytest.raises((ValueError, ImportError, ModuleNotFoundError)):
+            from src.paper_trading.broker import AlpacaBroker
+
+            AlpacaBroker()
+    finally:
+        if saved[0] is not None:
+            os.environ["ALPACA_API_KEY"] = saved[0]
+        if saved[1] is not None:
+            os.environ["ALPACA_SECRET_KEY"] = saved[1]

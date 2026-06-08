@@ -74,6 +74,16 @@ SCREENER_SNAPSHOT_JOB_ID = "screener_snapshot"
 SCREENER_PRESET_CRON_EXPR = "5 22 * * *"
 SCREENER_PRESET_JOB_ID = "screener_presets"
 
+# Paper-trading forward test (Task 8).
+#   Weekly rebalance: Mondays 17:00 ET, after the prior week's close has settled.
+#   Daily marks:      every weekday 17:05 ET, after the US close.
+# Both job bodies live in src.paper_trading.run as zero-arg callables and are
+# idempotent (run_week per (sleeve, week_key); mark_all upserts per (sleeve, day)).
+PAPER_WEEKLY_CRON_EXPR = "0 17 * * 1"
+PAPER_WEEKLY_JOB_ID = "paper_weekly"
+PAPER_MARKS_CRON_EXPR = "5 17 * * 1-5"
+PAPER_MARKS_JOB_ID = "paper_daily_marks"
+
 
 class SchedulerService:
     """Lifecycle + CRUD for scanner cron jobs."""
@@ -138,6 +148,14 @@ class SchedulerService:
             self._register_snapshot_job()
         except Exception as e:
             logger.warning("Failed to register screener snapshot job: %s", e)
+
+        # Register the paper-trading forward-test crons (weekly rebalance +
+        # daily marks). Both bodies are zero-arg callables in
+        # src.paper_trading.run and are idempotent, so retries are safe.
+        try:
+            self._register_paper_trading_jobs()
+        except Exception as e:
+            logger.warning("Failed to register paper-trading jobs: %s", e)
 
         # Register a per-preset cron for each enabled screener preset (each in
         # its owner's timezone). Replaces the old single global 22:05 preset
@@ -452,6 +470,45 @@ class SchedulerService:
             self._tz,
         )
 
+    def _register_paper_trading_jobs(self) -> None:
+        """Register the paper-trading weekly-rebalance + daily-marks crons.
+
+        The job bodies are zero-arg callables imported lazily inside this method
+        (``src.paper_trading.run``) so the scheduler module doesn't pull the
+        scanner/agent/data stack in at import time — same lazy-body discipline as
+        the other singleton crons here.
+        """
+        from src.paper_trading.run import paper_daily_marks_job, paper_weekly_job
+
+        weekly_trigger = CronTrigger.from_crontab(PAPER_WEEKLY_CRON_EXPR, timezone=self._tz)
+        self._scheduler.add_job(
+            paper_weekly_job,
+            trigger=weekly_trigger,
+            id=PAPER_WEEKLY_JOB_ID,
+            max_instances=1,
+            misfire_grace_time=3600,
+            coalesce=True,
+            replace_existing=True,
+        )
+        marks_trigger = CronTrigger.from_crontab(PAPER_MARKS_CRON_EXPR, timezone=self._tz)
+        self._scheduler.add_job(
+            paper_daily_marks_job,
+            trigger=marks_trigger,
+            id=PAPER_MARKS_JOB_ID,
+            max_instances=1,
+            misfire_grace_time=3600,
+            coalesce=True,
+            replace_existing=True,
+        )
+        logger.info(
+            "Registered paper-trading jobs %s (cron=%r) + %s (cron=%r), tz=%s",
+            PAPER_WEEKLY_JOB_ID,
+            PAPER_WEEKLY_CRON_EXPR,
+            PAPER_MARKS_JOB_ID,
+            PAPER_MARKS_CRON_EXPR,
+            self._tz,
+        )
+
     def _register_preset_job(self) -> None:
         """Register the singleton daily screener-preset cron (22:05 ET)."""
         trigger = CronTrigger.from_crontab(SCREENER_PRESET_CRON_EXPR, timezone=self._tz)
@@ -644,7 +701,10 @@ def _run_report_schedule_job(schedule_id: int) -> None:
                 res = email_report_html(db, user_id, ticker=ticker, html=html)
                 _logger.info(
                     "report schedule %s: %s sent=%s failed=%s",
-                    schedule_id, ticker, res["sent"], res["failed"],
+                    schedule_id,
+                    ticker,
+                    res["sent"],
+                    res["failed"],
                 )
             except Exception:
                 _logger.exception("report schedule %s: ticker %s failed", schedule_id, ticker)
@@ -851,8 +911,11 @@ def _run_single_preset_job(preset_id: int) -> None:
         screener = ScreenerRepository(db)
         market = [p.market] if p.market else None
         rows, total = screener.query(
-            market=market, filters=p.filters_json or {},
-            sort_by=p.sort_by, sort_dir=p.sort_dir, limit=200,
+            market=market,
+            filters=p.filters_json or {},
+            sort_by=p.sort_by,
+            sort_dir=p.sort_dir,
+            limit=200,
         )
         ScreenerPresetRepository(db).mark_run(p.id, match_count=total, when=_dt.now(_tz.utc))
         if total > 0 and (p.notify_channels or []):
@@ -872,7 +935,9 @@ def _run_single_preset_job(preset_id: int) -> None:
                 ],
             }
             NotificationDispatcher(SessionLocal).dispatch_screener_match(
-                payload=payload, event_type="screener.match", user_id=p.user_id,
+                payload=payload,
+                event_type="screener.match",
+                user_id=p.user_id,
             )
     except Exception as e:
         logger.exception("screener preset %s failed: %s", preset_id, e)

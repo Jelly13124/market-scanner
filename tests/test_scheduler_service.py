@@ -80,28 +80,31 @@ class TestLifecycle:
             ScannerConfigRepository(session).create(name="c", universe_kind="sp500", is_enabled=True, user_id=1)
         svc.start()
         # 2 enabled scanner configs + 1 daily pipeline + 1 daily research + 1 screener
-        # snapshot. Screener presets now register PER-PRESET crons on demand; none
-        # are enabled here, so the old single global preset job is gone.
-        assert svc._scheduler.add_job.call_count == 5
+        # snapshot + 2 paper-trading (weekly rebalance + daily marks). Screener presets
+        # now register PER-PRESET crons on demand; none are enabled here, so the old
+        # single global preset job is gone.
+        assert svc._scheduler.add_job.call_count == 7
         job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
         assert "daily-pipeline" in job_ids
         assert "research_daily" in job_ids
+        assert "paper_weekly" in job_ids
+        assert "paper_daily_marks" in job_ids
 
     def test_start_registers_daily_pipeline_even_with_no_scanner_configs(self, svc):
         """Pipeline and research jobs are independent of scanner configs —
         both must register even when no scanner configs exist."""
         svc.start()
-        # No configs, but daily pipeline + daily research + screener snapshot still
-        # registered. (Screener presets register per-preset; none enabled here.)
-        assert svc._scheduler.add_job.call_count == 3
+        # No configs, but daily pipeline + daily research + screener snapshot + 2
+        # paper-trading jobs still register. (Screener presets register per-preset;
+        # none enabled here.)
+        assert svc._scheduler.add_job.call_count == 5
         job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
         assert "daily-pipeline" in job_ids
         assert "research_daily" in job_ids
+        assert "paper_weekly" in job_ids
+        assert "paper_daily_marks" in job_ids
         # Verify pipeline job properties
-        pipeline_call = next(
-            c for c in svc._scheduler.add_job.call_args_list
-            if c.kwargs.get("id") == "daily-pipeline"
-        )
+        pipeline_call = next(c for c in svc._scheduler.add_job.call_args_list if c.kwargs.get("id") == "daily-pipeline")
         assert pipeline_call.kwargs["max_instances"] == 1
         assert pipeline_call.kwargs["misfire_grace_time"] == 600
 
@@ -115,7 +118,10 @@ class TestRegister:
     def test_register_adds_job(self, svc, session_factory):
         with session_factory() as session:
             cfg = ScannerConfigRepository(session).create(
-                name="x", universe_kind="sp500", cron_expr="0 21 * * 1-5", user_id=1,
+                name="x",
+                universe_kind="sp500",
+                cron_expr="0 21 * * 1-5",
+                user_id=1,
             )
         svc.register_config(cfg)
         assert svc._scheduler.add_job.called
@@ -128,7 +134,10 @@ class TestRegister:
     def test_register_disabled_unregisters(self, svc, session_factory):
         with session_factory() as session:
             cfg = ScannerConfigRepository(session).create(
-                name="x", universe_kind="sp500", is_enabled=False, user_id=1,
+                name="x",
+                universe_kind="sp500",
+                is_enabled=False,
+                user_id=1,
             )
         svc.register_config(cfg)
         # Disabled config -> should call remove_job (idempotently), not add_job.
@@ -138,7 +147,10 @@ class TestRegister:
     def test_invalid_cron_raises(self, svc, session_factory):
         with session_factory() as session:
             cfg = ScannerConfigRepository(session).create(
-                name="x", universe_kind="sp500", cron_expr="this is not cron", user_id=1,
+                name="x",
+                universe_kind="sp500",
+                cron_expr="this is not cron",
+                user_id=1,
             )
         with pytest.raises(ValueError, match="Invalid cron"):
             svc.register_config(cfg)
@@ -152,7 +164,10 @@ class TestRegister:
     def test_reschedule_is_register(self, svc, session_factory):
         with session_factory() as session:
             cfg = ScannerConfigRepository(session).create(
-                name="x", universe_kind="sp500", cron_expr="0 21 * * 1-5", user_id=1,
+                name="x",
+                universe_kind="sp500",
+                cron_expr="0 21 * * 1-5",
+                user_id=1,
             )
         svc.reschedule_config(cfg)
         assert svc._scheduler.add_job.called
@@ -187,6 +202,7 @@ class TestSingleton:
     def test_get_before_init_raises(self):
         # Reset module state to ensure a clean check.
         import app.backend.services.scheduler_service as mod
+
         mod._scheduler_service = None
         with pytest.raises(RuntimeError, match="not initialized"):
             get_scheduler_service()
@@ -224,13 +240,21 @@ def schedule_singleton(session_factory):
     cron's seed-owner resolution stamps the produced PipelineRun (required
     now that pipeline_runs.user_id is NOT NULL)."""
     from app.backend.database.models import PipelineSchedule, User
+
     with session_factory() as session:
         session.add(User(id=1, email="owner@local", is_active=True, is_superuser=True))
-        session.add(PipelineSchedule(
-            id=1, enabled=False, top_n=5, template="balanced",
-            universe="nasdaq100", model_name="gpt-4.1", model_provider="OpenAI",
-            user_id=1,
-        ))
+        session.add(
+            PipelineSchedule(
+                id=1,
+                enabled=False,
+                top_n=5,
+                template="balanced",
+                universe="nasdaq100",
+                model_name="gpt-4.1",
+                model_provider="OpenAI",
+                user_id=1,
+            )
+        )
         session.commit()
     return session_factory
 
@@ -251,19 +275,29 @@ class TestDailyPipelineJob:
 
     def test_skips_when_template_unknown(self, svc, session_factory):
         from app.backend.database.models import PipelineSchedule
+
         with session_factory() as session:
-            session.add(PipelineSchedule(
-                id=1, enabled=True, top_n=5, template="bogus_template",
-                universe="nasdaq100", model_name="gpt-4.1",
-                model_provider="OpenAI", user_id=1,
-            ))
+            session.add(
+                PipelineSchedule(
+                    id=1,
+                    enabled=True,
+                    top_n=5,
+                    template="bogus_template",
+                    universe="nasdaq100",
+                    model_name="gpt-4.1",
+                    model_provider="OpenAI",
+                    user_id=1,
+                )
+            )
             session.commit()
         with patch("v2.pipeline.run_pipeline") as mock_run:
             svc._run_pipeline_job()
             mock_run.assert_not_called()
 
     def test_runs_pipeline_and_marks_complete_when_enabled(
-        self, svc, schedule_singleton,
+        self,
+        svc,
+        schedule_singleton,
     ):
         from app.backend.database.models import PipelineRun, PipelineSchedule
         from v2.pipeline.orchestrator import PipelineResult
@@ -281,7 +315,8 @@ class TestDailyPipelineJob:
             scan_date="2024-08-01",
             template="quick",
             selected_analysts=["scanner_signal", "fundamentals_analyst"],
-            universe="nasdaq100", top_n=3,
+            universe="nasdaq100",
+            top_n=3,
             watchlist=[{"ticker": "AAPL"}],
             agent_decisions={"AAPL": {"action": "buy"}},
             analyst_signals={"scanner_signal_agent": {"AAPL": {"signal": "bullish"}}},
@@ -308,6 +343,7 @@ class TestDailyPipelineJob:
 
     def test_marks_error_when_pipeline_raises(self, svc, schedule_singleton):
         from app.backend.database.models import PipelineRun, PipelineSchedule
+
         with schedule_singleton() as session:
             row = session.query(PipelineSchedule).filter(PipelineSchedule.id == 1).first()
             row.enabled = True

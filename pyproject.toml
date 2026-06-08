@@ -87,6 +87,20 @@ mplfinance = "0.12.10b0"
 #
 # [tool.poetry.extras]
 # ashare = ["mootdx", "stockstats"]
+#
+# Paper-trading live execution (optional [alpaca] extra). The DEFAULT live
+# harness reconstructs FakeBroker ledgers from the DB and marks at real prices —
+# it needs NO broker key and NO alpaca-py. AlpacaBroker (src/paper_trading/broker.py)
+# is an optional real-fills adapter that lazy-imports alpaca INSIDE __init__, so
+# the offline test suite never imports it and the slim prod image never needs it.
+# alpaca-py 0.42.x deps (requests<3,>=2.30 / pydantic<3,>=2.0.3 / pandas>=1.5.3 /
+# msgpack / websockets / sseclient-py) are all compatible with the app's pins, so
+# unlike mootdx this resolves cleanly in `poetry lock`. Install locally for live
+# fills via: `pip install alpaca-py` (or `poetry install --extras alpaca`).
+alpaca-py = { version = "^0.42.0", optional = true }
+
+[tool.poetry.extras]
+alpaca = ["alpaca-py"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"

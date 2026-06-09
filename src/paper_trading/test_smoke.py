@@ -67,6 +67,12 @@ def _agent_fn(tickers: list[str], scan_date: str) -> dict[str, dict]:
     return {t: {"action": "buy"} for t in tickers}
 
 
+def _factor_fn(scan_date: str) -> list[str]:
+    """Stub self-evolved factor book: hold the same priced names (so the
+    factor_evolved sleeve has conviction in the offline smoke)."""
+    return ["AAA", "BBB"]
+
+
 def _price_fn(ticker: str) -> float | None:
     """Stub price feed: look up the static book; None for unknowns."""
     return _PRICES.get(ticker)
@@ -91,6 +97,7 @@ def _drive_week(session) -> dict[str, dict]:
             session=session,
             run_scan_fn=_run_scan_fn,
             agent_fn=_agent_fn,
+            factor_fn=_factor_fn,
             top_n=5,
             hold_days=hold_days,
         )

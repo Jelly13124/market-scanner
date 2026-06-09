@@ -185,7 +185,7 @@ def test_unknown_sleeve_returns_empty() -> None:
 
 
 def test_sleeve_names_constant() -> None:
-    assert SLEEVE_NAMES == ("scanner_agent", "scanner_only", "spy_benchmark", "scanner_agent_flow")
+    assert SLEEVE_NAMES == ("scanner_agent", "scanner_only", "spy_benchmark", "scanner_agent_flow", "factor_evolved")
 
 
 # -- scanner_agent_flow -------------------------------------------------------

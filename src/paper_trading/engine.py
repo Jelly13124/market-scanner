@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 RunScanFn = Callable[[str, int], "Optional[list[str]]"]
 AgentFn = Callable[[list[str], str], "Optional[dict[str, dict]]"]
+FactorFn = Callable[[str], "Optional[list[str]]"]
 
 
 def _calendar_days(d1: str, d2: str) -> int:
@@ -73,6 +74,7 @@ def run_week(
     session: Session,
     run_scan_fn: RunScanFn,
     agent_fn: AgentFn | None = None,
+    factor_fn: FactorFn | None = None,
     top_n: int = 5,
     hold_days: int | None = 30,
     targets: list[str] | None = None,
@@ -89,6 +91,8 @@ def run_week(
         session: SQLAlchemy session for the paper-trading tables.
         run_scan_fn: Injected scanner seam, passed through to ``compute_targets``.
         agent_fn: Injected agent seam (required only for ``scanner_agent``).
+        factor_fn: Injected self-evolved factor seam (required only for
+            ``factor_evolved``), passed through to ``compute_targets``.
         top_n: Max ranked picks to request from the scan.
         hold_days: Calendar-day hold window. ``None`` disables age-exit entirely
             (buy-and-hold; this is how ``spy_benchmark`` holds SPY forever).
@@ -189,6 +193,7 @@ def run_week(
             scan_date,
             run_scan_fn=run_scan_fn,
             agent_fn=agent_fn,
+            factor_fn=factor_fn,
             top_n=top_n,
         )
 

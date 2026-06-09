@@ -311,6 +311,11 @@ content and save as {TICKER}_report.html alongside the chart PNGs.
 </table>
 <p><em>Signal tested: {{ signal_name }}. Window: {{ backtest_window }}. Bundle: <code>{{ backtest_bundle_path }}</code>.</em></p>
 
+<h2>Institutional Positioning</h2>
+<!-- Filled by the institutional_flow section: dealer gamma (GEX) regime + walls
+     chart and FINRA off-exchange short-volume proxy. -->
+<p></p>
+
 <h2>Risk and Position Sizing</h2>
 <!-- If user provided a position budget, fill the budget-aware columns.
      If user replied 'skip', omit the dollar columns and use % only. -->

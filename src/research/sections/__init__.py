@@ -27,6 +27,7 @@ from src.research.sections import (  # noqa: E402, F401  (side-effect imports)
     financial_statements,
     valuation,
     technical,
+    institutional_flow,
     risk_position,
     scenarios,
     conviction,

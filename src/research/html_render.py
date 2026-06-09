@@ -38,6 +38,7 @@ _ENV = Environment(
 # Shared markdown converter
 # ---------------------------------------------------------------------------
 
+
 def _inline(s: str) -> str:
     """Apply inline markdown (bold, italic, code)."""
     # Order matters: bold (**) before italic (*) so ** isn't consumed by *.
@@ -82,33 +83,17 @@ def _markdown_to_html(text: str, *, skip_h2: bool = False) -> str:
             continue
 
         # Markdown table: header row + separator row (---|---) + body rows
-        if (
-            "|" in raw
-            and i + 1 < len(lines)
-            and re.match(r"^\s*\|?\s*[-:|\s]+\|?\s*$", lines[i + 1])
-        ):
+        if "|" in raw and i + 1 < len(lines) and re.match(r"^\s*\|?\s*[-:|\s]+\|?\s*$", lines[i + 1]):
             if in_list:
                 out.append("</ul>")
                 in_list = False
             headers = [c.strip() for c in raw.strip("|").split("|")]
-            out.append(
-                "<table><thead><tr>"
-                + "".join(
-                    f"<th>{_inline(_html.escape(h))}</th>" for h in headers
-                )
-                + "</tr></thead><tbody>"
-            )
+            out.append("<table><thead><tr>" + "".join(f"<th>{_inline(_html.escape(h))}</th>" for h in headers) + "</tr></thead><tbody>")
             i += 2  # skip header + separator
             in_table = True
             while i < len(lines) and lines[i].strip().startswith("|"):
                 cells = [c.strip() for c in lines[i].strip().strip("|").split("|")]
-                out.append(
-                    "<tr>"
-                    + "".join(
-                        f"<td>{_inline(_html.escape(c))}</td>" for c in cells
-                    )
-                    + "</tr>"
-                )
+                out.append("<tr>" + "".join(f"<td>{_inline(_html.escape(c))}</td>" for c in cells) + "</tr>")
                 i += 1
             out.append("</tbody></table>")
             in_table = False
@@ -127,8 +112,7 @@ def _markdown_to_html(text: str, *, skip_h2: bool = False) -> str:
                 continue
             # Cap at h4 so we don't emit nonsense levels
             level = min(level, 4)
-            out.append(f"<h{level + 2 if not skip_h2 else level}>"
-                       f"{content}</h{level + 2 if not skip_h2 else level}>")
+            out.append(f"<h{level + 2 if not skip_h2 else level}>" f"{content}</h{level + 2 if not skip_h2 else level}>")
             i += 1
             continue
 
@@ -167,29 +151,30 @@ def _markdown_to_html(text: str, *, skip_h2: bool = False) -> str:
 # missing_data — these live inside <details> blocks in the skeleton)
 # get appended at end of <main>.
 _HEADING_MAP = {
-    "data_health":          "Data Health",
-    "executive_summary":    "Executive Summary",
-    "macro":                "Macro Regime",
-    "sector":               "Sector and Peer Comparison",
+    "data_health": "Data Health",
+    "executive_summary": "Executive Summary",
+    "macro": "Macro Regime",
+    "sector": "Sector and Peer Comparison",
     "company_fundamentals": "Company Fundamentals",
     "financial_statements": "Financial Statement Review",
-    "valuation":            "Valuation Analysis",
-    "technical":            "Technical Analysis",
-    "risk_position":        "Risk and Position Sizing",
-    "scenarios":            "Bear / Base / Bull Scenarios",
-    "conviction":           "Conviction / Setup Quality Score",
-    "event_risk":           "Event Risk Check",
-    "final_strategy":       "Final Conditional Strategy",
+    "valuation": "Valuation Analysis",
+    "technical": "Technical Analysis",
+    "institutional_flow": "Institutional Positioning",
+    "risk_position": "Risk and Position Sizing",
+    "scenarios": "Bear / Base / Bull Scenarios",
+    "conviction": "Conviction / Setup Quality Score",
+    "event_risk": "Event Risk Check",
+    "final_strategy": "Final Conditional Strategy",
 }
 
 # Sections that the template renders inside <details> blocks rather
 # than <h2> sections. Append at end of <main> with a synthetic <h2>
 # so the user sees them.
 _APPENDIX_SECTIONS = {
-    "catalyst":        "Near-term Catalysts",
+    "catalyst": "Near-term Catalysts",
     "evidence_ledger": "Evidence Ledger",
-    "debate":          "Debate Summary",
-    "missing_data":    "Missing Data / Low Confidence",
+    "debate": "Debate Summary",
+    "missing_data": "Missing Data / Low Confidence",
 }
 
 # Phase 11.1 fix: the report.html template itself ships English <h2> tags
@@ -198,23 +183,24 @@ _APPENDIX_SECTIONS = {
 # its Chinese equivalent — otherwise the body would be Chinese but the
 # heading above it would stay English.
 _HEADING_ZH_MAP = {
-    "Data Health":                          "数据健康度",
-    "Executive Summary":                    "执行摘要",
-    "Macro Regime":                         "宏观环境",
-    "Sector and Peer Comparison":           "行业与同业比较",
-    "Company Fundamentals":                 "公司基本面",
-    "Financial Statement Review":           "财务报表回顾",
-    "Valuation Analysis":                   "估值分析",
-    "Technical Analysis":                   "技术分析",
-    "Risk and Position Sizing":             "风险与仓位管理",
-    "Bear / Base / Bull Scenarios":         "熊 / 基准 / 牛 情景",
-    "Conviction / Setup Quality Score":     "信念 / 配置质量评分",
-    "Event Risk Check":                     "事件风险检查",
-    "Final Conditional Strategy":           "最终条件性策略",
-    "Near-term Catalysts":                  "近期催化剂",
-    "Evidence Ledger":                      "证据账本",
-    "Debate Summary":                       "辩论纪要",
-    "Missing Data / Low Confidence":        "缺失数据 / 低置信领域",
+    "Data Health": "数据健康度",
+    "Executive Summary": "执行摘要",
+    "Macro Regime": "宏观环境",
+    "Sector and Peer Comparison": "行业与同业比较",
+    "Company Fundamentals": "公司基本面",
+    "Financial Statement Review": "财务报表回顾",
+    "Valuation Analysis": "估值分析",
+    "Technical Analysis": "技术分析",
+    "Institutional Positioning": "机构持仓",
+    "Risk and Position Sizing": "风险与仓位管理",
+    "Bear / Base / Bull Scenarios": "熊 / 基准 / 牛 情景",
+    "Conviction / Setup Quality Score": "信念 / 配置质量评分",
+    "Event Risk Check": "事件风险检查",
+    "Final Conditional Strategy": "最终条件性策略",
+    "Near-term Catalysts": "近期催化剂",
+    "Evidence Ledger": "证据账本",
+    "Debate Summary": "辩论纪要",
+    "Missing Data / Low Confidence": "缺失数据 / 低置信领域",
 }
 
 
@@ -278,13 +264,7 @@ def _section_chart_imgs(payload) -> str:
     for ch in charts:
         if not isinstance(ch, dict) or not ch.get("src"):
             continue
-        parts.append(
-            f'\n<figure style="margin:1rem 0;">'
-            f'<img src="{ch["src"]}" alt="{ch.get("alt", "chart")}" '
-            f'style="max-width:100%;height:auto;">'
-            f'<figcaption style="font-size:.85rem;color:var(--muted);margin-top:.3rem;">'
-            f'{ch.get("caption", "")}</figcaption></figure>'
-        )
+        parts.append(f'\n<figure style="margin:1rem 0;">' f'<img src="{ch["src"]}" alt="{ch.get("alt", "chart")}" ' f'style="max-width:100%;height:auto;">' f'<figcaption style="font-size:.85rem;color:var(--muted);margin-top:.3rem;">' f'{ch.get("caption", "")}</figcaption></figure>')
     return "".join(parts)
 
 
@@ -315,75 +295,79 @@ def _technical_chart_imgs(payload, *, report_id: int | None) -> str:
     equity = structured.get("chart_equity_curve_b64")
 
     def _fig(src: str, alt: str, caption: str) -> str:
-        return (
-            f'\n<figure style="margin:1rem 0;">'
-            f'<img src="{src}" alt="{alt}" style="max-width:100%;height:auto;">'
-            f'<figcaption style="font-size:.85rem;color:var(--muted);margin-top:.3rem;">'
-            f'{caption}</figcaption></figure>'
-        )
+        return f'\n<figure style="margin:1rem 0;">' f'<img src="{src}" alt="{alt}" style="max-width:100%;height:auto;">' f'<figcaption style="font-size:.85rem;color:var(--muted);margin-top:.3rem;">' f"{caption}</figcaption></figure>"
 
     if daily:
-        parts.append(_fig(
-            daily,
-            "Daily K-line",
-            "Daily candlestick with SMA20/50/200 + volume + RSI(14). "
-            "Dashed horizontal lines = auto-detected 52-week / 60-day "
-            "support and resistance.",
-        ))
+        parts.append(
+            _fig(
+                daily,
+                "Daily K-line",
+                "Daily candlestick with SMA20/50/200 + volume + RSI(14). " "Dashed horizontal lines = auto-detected 52-week / 60-day " "support and resistance.",
+            )
+        )
     if weekly:
-        parts.append(_fig(
-            weekly,
-            "Weekly K-line",
-            "Weekly candlestick (resampled to W-FRI) with SMA20/50/200 "
-            "and longer-term support/resistance.",
-        ))
+        parts.append(
+            _fig(
+                weekly,
+                "Weekly K-line",
+                "Weekly candlestick (resampled to W-FRI) with SMA20/50/200 " "and longer-term support/resistance.",
+            )
+        )
     if intraday:
-        parts.append(_fig(
-            intraday,
-            "Intraday K-line",
-            "Intraday candlestick + volume (5-min bars for short-term "
-            "trades, 15-min for earnings review) — recent sessions only.",
-        ))
+        parts.append(
+            _fig(
+                intraday,
+                "Intraday K-line",
+                "Intraday candlestick + volume (5-min bars for short-term " "trades, 15-min for earnings review) — recent sessions only.",
+            )
+        )
     if equity:
-        parts.append(_fig(
-            equity,
-            "Equity curve",
-            "Backtest equity curve — $1 start, compounded by the forward "
-            "return at each signal trigger (20-day horizon).",
-        ))
+        parts.append(
+            _fig(
+                equity,
+                "Equity curve",
+                "Backtest equity curve — $1 start, compounded by the forward " "return at each signal trigger (20-day horizon).",
+            )
+        )
 
     # Backwards compat: old reports persisted with kline-daily.png URL only
     if not (daily or weekly) and report_id is not None:
-        parts.append(_fig(
-            f"/research/reports/{report_id}/chart/kline-daily.png",
-            "Daily K-line",
-            "Daily K-line (legacy URL — re-run analyze for inline candlestick).",
-        ))
+        parts.append(
+            _fig(
+                f"/research/reports/{report_id}/chart/kline-daily.png",
+                "Daily K-line",
+                "Daily K-line (legacy URL — re-run analyze for inline candlestick).",
+            )
+        )
 
     return "".join(parts)
 
 
 # 5-level verdict styling. (color, light background) per recommendation.
 _VERDICT_STYLE = {
-    "strong_buy":  ("#15803d", "#f0fdf4"),
-    "buy":         ("#16a34a", "#f0fdf4"),
-    "hold":        ("#6b7280", "#f9fafb"),
-    "sell":        ("#ea580c", "#fff7ed"),
+    "strong_buy": ("#15803d", "#f0fdf4"),
+    "buy": ("#16a34a", "#f0fdf4"),
+    "hold": ("#6b7280", "#f9fafb"),
+    "sell": ("#ea580c", "#fff7ed"),
     "strong_sell": ("#dc2626", "#fef2f2"),
 }
 _VERDICT_LABEL_EN = {
-    "strong_buy": "STRONG BUY", "buy": "BUY", "hold": "HOLD",
-    "sell": "SELL", "strong_sell": "STRONG SELL",
+    "strong_buy": "STRONG BUY",
+    "buy": "BUY",
+    "hold": "HOLD",
+    "sell": "SELL",
+    "strong_sell": "STRONG SELL",
 }
 _VERDICT_LABEL_ZH = {
-    "strong_buy": "强力买入", "buy": "买入", "hold": "持有 / 观望",
-    "sell": "卖出", "strong_sell": "强力卖出",
+    "strong_buy": "强力买入",
+    "buy": "买入",
+    "hold": "持有 / 观望",
+    "sell": "卖出",
+    "strong_sell": "强力卖出",
 }
 
 
-def _verdict_banner_html(
-    exec_structured: dict, lang: str, stock_score: int | None = None
-) -> str:
+def _verdict_banner_html(exec_structured: dict, lang: str, stock_score: int | None = None) -> str:
     """Prominent buy/sell/hold + score banner for the top of the report.
 
     Reads the recommendation / one-liner from the executive_summary section's
@@ -428,10 +412,10 @@ def _verdict_banner_html(
         f'<div><div style="font-size:0.75rem;color:#6b7280;text-transform:uppercase;'
         f'letter-spacing:0.05em;">{head_word}</div>'
         f'<div style="font-size:1.9rem;font-weight:800;color:{color};line-height:1.1;">'
-        f'{label}</div></div>'
-        f'{conf_html}</div>'
+        f"{label}</div></div>"
+        f"{conf_html}</div>"
         f'<div style="margin-top:10px;color:#374151;font-size:0.95rem;">'
-        f'{_html.escape(one_liner)}</div></div>'
+        f"{_html.escape(one_liner)}</div></div>"
     )
 
 
@@ -463,10 +447,7 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
     if backtest:
         backtest_window = f"{backtest.window_start} to {backtest.window_end}"
 
-    n_items = sum(
-        1 for name, p in sections.items()
-        if not name.startswith("_") and not p.skipped
-    )
+    n_items = sum(1 for name, p in sections.items() if not name.startswith("_") and not p.skipped)
 
     ctx = {
         "ticker": req.ticker,
@@ -481,10 +462,7 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
         "backtest_window": backtest_window,
         "depth": "full SOP",
         "objective": req.objective,
-        "position_budget_or_na": (
-            f"${req.position_budget_usd:,.0f}"
-            if req.position_budget_usd else "n/a"
-        ),
+        "position_budget_or_na": (f"${req.position_budget_usd:,.0f}" if req.position_budget_usd else "n/a"),
         "risk_profile": req.risk_tolerance,
         "score": str(score),
         "score_conservative": "",
@@ -509,10 +487,7 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
         body_html = _markdown_to_html(payload.markdown or "", skip_h2=True)
         if section_name == "conviction" and score != "n/a":
             label = "总分" if getattr(req, "report_language", "en") == "zh" else "Total score"
-            body_html += (
-                f'\n<p><strong>{label}:</strong> '
-                f'<span class="score-badge">{score}/100</span></p>'
-            )
+            body_html += f"\n<p><strong>{label}:</strong> " f'<span class="score-badge">{score}/100</span></p>'
         if section_name == "technical":
             body_html += _technical_chart_imgs(payload, report_id=report_id)
         body_html += _section_chart_imgs(payload)
@@ -549,6 +524,7 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
 # Phase 3: render_html(ResearchState) — preserved until Task 19 swaps callers
 # ===========================================================================
 
+
 def _format_pct(value: float | None) -> str:
     if value is None:
         return "—"
@@ -563,16 +539,10 @@ def _persona_assignments_block(assignments: dict | None) -> str:
     for module_name in ("fundamentals", "valuation", "risk_position"):
         persona = assignments.get(module_name)
         label = persona if persona else "objective"
-        parts.append(
-            f'<div><strong>{_html.escape(module_name)}:</strong> '
-            f'{_html.escape(label)}</div>'
-        )
+        parts.append(f"<div><strong>{_html.escape(module_name)}:</strong> " f"{_html.escape(label)}</div>")
     debate = assignments.get("debate") or []
     if isinstance(debate, list) and len(debate) == 2:
-        parts.append(
-            f'<div><strong>debate:</strong> '
-            f'{_html.escape(debate[0])} vs {_html.escape(debate[1])}</div>'
-        )
+        parts.append(f"<div><strong>debate:</strong> " f"{_html.escape(debate[0])} vs {_html.escape(debate[1])}</div>")
     return "\n".join(parts)
 
 

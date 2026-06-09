@@ -49,8 +49,8 @@ _DPI = 90
 # Bull = red, bear = green (Asia convention — matches the user's
 # reference reports). mplfinance ships market color helpers.
 _MC = mpf.make_marketcolors(
-    up="#e11d48",     # red rising candle body
-    down="#16a34a",   # green falling
+    up="#e11d48",  # red rising candle body
+    down="#16a34a",  # green falling
     edge="inherit",
     wick={"up": "#e11d48", "down": "#16a34a"},
     volume={"up": "#fca5a5", "down": "#86efac"},
@@ -75,10 +75,14 @@ def _no_data_png(message: str = "No data", figsize=_FIGSIZE_DEFAULT) -> bytes:
     """Render a tiny placeholder PNG so callers always get valid bytes."""
     fig, ax = plt.subplots(figsize=figsize, dpi=_DPI)
     ax.text(
-        0.5, 0.5, message,
-        ha="center", va="center",
+        0.5,
+        0.5,
+        message,
+        ha="center",
+        va="center",
         transform=ax.transAxes,
-        fontsize=14, color="#9ca3af",
+        fontsize=14,
+        color="#9ca3af",
     )
     ax.set_axis_off()
     buf = io.BytesIO()
@@ -99,14 +103,16 @@ def _to_dataframe(prices: list) -> pd.DataFrame | None:
             return None  # closes-only — caller falls back to line chart
         d = p if isinstance(p, dict) else getattr(p, "model_dump", lambda: p.__dict__)()
         try:
-            rows.append({
-                "Date": pd.to_datetime(d.get("time") or d.get("date")),
-                "Open": float(d.get("open", d.get("close", 0))),
-                "High": float(d.get("high", d.get("close", 0))),
-                "Low": float(d.get("low", d.get("close", 0))),
-                "Close": float(d.get("close", 0)),
-                "Volume": float(d.get("volume", 0)),
-            })
+            rows.append(
+                {
+                    "Date": pd.to_datetime(d.get("time") or d.get("date")),
+                    "Open": float(d.get("open", d.get("close", 0))),
+                    "High": float(d.get("high", d.get("close", 0))),
+                    "Low": float(d.get("low", d.get("close", 0))),
+                    "Close": float(d.get("close", 0)),
+                    "Volume": float(d.get("volume", 0)),
+                }
+            )
         except (TypeError, ValueError):
             continue
     if not rows:
@@ -117,13 +123,19 @@ def _to_dataframe(prices: list) -> pd.DataFrame | None:
 
 def _resample_weekly(df: pd.DataFrame) -> pd.DataFrame:
     """Resample daily OHLCV to weekly (W-FRI close)."""
-    agg = df.resample("W-FRI").agg({
-        "Open":   "first",
-        "High":   "max",
-        "Low":    "min",
-        "Close":  "last",
-        "Volume": "sum",
-    }).dropna(how="any")
+    agg = (
+        df.resample("W-FRI")
+        .agg(
+            {
+                "Open": "first",
+                "High": "max",
+                "Low": "min",
+                "Close": "last",
+                "Volume": "sum",
+            }
+        )
+        .dropna(how="any")
+    )
     return agg
 
 
@@ -146,7 +158,7 @@ def _auto_sr_levels(df: pd.DataFrame, n_levels: int = 3) -> list[float]:
     for x in sorted(raw):
         if not deduped or abs(x - deduped[-1]) / max(deduped[-1], 1) > 0.01:
             deduped.append(round(x, 2))
-    return deduped[:n_levels + 1]
+    return deduped[: n_levels + 1]
 
 
 def _rsi(closes: pd.Series, period: int = 14) -> pd.Series:
@@ -185,30 +197,49 @@ def _render_kline(
     for n in sma_periods:
         if len(df) >= n:
             sma = df["Close"].rolling(window=n).mean()
-            addplots.append(mpf.make_addplot(
-                sma, color={20: "#f59e0b", 50: "#2563eb", 200: "#8b5cf6"}.get(n, "#6b7280"),
-                width=1.0, linestyle="-",
-                label=f"SMA{n}",
-            ))
+            addplots.append(
+                mpf.make_addplot(
+                    sma,
+                    color={20: "#f59e0b", 50: "#2563eb", 200: "#8b5cf6"}.get(n, "#6b7280"),
+                    width=1.0,
+                    linestyle="-",
+                    label=f"SMA{n}",
+                )
+            )
 
     panel_ratios = [3, 1]  # main : volume
     rsi_panel_idx = None
     if include_rsi and len(df) > 20:
         rsi_series = _rsi(df["Close"], period=14)
         rsi_panel_idx = 2
-        addplots.append(mpf.make_addplot(
-            rsi_series, panel=rsi_panel_idx, color="#0891b2",
-            width=1.0, ylabel="RSI(14)",
-        ))
+        addplots.append(
+            mpf.make_addplot(
+                rsi_series,
+                panel=rsi_panel_idx,
+                color="#0891b2",
+                width=1.0,
+                ylabel="RSI(14)",
+            )
+        )
         # 30 / 70 reference lines
-        addplots.append(mpf.make_addplot(
-            pd.Series(30, index=df.index), panel=rsi_panel_idx,
-            color="#cbd5e1", width=0.6, linestyle="--",
-        ))
-        addplots.append(mpf.make_addplot(
-            pd.Series(70, index=df.index), panel=rsi_panel_idx,
-            color="#cbd5e1", width=0.6, linestyle="--",
-        ))
+        addplots.append(
+            mpf.make_addplot(
+                pd.Series(30, index=df.index),
+                panel=rsi_panel_idx,
+                color="#cbd5e1",
+                width=0.6,
+                linestyle="--",
+            )
+        )
+        addplots.append(
+            mpf.make_addplot(
+                pd.Series(70, index=df.index),
+                panel=rsi_panel_idx,
+                color="#cbd5e1",
+                width=0.6,
+                linestyle="--",
+            )
+        )
         panel_ratios = [3, 1, 1]
 
     # Horizontal support/resistance lines via hlines
@@ -250,8 +281,10 @@ def _render_kline(
             ax.annotate(
                 f"{lv:.2f}",
                 xy=(x_right, lv),
-                xytext=(4, 0), textcoords="offset points",
-                color="#6b7280", fontsize=8,
+                xytext=(4, 0),
+                textcoords="offset points",
+                color="#6b7280",
+                fontsize=8,
                 va="center",
             )
 
@@ -344,8 +377,8 @@ def render_kline_png(
     kind: Literal["daily", "weekly"] = "daily",
 ) -> bytes:
     """Backwards-compat shim. Accepts either:
-       - list[Price] / list[dict] with OHLCV → routes to new candlestick render
-       - list[float] (closes only) → falls back to line chart
+    - list[Price] / list[dict] with OHLCV → routes to new candlestick render
+    - list[float] (closes only) → falls back to line chart
     """
     if not prices_or_closes:
         return _no_data_png()
@@ -381,8 +414,7 @@ def _legacy_line_kline(closes: list[float], kind: str) -> bytes:
         sma_xs = [i for i, v in enumerate(sma) if v is not None]
         sma_ys = [v for v in sma if v is not None]
         if sma_ys:
-            ax.plot(sma_xs, sma_ys, color="#f59e0b", linewidth=1.0,
-                    linestyle="--", label="SMA50")
+            ax.plot(sma_xs, sma_ys, color="#f59e0b", linewidth=1.0, linestyle="--", label="SMA50")
 
     ax.set_title(f"{kind.capitalize()} Close (line, OHLCV unavailable)")
     ax.set_xlabel("Bar")
@@ -501,8 +533,14 @@ def render_fundamental_trends_png(
         ys_arr = np.array([np.nan if v is None else v for v in ys], dtype=float)
         style = "--" if field == "revenue_growth" else "-"
         ax.plot(
-            xs, ys_arr, color=color, linewidth=lw, linestyle=style,
-            marker="o", markersize=3, label=label,
+            xs,
+            ys_arr,
+            color=color,
+            linewidth=lw,
+            linestyle=style,
+            marker="o",
+            markersize=3,
+            label=label,
         )
         plotted += 1
 
@@ -570,8 +608,7 @@ def render_valuation_band_png(
     fig, ax = plt.subplots(figsize=_FIGSIZE_DEFAULT, dpi=_DPI)
     # Shaded min-max band across the full width.
     ax.axhspan(lo, hi, color="#dbeafe", alpha=0.6, label=f"min-max ({lo:.1f}-{hi:.1f})")
-    ax.plot(xs, values, color="#2563eb", linewidth=1.6, marker="o", markersize=3,
-            label=metric_label)
+    ax.plot(xs, values, color="#2563eb", linewidth=1.6, marker="o", markersize=3, label=metric_label)
 
     # Mark the latest value with a labelled dot.
     last_x, last_y = xs[-1], values[-1]
@@ -579,15 +616,17 @@ def render_valuation_band_png(
     ax.annotate(
         f"{last_y:.1f}",
         xy=(last_x, last_y),
-        xytext=(5, 5), textcoords="offset points",
-        color="#e11d48", fontsize=9, fontweight="bold",
+        xytext=(5, 5),
+        textcoords="offset points",
+        color="#e11d48",
+        fontsize=9,
+        fontweight="bold",
     )
 
     if current_value is not None:
         try:
             cv = float(current_value)
-            ax.axhline(cv, color="#16a34a", linewidth=1.2, linestyle="--",
-                       label=f"current ({cv:.1f})")
+            ax.axhline(cv, color="#16a34a", linewidth=1.2, linestyle="--", label=f"current ({cv:.1f})")
         except (TypeError, ValueError):
             pass
 
@@ -639,8 +678,7 @@ def render_relative_strength_png(
 
     fig, ax = plt.subplots(figsize=_FIGSIZE_DEFAULT, dpi=_DPI)
     ax.plot(xs, t_rebased, color="#2563eb", linewidth=1.6, label=ticker_label)
-    ax.plot(xs, b_rebased, color="#9ca3af", linewidth=1.4, linestyle="--",
-            label=benchmark_label)
+    ax.plot(xs, b_rebased, color="#9ca3af", linewidth=1.4, linestyle="--", label=benchmark_label)
     ax.axhline(100.0, color="#cbd5e1", linewidth=0.8, linestyle=":")
 
     ax.set_title(title or "Relative Strength (rebased=100)", fontsize=11)
@@ -653,6 +691,116 @@ def render_relative_strength_png(
     fig.savefig(buf, format="png", dpi=_DPI, bbox_inches="tight")
     plt.close(fig)
     return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Institutional positioning — dealer gamma walls (Phase 12)
+# ---------------------------------------------------------------------------
+
+
+def _fmt_gamma_axis(value: float) -> str:
+    """Compact $ label for the gamma-walls y-axis ($M / $B)."""
+    mag = abs(value)
+    if mag >= 1e9:
+        return f"${value / 1e9:.1f}B"
+    return f"${value / 1e6:.0f}M"
+
+
+def render_gamma_walls_png(gex: dict, *, title: str | None = None) -> bytes:
+    """Bar chart of dealer gamma walls (per-strike dollar-gamma).
+
+    Reads ``gex["walls"]`` (``[{"strike", "gamma_dollars"}, ...]``) and draws one
+    bar per strike (x = strike, y = gamma dollars per 1% move, scaled to $M/$B).
+    Bars are coloured by sign (positive = blue, negative = amber). A vertical
+    line marks ``gex["spot"]`` ("spot") and, when present, ``gex["gamma_flip"]``
+    ("flip").
+
+    Best-effort: empty/missing walls render the "No gamma data" placeholder PNG.
+    Never raises — any rendering failure falls back to the placeholder.
+    """
+    walls = (gex or {}).get("walls") or []
+    points: list[tuple[float, float]] = []
+    for w in walls:
+        if not isinstance(w, dict):
+            continue
+        try:
+            strike = float(w["strike"])
+            gd = float(w["gamma_dollars"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        points.append((strike, gd))
+
+    if not points:
+        return _no_data_png("No gamma data")
+
+    points.sort(key=lambda p: p[0])
+    strikes = [p[0] for p in points]
+    dollars = [p[1] for p in points]
+
+    try:
+        fig, ax = plt.subplots(figsize=_FIGSIZE_DEFAULT, dpi=_DPI)
+        colors = ["#2563eb" if d >= 0 else "#f59e0b" for d in dollars]
+        # Width relative to strike spacing so bars don't overlap or vanish.
+        if len(strikes) > 1:
+            spacing = min(abs(strikes[i + 1] - strikes[i]) for i in range(len(strikes) - 1))
+            width = max(spacing * 0.6, 1e-6)
+        else:
+            width = max(abs(strikes[0]) * 0.02, 1.0)
+        ax.bar(strikes, dollars, width=width, color=colors, edgecolor="#9ca3af", linewidth=0.5)
+
+        ax.axhline(0.0, color="#9ca3af", linewidth=0.8)
+
+        spot = (gex or {}).get("spot")
+        if spot is not None:
+            try:
+                sv = float(spot)
+                ax.axvline(sv, color="#16a34a", linewidth=1.4, linestyle="--")
+                ax.annotate(
+                    f"spot {sv:.2f}",
+                    xy=(sv, 1.0),
+                    xycoords=("data", "axes fraction"),
+                    xytext=(3, -10),
+                    textcoords="offset points",
+                    color="#16a34a",
+                    fontsize=8,
+                    va="top",
+                )
+            except (TypeError, ValueError):
+                pass
+
+        flip = (gex or {}).get("gamma_flip")
+        if flip is not None:
+            try:
+                fv = float(flip)
+                ax.axvline(fv, color="#e11d48", linewidth=1.4, linestyle=":")
+                ax.annotate(
+                    f"flip {fv:.2f}",
+                    xy=(fv, 1.0),
+                    xycoords=("data", "axes fraction"),
+                    xytext=(3, -24),
+                    textcoords="offset points",
+                    color="#e11d48",
+                    fontsize=8,
+                    va="top",
+                )
+            except (TypeError, ValueError):
+                pass
+
+        ax.set_title(title or "Dealer Gamma Walls (options-implied)", fontsize=11)
+        ax.set_xlabel("Strike")
+        ax.set_ylabel("Dealer $-gamma per 1% move")
+        # Format the y tick labels as $M/$B without importing matplotlib.ticker.
+        yticks = ax.get_yticks()
+        ax.set_yticks(yticks)
+        ax.set_yticklabels([_fmt_gamma_axis(v) for v in yticks])
+        ax.grid(True, axis="y", alpha=0.3)
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=_DPI, bbox_inches="tight")
+        plt.close(fig)
+        return buf.getvalue()
+    except Exception:
+        return _no_data_png("No gamma data")
 
 
 # ---------------------------------------------------------------------------
@@ -680,7 +828,7 @@ def render_equity_curve_png(
     for i in signal_indices:
         if 0 <= i < n and i + horizon < n:
             ret = closes[i + horizon] / closes[i] - 1.0
-            cum *= (1.0 + ret)
+            cum *= 1.0 + ret
             applied += 1
         if 0 <= i < n:
             for j in range(i, n):

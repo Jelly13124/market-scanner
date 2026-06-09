@@ -46,13 +46,22 @@ from src.research.shared_data import fetch_shared_data
 
 logger = logging.getLogger(__name__)
 
-# Per the canvas redesign (2026-05-25), these 10 sections are
-# semantically independent — each consumes (shared, data_health) only.
-# Dispatched concurrently via ThreadPoolExecutor; they're LLM-bound so
-# threading buys near-linear speedup until the provider rate-limits.
+# Per the canvas redesign (2026-05-25), these sections are semantically
+# independent — each consumes (shared, data_health) only (institutional_flow
+# reads neither; it fetches dealer-gamma / short-volume by ticker). Dispatched
+# concurrently via ThreadPoolExecutor; they're LLM- / IO-bound so threading
+# buys near-linear speedup until the provider rate-limits.
 _PARALLEL_SECTIONS = {
-    "macro", "sector", "company_fundamentals", "financial_statements",
-    "valuation", "technical", "risk_position", "scenarios", "conviction",
+    "macro",
+    "sector",
+    "company_fundamentals",
+    "financial_statements",
+    "valuation",
+    "technical",
+    "institutional_flow",
+    "risk_position",
+    "scenarios",
+    "conviction",
     "event_risk",
 }
 
@@ -79,33 +88,15 @@ def _persona_for(assignments: dict | None, section_name: str) -> str | None:
 
 def _backtest_validation_md(b: BacktestVerdict, lang: str = "en") -> str:
     if lang == "zh":
-        md = (
-            "\n\n### 回测验证\n\n"
-            f"测试信号: **{b.signal}**  \n"
-            f"窗口: {b.window_start} -> {b.window_end}  \n"
-            f"事件次数: {b.n_signals}  \n"
-        )
+        md = "\n\n### 回测验证\n\n" f"测试信号: **{b.signal}**  \n" f"窗口: {b.window_start} -> {b.window_end}  \n" f"事件次数: {b.n_signals}  \n"
         if b.win_rate_20d is not None and b.avg_return_20d is not None and b.t_stat is not None:
-            md += (
-                f"胜率 (20日): {b.win_rate_20d * 100:.0f}%  \n"
-                f"平均收益 (20日): {b.avg_return_20d * 100:+.2f}%  \n"
-                f"t 统计量: {b.t_stat:.2f}  \n"
-            )
+            md += f"胜率 (20日): {b.win_rate_20d * 100:.0f}%  \n" f"平均收益 (20日): {b.avg_return_20d * 100:+.2f}%  \n" f"t 统计量: {b.t_stat:.2f}  \n"
         md += f"\n**结论:** {b.verdict}\n"
         return md
     # English (default)
-    md = (
-        "\n\n### Backtest Validation\n\n"
-        f"Signal tested: **{b.signal}**  \n"
-        f"Window: {b.window_start} -> {b.window_end}  \n"
-        f"Occurrences: {b.n_signals}  \n"
-    )
+    md = "\n\n### Backtest Validation\n\n" f"Signal tested: **{b.signal}**  \n" f"Window: {b.window_start} -> {b.window_end}  \n" f"Occurrences: {b.n_signals}  \n"
     if b.win_rate_20d is not None and b.avg_return_20d is not None and b.t_stat is not None:
-        md += (
-            f"Win rate (20d): {b.win_rate_20d * 100:.0f}%  \n"
-            f"Avg return (20d): {b.avg_return_20d * 100:+.2f}%  \n"
-            f"t-statistic: {b.t_stat:.2f}  \n"
-        )
+        md += f"Win rate (20d): {b.win_rate_20d * 100:.0f}%  \n" f"Avg return (20d): {b.avg_return_20d * 100:+.2f}%  \n" f"t-statistic: {b.t_stat:.2f}  \n"
     md += f"\n**Verdict:** {b.verdict}\n"
     return md
 
@@ -132,6 +123,7 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
         try:
             # route_personas was built for ResearchRequest in Phase 2; adapt
             from src.research.models import ResearchRequest
+
             adapter = ResearchRequest(
                 ticker=request.ticker,
                 holding_status="watching",
@@ -240,15 +232,12 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
             if included_parallel:
                 snapshot = dict(sections)
                 workers = min(len(included_parallel), max(1, _MAX_PARALLEL))
-                logger.info("dispatching %d parallel sections (workers=%d): %s",
-                             len(included_parallel), workers, included_parallel)
+                logger.info("dispatching %d parallel sections (workers=%d): %s", len(included_parallel), workers, included_parallel)
                 with ThreadPoolExecutor(
-                    max_workers=workers, thread_name_prefix="sop-section",
+                    max_workers=workers,
+                    thread_name_prefix="sop-section",
                 ) as ex:
-                    futures = {
-                        ex.submit(_run_one, n, snapshot): n
-                        for n in included_parallel
-                    }
+                    futures = {ex.submit(_run_one, n, snapshot): n for n in included_parallel}
                     for fut in futures:
                         n = futures[fut]
                         sections[n] = fut.result()
@@ -271,22 +260,16 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
             snapshot = dict(sections)
             workers = min(len(included_parallel), max(1, _MAX_PARALLEL))
             with ThreadPoolExecutor(
-                max_workers=workers, thread_name_prefix="sop-section",
+                max_workers=workers,
+                thread_name_prefix="sop-section",
             ) as ex:
-                futures = {
-                    ex.submit(_run_one, n, snapshot): n
-                    for n in included_parallel
-                }
+                futures = {ex.submit(_run_one, n, snapshot): n for n in included_parallel}
                 for fut in futures:
                     n = futures[fut]
                     sections[n] = fut.result()
 
     # Append Backtest Validation to Technical's markdown + embed equity-curve PNG
-    if (
-        backtest is not None
-        and "technical" in sections
-        and not sections["technical"].skipped
-    ):
+    if backtest is not None and "technical" in sections and not sections["technical"].skipped:
         tech = sections["technical"]
 
         # Generate inline equity-curve b64 for email/web consumption.
@@ -302,6 +285,7 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
         chart_weekly_b64: str | None = None
         try:
             from src.research.backtest_signal import _closes
+
             closes = _closes(shared)
             idx = backtest.signal_indices or []
             chart_b64 = render_equity_curve_b64(closes, idx, horizon=20)
@@ -311,15 +295,11 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
         prices = getattr(shared, "prices", None) or []
         if prices:
             try:
-                chart_daily_b64 = png_to_b64_uri(
-                    render_daily_kline_png(prices, title=f"{request.ticker} Daily")
-                )
+                chart_daily_b64 = png_to_b64_uri(render_daily_kline_png(prices, title=f"{request.ticker} Daily"))
             except Exception as e:
                 logger.exception("daily K-line render failed: %s", e)
             try:
-                chart_weekly_b64 = png_to_b64_uri(
-                    render_weekly_kline_png(prices, title=f"{request.ticker} Weekly")
-                )
+                chart_weekly_b64 = png_to_b64_uri(render_weekly_kline_png(prices, title=f"{request.ticker} Weekly"))
             except Exception as e:
                 logger.exception("weekly K-line render failed: %s", e)
 
@@ -332,15 +312,9 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
         if intraday_window:
             period, interval = intraday_window
             try:
-                intraday_prices = fetch_intraday_prices(
-                    request.ticker, period=period, interval=interval
-                )
+                intraday_prices = fetch_intraday_prices(request.ticker, period=period, interval=interval)
                 if intraday_prices:
-                    chart_intraday_b64 = png_to_b64_uri(
-                        render_intraday_png(
-                            intraday_prices, title=f"{request.ticker} Intraday"
-                        )
-                    )
+                    chart_intraday_b64 = png_to_b64_uri(render_intraday_png(intraday_prices, title=f"{request.ticker} Intraday"))
             except Exception as e:
                 logger.exception("intraday K-line render failed: %s", e)
 
@@ -348,11 +322,7 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
         if isinstance(tech.structured, dict):
             new_structured = dict(tech.structured)
         elif tech.structured is None:
-            new_structured = (
-                {}
-                if (chart_b64 or chart_daily_b64 or chart_weekly_b64 or chart_intraday_b64)
-                else None
-            )
+            new_structured = {} if (chart_b64 or chart_daily_b64 or chart_weekly_b64 or chart_intraday_b64) else None
         else:
             new_structured = tech.structured  # keep non-dict structured as-is
         if isinstance(new_structured, dict):
@@ -386,12 +356,13 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
             logger.exception("section chart %s failed: %s", section_name, e)
             return
         structured = dict(payload.structured) if isinstance(payload.structured, dict) else {}
-        structured["charts"] = list(structured.get("charts") or []) + [
-            {"src": src, "alt": alt, "caption": caption}
-        ]
+        structured["charts"] = list(structured.get("charts") or []) + [{"src": src, "alt": alt, "caption": caption}]
         sections[section_name] = SectionPayload(
-            name=payload.name, markdown=payload.markdown, structured=structured,
-            skipped=payload.skipped, persona_used=payload.persona_used,
+            name=payload.name,
+            markdown=payload.markdown,
+            structured=structured,
+            skipped=payload.skipped,
+            persona_used=payload.persona_used,
         )
 
     _fins = getattr(shared, "financials", None) or []
@@ -401,6 +372,7 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
     _cur_pe = getattr(_fins[0], "price_to_earnings_ratio", None) if _fins else None
     if len(_fins) < 2:
         from src.research.charts.fundamentals_fetch import fetch_fundamental_history
+
         _hist = fetch_fundamental_history(request.ticker, scan_date)
         if len(_hist) >= 2:
             _fins = _hist
@@ -414,7 +386,9 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
         _attach_chart(
             "valuation",
             lambda: render_valuation_band_png(
-                _fins, current_value=_cur_pe, metric="price_to_earnings_ratio",
+                _fins,
+                current_value=_cur_pe,
+                metric="price_to_earnings_ratio",
                 title=f"{request.ticker} Valuation Band (P/E)",
             ),
             alt="Valuation band",
@@ -426,8 +400,11 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
         _attach_chart(
             "sector",
             lambda: render_relative_strength_png(
-                _prices, _sector_px, ticker_label=request.ticker,
-                benchmark_label="Sector ETF", title=f"{request.ticker} vs Sector ETF",
+                _prices,
+                _sector_px,
+                ticker_label=request.ticker,
+                benchmark_label="Sector ETF",
+                title=f"{request.ticker} vs Sector ETF",
             ),
             alt="Relative strength",
             caption="Price vs sector ETF, both rebased to 100 at window start.",

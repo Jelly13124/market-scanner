@@ -121,8 +121,12 @@ class ResearchState(TypedDict, total=False):
 # ===========================================================================
 
 Objective = Literal[
-    "target_price", "short_term", "medium_term", "long_term",
-    "earnings_review", "general_research",
+    "target_price",
+    "short_term",
+    "medium_term",
+    "long_term",
+    "earnings_review",
+    "general_research",
 ]
 RiskBand = Literal["conservative", "balanced", "aggressive"]
 
@@ -140,6 +144,7 @@ SECTION_ORDER: list[str] = [
     "financial_statements",
     "valuation",
     "technical",
+    "institutional_flow",
     "risk_position",
     "scenarios",
     "conviction",
@@ -170,6 +175,7 @@ class AnalyzeRequest:
     Kept at the END of the dataclass so existing positional-construction
     call sites keep working.
     """
+
     ticker: str
     objective: Objective
     position_budget_usd: float | None
@@ -203,6 +209,7 @@ class SectionPayload:
     """One SOP section's output. ``structured`` is section-specific
     (e.g. Evidence Ledger emits a list[dict]; Scenarios emits a dict
     with bear/base/bull; most prose sections leave it None)."""
+
     name: str
     markdown: str
     structured: Any | None
@@ -221,6 +228,7 @@ class BacktestVerdict:
     re-running the per-signal detector. None for legacy/test paths that
     don't populate it.
     """
+
     signal: str
     window_start: str
     window_end: str
@@ -235,6 +243,7 @@ class BacktestVerdict:
 
 class AnalyzeReport(TypedDict, total=False):
     """End-to-end output of sop_orchestrator.run_sop."""
+
     request: AnalyzeRequest
     sections: dict[str, SectionPayload]
     persona_assignments: dict | None

@@ -32,25 +32,26 @@ _DEFAULT_PROVIDER = "DeepSeek"
 # Phase 10.5 fix: bilingual H2 heading map. Used by sections to localize
 # their hardcoded English markdown heading when report_language=='zh'.
 SECTION_HEADING_ZH: dict[str, str] = {
-    "## Macro Regime":                     "## 宏观环境",
-    "## Sector and Peer Comparison":       "## 行业与同业比较",
-    "## Company Fundamentals":             "## 公司基本面",
-    "## Financial Statement Review":       "## 财务报表回顾",
-    "## Valuation Analysis":               "## 估值分析",
-    "## Technical Analysis":               "## 技术分析",
-    "## Risk and Position Sizing":         "## 风险与仓位管理",
-    "## Event Risk Check":                 "## 事件风险检查",
-    "## Near-term Catalysts":              "## 近期催化剂",
-    "## Final Conditional Strategy":       "## 最终条件性策略",
-    "## Executive Summary":                "## 执行摘要",
-    "## Evidence Ledger":                  "## 证据账本",
-    "## Conviction Score":                 "## 信念 / 配置质量评分",
+    "## Macro Regime": "## 宏观环境",
+    "## Sector and Peer Comparison": "## 行业与同业比较",
+    "## Company Fundamentals": "## 公司基本面",
+    "## Financial Statement Review": "## 财务报表回顾",
+    "## Valuation Analysis": "## 估值分析",
+    "## Technical Analysis": "## 技术分析",
+    "## Institutional Positioning": "## 机构持仓",
+    "## Risk and Position Sizing": "## 风险与仓位管理",
+    "## Event Risk Check": "## 事件风险检查",
+    "## Near-term Catalysts": "## 近期催化剂",
+    "## Final Conditional Strategy": "## 最终条件性策略",
+    "## Executive Summary": "## 执行摘要",
+    "## Evidence Ledger": "## 证据账本",
+    "## Conviction Score": "## 信念 / 配置质量评分",
     "## Conviction / Setup Quality Score": "## 信念 / 配置质量评分",
-    "## Bear / Base / Bull Scenarios":     "## 熊 / 基准 / 牛 情景",
-    "## Bear/Base/Bull Scenarios":         "## 熊 / 基准 / 牛 情景",
-    "## Debate Summary":                   "## 辩论纪要",
-    "## Data Health":                      "## 数据健康度",
-    "## Missing Data":                     "## 缺失数据 / 低置信领域",
+    "## Bear / Base / Bull Scenarios": "## 熊 / 基准 / 牛 情景",
+    "## Bear/Base/Bull Scenarios": "## 熊 / 基准 / 牛 情景",
+    "## Debate Summary": "## 辩论纪要",
+    "## Data Health": "## 数据健康度",
+    "## Missing Data": "## 缺失数据 / 低置信领域",
 }
 
 
@@ -66,12 +67,7 @@ def today_context(scan_date: str | None) -> str:
     training cutoff. Returns '' when scan_date is missing/falsy."""
     if not scan_date:
         return ""
-    return (
-        f"CONTEXT: Today is {scan_date}. All analysis MUST reflect "
-        f"current information as of this date. Do NOT default to older "
-        f"data from your training cutoff -- when in doubt about recent "
-        f"events, say so explicitly rather than invent stale facts.\n\n"
-    )
+    return f"CONTEXT: Today is {scan_date}. All analysis MUST reflect " f"current information as of this date. Do NOT default to older " f"data from your training cutoff -- when in doubt about recent " f"events, say so explicitly rather than invent stale facts.\n\n"
 
 
 def language_instruction(lang: str) -> str:
@@ -201,7 +197,9 @@ def call_research_llm(
             last_exc = exc
             logger.warning(
                 "call_research_llm attempt %d/%d failed: %s",
-                attempt + 1, max_retries, exc,
+                attempt + 1,
+                max_retries,
+                exc,
             )
             if attempt < max_retries - 1:
                 time.sleep(0.5 * (attempt + 1))

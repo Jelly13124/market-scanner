@@ -64,7 +64,8 @@
     "analyze": "Analyze",
     "scanner": "Scanner",
     "lab": "Lab",
-    "settings": "Settings"
+    "settings": "Settings",
+    "flow": "Institutional"
   },
   "sidebar": {
     "home": "Home",
@@ -276,10 +277,22 @@
       "subtitle": "AI deep-dive research · market scanning · backtesting — with your own API key.",
       "exploreLabel": "Or jump into a tool",
       "cards": {
-        "analyze": { "title": "Analyze", "desc": "Deep-dive one stock into a full report" },
-        "scanner": { "title": "Scanner", "desc": "Batch-scan a universe + auto-analyze" },
-        "screener": { "title": "Screener", "desc": "Filter stocks by your criteria" },
-        "lab": { "title": "Strategy Lab", "desc": "Build + backtest a strategy" }
+        "analyze": {
+          "title": "Analyze",
+          "desc": "Deep-dive one stock into a full report"
+        },
+        "scanner": {
+          "title": "Scanner",
+          "desc": "Batch-scan a universe + auto-analyze"
+        },
+        "screener": {
+          "title": "Screener",
+          "desc": "Filter stocks by your criteria"
+        },
+        "lab": {
+          "title": "Strategy Lab",
+          "desc": "Build + backtest a strategy"
+        }
       }
     },
     "checklist": {
@@ -664,6 +677,38 @@
     "refresh": {
       "button": "Refresh",
       "tooltip": "Re-fetch sector performance"
+    }
+  },
+  "flow": {
+    "title": "Institutional Positioning",
+    "subtitle": "Dealer gamma (options-implied snapshot) + off-exchange short volume (FINRA proxy, NOT true dark-pool). Context, not a trade signal.",
+    "tickerPlaceholder": "Ticker (e.g. NVDA)",
+    "load": "Load",
+    "empty": "Enter a ticker to see its institutional positioning.",
+    "tab": {
+      "title": "Institutional"
+    },
+    "openTooltip": "Open institutional positioning",
+    "gamma": {
+      "title": "Dealer Gamma (GEX)",
+      "regime": "Regime",
+      "neg": "(short gamma -> squeeze-prone)",
+      "pos": "(long gamma -> pinned)",
+      "netGex": "Net GEX",
+      "perMove": "per 1% move",
+      "flip": "Gamma flip",
+      "spot": "Spot",
+      "strike": "Strike",
+      "wall": "$-gamma (wall)",
+      "none": "No options / gamma data."
+    },
+    "short": {
+      "title": "Off-Exchange Short Pressure",
+      "note": "FINRA Reg-SHO daily short volume — a proxy, NOT true dark-pool/ATS.",
+      "latest": "Latest short volume",
+      "dayAvg": "-day avg",
+      "trend": "trend",
+      "none": "No short-volume data."
     }
   }
 }

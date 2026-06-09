@@ -64,7 +64,8 @@
     "analyze": "分析",
     "scanner": "扫描器",
     "lab": "策略实验室",
-    "settings": "设置"
+    "settings": "设置",
+    "flow": "机构"
   },
   "sidebar": {
     "home": "主页",
@@ -276,10 +277,22 @@
       "subtitle": "AI 股票深度研究 · 市场扫描 · 策略回测 —— 用你自己的 API Key。",
       "exploreLabel": "或直接进入某个功能",
       "cards": {
-        "analyze": { "title": "Analyze", "desc": "深挖一只股，生成完整报告" },
-        "scanner": { "title": "Scanner", "desc": "批量扫描一个股票池 + 自动分析" },
-        "screener": { "title": "Screener", "desc": "按你的条件筛选股票" },
-        "lab": { "title": "策略实验室", "desc": "搭建 + 回测策略" }
+        "analyze": {
+          "title": "Analyze",
+          "desc": "深挖一只股，生成完整报告"
+        },
+        "scanner": {
+          "title": "Scanner",
+          "desc": "批量扫描一个股票池 + 自动分析"
+        },
+        "screener": {
+          "title": "Screener",
+          "desc": "按你的条件筛选股票"
+        },
+        "lab": {
+          "title": "策略实验室",
+          "desc": "搭建 + 回测策略"
+        }
       }
     },
     "checklist": {
@@ -664,6 +677,38 @@
     "refresh": {
       "button": "刷新",
       "tooltip": "重新拉取板块表现"
+    }
+  },
+  "flow": {
+    "title": "机构持仓",
+    "subtitle": "做市商 gamma(期权隐含快照)+ 场外做空量(FINRA 代理,非真暗池)。是背景参考,不是交易信号。",
+    "tickerPlaceholder": "股票代码(如 NVDA)",
+    "load": "加载",
+    "empty": "输入代码查看其机构持仓。",
+    "tab": {
+      "title": "机构"
+    },
+    "openTooltip": "打开机构持仓",
+    "gamma": {
+      "title": "做市商 Gamma (GEX)",
+      "regime": "状态",
+      "neg": "(空 gamma → 易挤压)",
+      "pos": "(多 gamma → 钉价)",
+      "netGex": "净 GEX",
+      "perMove": "每 1% 波动",
+      "flip": "Gamma 翻转位",
+      "spot": "现价",
+      "strike": "行权价",
+      "wall": "$-gamma(墙)",
+      "none": "无期权/gamma 数据。"
+    },
+    "short": {
+      "title": "场外做空压力",
+      "note": "FINRA Reg-SHO 每日做空量——代理,非真暗池/ATS。",
+      "latest": "最新做空量",
+      "dayAvg": "日均",
+      "trend": "趋势",
+      "none": "无做空量数据。"
     }
   }
 }

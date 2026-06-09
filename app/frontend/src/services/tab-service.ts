@@ -2,6 +2,7 @@ import { AnalyzePanel } from '@/components/panels/analyze/analyze-panel';
 import { LabPanel } from '@/components/panels/lab/lab-panel';
 import { ReportsPanel } from '@/components/panels/reports/reports-panel';
 import { ScannerPanel } from '@/components/panels/scanner/scanner-panel';
+import { InstitutionalFlowPanel } from '@/components/panels/flow/institutional-flow-panel';
 import { ScreenerTab } from '@/components/panels/screener/screener-tab';
 import { SectorsTab } from '@/components/panels/sectors/sectors-tab';
 import { WatchlistTab } from '@/components/panels/watchlist/watchlist-tab';
@@ -9,7 +10,7 @@ import { Settings } from '@/components/settings/settings';
 import { ReactNode, createElement } from 'react';
 
 export interface TabData {
-  type: 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist' | 'sectors';
+  type: 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist' | 'sectors' | 'flow';
   title: string;
   metadata?: Record<string, any>;
 }
@@ -43,6 +44,9 @@ export class TabService {
       case 'sectors':
         return createElement(SectorsTab, {});
 
+      case 'flow':
+        return createElement(InstitutionalFlowPanel, {});
+
       default:
         throw new Error(`Unsupported tab type: ${(tabData as any).type}`);
     }
@@ -53,6 +57,15 @@ export class TabService {
       type: 'settings',
       title: 'Settings',
       content: TabService.createTabContent({ type: 'settings', title: 'Settings' }),
+    };
+  }
+
+  /** Open / focus the single Institutional Positioning tab. */
+  static createInstitutionalFlowTab(): TabData & { content: ReactNode } {
+    return {
+      type: 'flow',
+      title: 'Institutional',
+      content: TabService.createTabContent({ type: 'flow', title: 'Institutional' }),
     };
   }
 

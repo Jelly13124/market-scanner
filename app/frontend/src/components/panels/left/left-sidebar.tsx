@@ -2,6 +2,7 @@ import { useResizable } from '@/hooks/use-resizable';
 import { cn } from '@/lib/utils';
 import { ReactNode, useEffect } from 'react';
 import { AnalyzeAction } from './analyze-action';
+import { FlowAction } from './flow-action';
 import { HomeAction } from './home-action';
 import { LabAction } from './lab-action';
 import { ReportsAction } from './reports-action';
@@ -57,6 +58,8 @@ export function LeftSidebar({
       <ScannerAction />
 
       <AnalyzeAction />
+
+      <FlowAction />
 
       <ReportsAction />
 

@@ -1,0 +1,41 @@
+# strategy_skill v0 baseline config.
+#
+# This is the ONLY file the self-evolve LLM is permitted to edit, and only the
+# paths declared in v2/self_evolve/config.py::ADJUSTABLE, only within their
+# declared ranges. The FIXED strategy kernel (long-only, monthly, vol-inverse
+# top-N) is documented in SKILL.md and is NOT encoded as adjustable knobs.
+#
+# All values below sit inside their ADJUSTABLE ranges.
+
+# Composite factor blend. Sum-normalized to 1.0 on load, so these are relative
+# weights — what matters is their ratio, not the absolute sum.
+factor_weights:
+  momentum: 0.30   # 12-1 month price momentum (the lead factor)
+  low_vol: 0.25    # inverse realized volatility tilt
+  reversal: 0.15   # short-horizon mean reversion
+  value: 0.15      # shallow value (earnings yield, E/P)
+  quality: 0.15    # shallow quality (ROE)
+
+# Lookback windows (trading days).
+lookback:
+  momentum_days: 252   # ~12 months
+  vol_days: 63         # ~3 months realized vol
+  reversal_days: 21    # ~1 month reversal
+
+# Portfolio construction.
+top_n: 30              # number of names held [20, 50]
+holding_buffer: 5      # rank hysteresis band to cut turnover [0, 20]
+max_weight: 0.05       # per-name cap [0.03, 0.08]
+
+# Liquidity universe filters (drop the bottom percentile each).
+liquidity_pct:
+  mktcap_pct: 0.20     # drop smallest 20% by market cap [0, 1]
+  advol_pct: 0.20      # drop thinnest 20% by avg dollar volume [0, 1]
+
+# Cross-sectional rank tilt aggressiveness (0 = equal weight within top-N,
+# 1 = full vol-inverse tilt).
+tilt_strength: 0.50    # [0, 1]
+
+# Fixed kernel knobs (NOT adjustable — present for completeness / reproducibility).
+rebalance: monthly
+cost_bps: 10.0         # round-trip transaction cost assumption, basis points

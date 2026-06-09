@@ -43,10 +43,13 @@ its as-of price extraction for the liquidity + vol measures.
 
 from __future__ import annotations
 
+import logging
 import statistics
 
 from v2.self_evolve.config import FACTOR_KEYS
 from v2.self_evolve.factors import _parse_iso, compute_factors
+
+logger = logging.getLogger(__name__)
 
 #: Cross-sectional std below this is treated as "collapsed" — the factor then
 #: contributes 0 to every name instead of dividing by a ~0 std. The repo's
@@ -262,6 +265,11 @@ def generate_holdings(bundles, asof: str, config) -> dict[str, float]:
         return {}
     asof_iso = _parse_iso(asof)
     if asof_iso is None:
+        # M1: a non-ISO asof (e.g. a datetime.date — _parse_iso does asof[:10] and
+        # returns None for a non-str) would otherwise yield a SILENT empty book,
+        # indistinguishable from a legitimate no-signal week. Name the type so the
+        # footgun is diagnosable instead of mute (see final review M1).
+        logger.warning("generate_holdings: unparseable asof %r (type %s); returning empty book — pass an ISO 'YYYY-MM-DD' string", asof, type(asof).__name__)
         return {}
 
     lookback = getattr(config, "lookback", {}) or {}

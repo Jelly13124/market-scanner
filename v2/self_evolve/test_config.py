@@ -152,3 +152,43 @@ def test_adjustable_declares_known_paths():
     # Each entry is a (min, max) numeric tuple.
     lo, hi = ADJUSTABLE["top_n"]
     assert lo == 20 and hi == 50
+
+
+# ---------------------------------------------------------------------------
+# Inert-knob exclusion (final review H1): tilt_strength / holding_buffer are
+# NOT read by the strategy, so they must not be tunable levers (a proposer
+# round spent on them can't move the metric). cost_bps, now a real lever after
+# the transaction-cost fix, stays adjustable.
+# ---------------------------------------------------------------------------
+
+
+def test_inert_knobs_excluded_from_adjustable():
+    assert "tilt_strength" not in ADJUSTABLE
+    assert "holding_buffer" not in ADJUSTABLE
+
+
+def test_cost_bps_is_adjustable():
+    # cost_bps is a live lever now that the backtest charges it.
+    assert "cost_bps" in ADJUSTABLE
+    lo, hi = ADJUSTABLE["cost_bps"]
+    assert lo <= 10.0 <= hi  # the baseline default sits inside the range
+
+
+def test_apply_delta_rejects_removed_inert_knob():
+    cfg = load_config(BASELINE)
+    # A proposer targeting a now-inert path is rejected (caller maps this to None
+    # → no wasted iteration), exactly like any other non-adjustable path.
+    with pytest.raises(ConfigError):
+        apply_delta(cfg, {"tilt_strength": 0.7})
+    with pytest.raises(ConfigError):
+        apply_delta(cfg, {"holding_buffer": 10})
+
+
+def test_validate_still_passes_after_removing_inert_knobs():
+    # Removing keys from ADJUSTABLE must not break validation of the still-present
+    # fields: the baseline (which still carries tilt_strength/holding_buffer as
+    # dataclass fields) validates cleanly.
+    cfg = load_config(BASELINE)
+    validate(cfg)  # must not raise
+    assert cfg.tilt_strength == pytest.approx(0.50)
+    assert cfg.holding_buffer == 5

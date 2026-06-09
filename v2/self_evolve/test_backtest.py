@@ -22,6 +22,7 @@ is exactly what ``generate_holdings`` reads via ``getattr``.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import date, timedelta
 from types import SimpleNamespace
 
@@ -255,3 +256,106 @@ def test_never_raises_on_garbage_bundle():
     res = backtest({"BAD": SimpleNamespace(metrics_history=[])}, _config(), "val")
     assert set(res) == EXPECTED_KEYS
     assert res["n_rebalances"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 5. transaction costs (H2): the equity curve compounds NET returns, so a
+#    higher cost_bps strictly lowers ann_return while turnover is unchanged,
+#    and a higher-turnover config pays strictly more.
+# ---------------------------------------------------------------------------
+
+
+def _rotating_bundles():
+    """Two names whose momentum ranking flips mid-window (book rotates → real cost)."""
+    n = len(VAL_DAYS)
+    half = n // 2
+
+    def win_path(i: int) -> float:
+        return 100.0 + (0.20 * i if i < half else 0.20 * half + 0.01 * (i - half)) + (i % 5) * 0.3
+
+    def late_path(i: int) -> float:
+        return 100.0 + (0.01 * i if i < half else 0.01 * half + 0.40 * (i - half)) + (i % 5) * 0.3
+
+    return {
+        "WIN": _bundle_from_path(VAL_DAYS, win_path),
+        "LATE": _bundle_from_path(VAL_DAYS, late_path),
+    }
+
+
+def test_costs_lower_net_return_turnover_unchanged():
+    # Same synthetic bundles, two configs differing ONLY in cost_bps. The
+    # higher-cost run yields a STRICTLY lower ann_return; turnover (a gross
+    # reporting metric) is byte-identical.
+    bundles = _rotating_bundles()
+    base = _config(
+        weights={"momentum": 1.0, "low_vol": 0.0, "reversal": 0.0, "value": 0.0, "quality": 0.0},
+        top_n=1,
+        max_weight=0.99,
+    )
+    cfg0 = dataclasses.replace(base, cost_bps=0.0)
+    cfg100 = dataclasses.replace(base, cost_bps=100.0)
+
+    res0 = backtest(bundles, cfg0, "val")
+    res100 = backtest(bundles, cfg100, "val")
+
+    # There IS turnover to charge against (the book rotates).
+    assert res0["turnover"] > 0.0
+    # Cost only touches the return path, never the (gross) turnover metric.
+    assert res100["turnover"] == pytest.approx(res0["turnover"])
+    # Charging cost strictly lowers the net annualized return.
+    assert res100["ann_return"] < res0["ann_return"]
+
+
+def test_zero_cost_path_unchanged_from_gross():
+    # With cost_bps=0 the NET path must equal the pre-fix GROSS path exactly:
+    # an explicit, hand-computed gross compounding of the period returns.
+    bundles = _rotating_bundles()
+    cfg = dataclasses.replace(
+        _config(
+            weights={"momentum": 1.0, "low_vol": 0.0, "reversal": 0.0, "value": 0.0, "quality": 0.0},
+            top_n=1,
+            max_weight=0.99,
+        ),
+        cost_bps=0.0,
+    )
+    res = backtest(bundles, cfg, "val")
+
+    # Independently recompute the GROSS equity multiple from generate_holdings +
+    # the same per-period return the backtest uses, then derive ann_return.
+    from v2.self_evolve.backtest import PERIODS_PER_YEAR, START_CAPITAL, _period_return
+    from v2.self_evolve.samples import rebalance_dates
+    from v2.self_evolve.strategy_gen import generate_holdings
+
+    day_set = {p.time[:10] for b in bundles.values() for p in b.prices}
+    trading_days = sorted(day_set)
+    dates = rebalance_dates("val", trading_days, freq="monthly")
+    value = START_CAPITAL
+    n_periods = 0
+    for i in range(len(dates) - 1):
+        w = generate_holdings(bundles, dates[i], cfg) or {}
+        value *= 1.0 + _period_return(bundles, w, dates[i], dates[i + 1])
+        n_periods += 1
+    gross_ann = (value / START_CAPITAL) ** (PERIODS_PER_YEAR / n_periods) - 1.0
+
+    assert res["ann_return"] == pytest.approx(gross_ann)
+
+
+def test_higher_turnover_pays_strictly_more():
+    # A higher-turnover config (top_n=1, which fully rotates) pays a strictly
+    # larger cost drag at the same cost_bps than a low-turnover config (a single
+    # eligible name → an essentially static book). So the (gross-net) ann_return
+    # gap is strictly wider for the rotating book.
+    rotating = _rotating_bundles()
+    static = {"THE": _bundle_from_path(VAL_DAYS, lambda i: 100.0 + 0.05 * i + (i % 5) * 0.3)}
+
+    rot_cfg = _config(
+        weights={"momentum": 1.0, "low_vol": 0.0, "reversal": 0.0, "value": 0.0, "quality": 0.0},
+        top_n=1,
+        max_weight=0.99,
+    )
+    static_cfg = _config(top_n=5, max_weight=0.99)
+
+    rot_gap = backtest(rotating, dataclasses.replace(rot_cfg, cost_bps=0.0), "val")["ann_return"] - backtest(rotating, dataclasses.replace(rot_cfg, cost_bps=100.0), "val")["ann_return"]
+    static_gap = backtest(static, dataclasses.replace(static_cfg, cost_bps=0.0), "val")["ann_return"] - backtest(static, dataclasses.replace(static_cfg, cost_bps=100.0), "val")["ann_return"]
+
+    assert rot_gap > static_gap

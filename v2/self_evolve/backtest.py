@@ -21,11 +21,16 @@ Mechanics (each step degrades gracefully — the function never raises):
    endpoint contributes 0 to that period (it simply earns nothing, never a crash).
    The LAST rebalance date has no forward window, so it is the final exit point —
    with ``N`` rebalance dates there are ``N-1`` held periods.
-3. **Equity curve.** Start at :data:`START_CAPITAL`, compound the per-period
+3. **Transaction costs.** Each period is charged the L1 traded notional from the
+   prior book (``{}`` for the first period → initial deployment) times
+   ``config.cost_bps / 1e4``; that cost is subtracted from the period's gross
+   return so the curve compounds NET. The ``turnover`` metric is reported
+   separately (one-way mean, first book excluded) and is unaffected by cost.
+4. **Equity curve.** Start at :data:`START_CAPITAL`, compound the per-period NET
    returns, and stamp each point with a real :class:`datetime.datetime` ``Date``
    (NOT a string) — required so the metrics calculator's drawdown-date
    ``.strftime`` cannot crash on a real drawdown.
-4. **Metrics** via :class:`~src.backtesting.metrics.PerformanceMetricsCalculator`
+5. **Metrics** via :class:`~src.backtesting.metrics.PerformanceMetricsCalculator`
    built with ``annual_trading_days=PERIODS_PER_YEAR`` (12) so its built-in
    ``sqrt`` Sharpe annualization and risk-free scaling match the MONTHLY cadence
    of this curve rather than a daily one.
@@ -171,22 +176,37 @@ def backtest(bundles, config, sample: str) -> dict:
         return _empty_result(n_rebalances)
 
     # -- walk the rebalance dates: build a book on each, hold to the next, record
-    # the period return and the turnover vs the previous book.
+    # the NET period return (gross minus this period's transaction cost) and the
+    # turnover vs the previous book.
+    #
+    # Transaction cost (H2): the traded notional for period i is the L1 change
+    # Σ_t |w_i[t] - w_{i-1}[t]| (prior book = {} for the first period, so initial
+    # deployment is charged too). The cost debited to that period's return is
+    # traded_notional × (cost_bps / 1e4) — buy-side+sell-side notional × per-unit
+    # cost, charged once. Compounding the NET return makes the loop optimize net,
+    # not gross. NOTE: this L1 traded notional is distinct from the reported
+    # ``turnover`` metric (a one-way 0.5×Σ|Δw| mean that excludes the first book).
+    cost_rate = float(getattr(config, "cost_bps", 0.0) or 0.0) / 1e4
     period_returns: list[float] = []
     turnovers: list[float] = []
-    prev_weights: dict[str, float] | None = None
+    prev_weights: dict[str, float] = {}
     for i in range(n_rebalances - 1):
         entry, exit_ = dates[i], dates[i + 1]
         weights = generate_holdings(bundles, entry, config) or {}
 
-        # One-way turnover vs the previous book (union of tickers; absent = 0 weight).
-        if prev_weights is not None:
-            names = set(weights) | set(prev_weights)
-            l1 = sum(abs(weights.get(t, 0.0) - prev_weights.get(t, 0.0)) for t in names)
-            turnovers.append(0.5 * l1)
+        # L1 traded notional vs the previous book ({} on the first period → initial
+        # deployment). Drives the transaction cost charged to THIS period.
+        names = set(weights) | set(prev_weights)
+        traded_notional = sum(abs(weights.get(t, 0.0) - prev_weights.get(t, 0.0)) for t in names)
+        cost = traded_notional * cost_rate
+
+        # One-way turnover metric vs the previous book — reported AS-IS, only for
+        # rebalances that have a prior book (the first deployment is excluded).
+        if i > 0:
+            turnovers.append(0.5 * traded_notional)
         prev_weights = weights
 
-        period_returns.append(_period_return(bundles, weights, entry, exit_))
+        period_returns.append(_period_return(bundles, weights, entry, exit_) - cost)
 
     # -- compounded monthly equity curve with REAL datetime Dates. Point 0 is the
     # first rebalance date at START_CAPITAL; each subsequent point compounds one

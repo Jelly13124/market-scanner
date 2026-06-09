@@ -262,6 +262,31 @@ def test_unparseable_asof_returns_empty():
     assert generate_holdings(bundles, "not-a-date", _config()) == {}
 
 
+def test_unparseable_asof_warns_with_type(caplog):
+    # M1: a non-ISO asof (e.g. a datetime.date, which _parse_iso can't subscript)
+    # must NOT return an empty book SILENTLY — that is indistinguishable from a
+    # legitimate no-signal week. It returns {} AND logs a WARNING naming the type.
+    import logging
+
+    bundles = {"A": SimpleNamespace(prices=_series(_ASOF_D, 400, start_price=100.0, step=0.5, jitter=0.3), metrics_history=[])}
+    with caplog.at_level(logging.WARNING, logger="v2.self_evolve.strategy_gen"):
+        result = generate_holdings(bundles, _ASOF_D, _config())  # a date, not an ISO string
+    assert result == {}
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+    # The warning names the offending type so the footgun is diagnosable.
+    assert "date" in caplog.text
+
+
+def test_happy_path_iso_string_emits_no_warning(caplog):
+    # The normal ISO-string call path is unchanged and stays quiet.
+    import logging
+
+    bundles = {"A": SimpleNamespace(prices=_series(_ASOF_D, 400, start_price=100.0, step=0.5, jitter=0.3), metrics_history=[])}
+    with caplog.at_level(logging.WARNING, logger="v2.self_evolve.strategy_gen"):
+        generate_holdings(bundles, ASOF, _config())
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+
+
 def test_never_raises_on_garbage_bundle():
     # A bundle missing .prices entirely must be tolerated (defensive contract).
     bundles = {"BAD": SimpleNamespace(metrics_history=[])}

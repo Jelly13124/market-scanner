@@ -64,13 +64,16 @@ ADJUSTABLE: dict[str, tuple[float, float]] = {
     "lookback.reversal_days": (5, 42),
     # Portfolio construction.
     "top_n": (20, 50),
-    "holding_buffer": (0, 20),
     "max_weight": (0.03, 0.08),
     # Liquidity universe filters (drop bottom percentile each).
     "liquidity_pct.mktcap_pct": (0.0, 1.0),
     "liquidity_pct.advol_pct": (0.0, 1.0),
-    # Cross-sectional tilt aggressiveness.
-    "tilt_strength": (0.0, 1.0),
+    # Transaction-cost assumption (basis points). A real lever: the backtest
+    # charges it against per-period returns, so the loop optimizes NET.
+    "cost_bps": (0.0, 50.0),
+    # tilt_strength / holding_buffer are intended future levers but are not yet
+    # read by the strategy; excluded from ADJUSTABLE so the proposer can't waste
+    # iterations tuning an inert knob (see final review H1).
 }
 
 # The canonical factor keys, in display order.

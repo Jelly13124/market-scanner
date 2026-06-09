@@ -176,7 +176,10 @@ def test_propose_parses_json_in_code_fences():
 
 def test_propose_parses_first_json_object_amid_prose():
     cfg = _cfg()
-    prose = 'My reasoning is long. Proposal: {"path":"tilt_strength","value":0.7,"hypothesis":"stronger tilt"} -- done.'
+    # cost_bps is an adjustable top-level scalar (range [0, 50]); used here purely
+    # to exercise JSON-extraction-amid-prose. (tilt_strength was dropped from
+    # ADJUSTABLE in final review H1, so it would now be rejected as inert.)
+    prose = 'My reasoning is long. Proposal: {"path":"cost_bps","value":15.0,"hypothesis":"more realistic costs"} -- done.'
     out = propose("K", cfg, [], llm_fn=lambda _p: prose)
-    assert out["path"] == "tilt_strength"
-    assert out["value"] == 0.7
+    assert out["path"] == "cost_bps"
+    assert out["value"] == 15.0

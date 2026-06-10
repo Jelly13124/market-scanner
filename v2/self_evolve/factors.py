@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import statistics
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 #: A statement for fiscal period ``D`` is only knowable at ``D + 60d``. Equivalently,
 #: at as-of ceiling ``C`` we may only read fundamentals with ``report_period <= C - 60d``.
@@ -53,11 +54,16 @@ FACTOR_KEYS = ("momentum", "low_vol", "reversal", "value", "quality")
 # ---------------------------------------------------------------------------
 
 
+@lru_cache(maxsize=None)
 def _parse_iso(s: str | None) -> str | None:
     """Return the ``YYYY-MM-DD`` prefix of an ISO date, or ``None`` if unparseable.
 
     Defensive: missing / malformed input yields ``None`` so callers treat the row
     as not-available (excluded) rather than crashing.
+
+    Memoized: the same handful of date strings are parsed hundreds of thousands of
+    times across a backtest's as-of scans. The function is pure (str -> str|None),
+    so caching is transparent — no correctness or no-lookahead impact.
     """
     if not s:
         return None

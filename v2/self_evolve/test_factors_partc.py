@@ -129,3 +129,59 @@ def test_max_lottery_none_when_insufficient_window():
     out = compute_factors(bundles, _ASOF, _config(max_days=0))["Y"]
     assert out["max_lottery"] is None
     assert out["momentum"] is not None
+
+
+# ===========================================================================
+# TASK 5 — high_52w = close[asof] / max(close over last hi_days as-of bars)
+# ===========================================================================
+
+
+def test_high_52w_at_rolling_high_is_one():
+    # Monotonically RISING closes → the last (asof) bar IS the rolling max, so the
+    # 52-week-high proximity is exactly 1.0.
+    bars = [_price((_START + timedelta(days=i)).isoformat(), 100.0 + i) for i in range(_N)]
+    bundles = {"HI": SimpleNamespace(prices=bars, metrics_history=[])}
+    out = compute_factors(bundles, _ASOF, _config(hi_days=252))["HI"]
+    assert out["high_52w"] == 1.0
+
+
+def test_high_52w_below_peak_is_known_ratio():
+    # A peak of 200 occurs inside the hi_days window, then price falls back to 150 at
+    # asof → high_52w = 150 / 200 = 0.75 (strictly between 0 and 1).
+    bars = _flat_bars(_START, _N, close=100.0)
+    # Peak 10 days before asof, then settle at 150 through asof.
+    peak_idx = _N - 11
+    bars[peak_idx] = _price(bars[peak_idx].time, 200.0)
+    for i in range(peak_idx + 1, _N):
+        bars[i] = _price(bars[i].time, 150.0)
+    bundles = {"HB": SimpleNamespace(prices=bars, metrics_history=[])}
+    out = compute_factors(bundles, _ASOF, _config(hi_days=252))["HB"]
+    assert out["high_52w"] == 150.0 / 200.0
+
+
+def test_high_52w_no_lookahead_post_asof_peak_ignored():
+    # Rising history through asof (asof bar is the in-sample max → ratio 1.0). Bundle B
+    # adds a massive post-asof peak. A leak would push the rolling max ABOVE the asof
+    # close and drive the ratio well below 1.0 — it must stay exactly 1.0.
+    base = [_price((_START + timedelta(days=i)).isoformat(), 100.0 + i) for i in range(_N)]
+    a = {"X": SimpleNamespace(prices=list(base), metrics_history=[])}
+
+    after = date(2020, 12, 31)
+    peak = [_price((after + timedelta(days=k)).isoformat(), 10_000_000.0) for k in range(1, 6)]
+    b = {"X": SimpleNamespace(prices=list(base) + peak, metrics_history=[])}
+
+    cfg = _config(hi_days=252)
+    fa = compute_factors(a, _ASOF, cfg)["X"]
+    fb = compute_factors(b, _ASOF, cfg)["X"]
+    assert fa["high_52w"] == fb["high_52w"]
+    assert fa["high_52w"] == 1.0
+
+
+def test_high_52w_none_when_no_bars_in_window():
+    # hi_days = 0 → no bars in the rolling-high window → high_52w None, but the ticker
+    # still computes its other factors.
+    bars = _flat_bars(_START, _N, close=100.0)
+    bundles = {"Z": SimpleNamespace(prices=bars, metrics_history=[])}
+    out = compute_factors(bundles, _ASOF, _config(hi_days=0))["Z"]
+    assert out["high_52w"] is None
+    assert out["momentum"] is not None

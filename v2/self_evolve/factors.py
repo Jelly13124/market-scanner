@@ -272,6 +272,11 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
     # window yields no return.
     max_lottery = _max_daily_return_factor(series, max_days)
 
+    # -- high_52w: proximity to the rolling high — close[asof] / max(close over the
+    # trailing hi_days as-of bars). Near the high → ≈ 1.0 (strong); far below → small.
+    # Degrades to None when the window is empty or its max is non-positive.
+    high_52w = _high_proximity_factor(series, hi_days)
+
     # -- value / quality: from the latest fundamentals record at <= asof - 60d.
     value = _value_from_metric(_latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof))
     quality = _quality_from_metric(_latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof))
@@ -283,6 +288,7 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
         "value": value,
         "quality": quality,
         "max_lottery": max_lottery,
+        "high_52w": high_52w,
     }
 
 
@@ -308,6 +314,27 @@ def _max_daily_return_factor(series: list[tuple[str, float]], max_days: int) -> 
     if not rets:
         return None
     return -max(rets)
+
+
+def _high_proximity_factor(series: list[tuple[str, float]], hi_days: int) -> float | None:
+    """``close[asof] / max(close)`` over the trailing ``hi_days`` as-of bars, or ``None``.
+
+    The 52-week-high proximity. ``series`` is already clamped to bars ``<= asof`` (so a
+    future peak can never raise the denominator — inherently no-lookahead); the asof
+    close is the last element. ``None`` when the window is empty or its max is
+    non-positive (guards divide-by-zero / nonsensical negative prices). The factor
+    degrades individually; the ticker keeps its other factors. Never raises.
+    """
+    if hi_days <= 0:
+        return None
+    window = series[-hi_days:]
+    if not window:
+        return None
+    hi = max(c for _, c in window)
+    if hi <= 0.0:
+        return None
+    asof_close = series[-1][1]
+    return asof_close / hi
 
 
 def _value_from_metric(metric) -> float | None:

@@ -236,7 +236,20 @@ def _quality_from_metric(metric) -> float | None:
 # ---------------------------------------------------------------------------
 
 
-def compute_factors(bundles, asof: str, config) -> dict[str, dict[str, float]]:
+def _lookback_cache_key(config) -> tuple:
+    """The lookbacks ``_compute_one`` consumes, in a fixed order — the cache key's
+    lookback component. MUST list every window ``_compute_one`` reads (Part B:
+    momentum / vol / reversal); extend in lockstep when ``_compute_one`` gains
+    factors, else a cached value goes stale when a new lookback changes."""
+    lb = getattr(config, "lookback", {}) or {}
+    return (
+        int(lb.get("momentum_days", 0)),
+        int(lb.get("vol_days", 0)),
+        int(lb.get("reversal_days", 0)),
+    )
+
+
+def compute_factors(bundles, asof: str, config, *, cache=None) -> dict[str, dict[str, float]]:
     """Compute as-of factors for every ticker with sufficient history.
 
     Parameters
@@ -262,8 +275,17 @@ def compute_factors(bundles, asof: str, config) -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {}
     if asof_iso is None:
         return out
+    lookback_key = _lookback_cache_key(config)
     for ticker, bundle in bundles.items():
-        factors = _compute_one(bundle, asof_iso, config)
+        if cache is None:
+            factors = _compute_one(bundle, asof_iso, config)
+        else:
+            key = (ticker, asof_iso, lookback_key)
+            if key in cache:
+                factors = cache[key]
+            else:
+                factors = _compute_one(bundle, asof_iso, config)
+                cache[key] = factors
         if factors is not None:
             out[ticker] = factors
     return out

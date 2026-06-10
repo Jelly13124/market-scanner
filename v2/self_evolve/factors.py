@@ -226,6 +226,12 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
     momentum_days = int(lookback["momentum_days"])
     vol_days = int(lookback["vol_days"])
     reversal_days = int(lookback["reversal_days"])
+    # Part C windows. Defensive ``.get`` with the registered defaults (21/252/21)
+    # so a config that predates Part C still computes (factor degrades to None,
+    # never raises) rather than KeyError-ing the whole ticker.
+    max_days = int(lookback.get("max_days", 21))
+    hi_days = int(lookback.get("hi_days", 252))
+    to_days = int(lookback.get("to_days", 21))
 
     asof_close = series[-1][1]
 
@@ -259,6 +265,13 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
         return None
     low_vol = -statistics.pstdev(rets)
 
+    # -- max_lottery: negative of the LARGEST single-day return over the trailing
+    # max_days as-of BARS (lottery-demand proxy; a big recent up-spike is penalised
+    # → more negative). Returns are built from the trailing ``max_days + 1`` closes,
+    # mirroring low_vol's window. Degrades to None (NOT a ticker drop) when the
+    # window yields no return.
+    max_lottery = _max_daily_return_factor(series, max_days)
+
     # -- value / quality: from the latest fundamentals record at <= asof - 60d.
     value = _value_from_metric(_latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof))
     quality = _quality_from_metric(_latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof))
@@ -269,7 +282,32 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
         "reversal": reversal,
         "value": value,
         "quality": quality,
+        "max_lottery": max_lottery,
     }
+
+
+def _max_daily_return_factor(series: list[tuple[str, float]], max_days: int) -> float | None:
+    """``-max(daily return)`` over the trailing ``max_days`` as-of bars, or ``None``.
+
+    Returns are computed from the last ``max_days + 1`` closes in ``series`` (which is
+    already clamped to bars ``<= asof`` by :func:`_asof_closes`, so this is inherently
+    no-lookahead). The sign is baked so a large recent up-spike yields a NEGATIVE value
+    (higher z = better). ``None`` when the window yields fewer than one usable return
+    (``max_days <= 0`` or insufficient bars) — the factor degrades individually, the
+    ticker keeps its other factors. Never raises.
+    """
+    if max_days <= 0:
+        return None
+    window = series[-(max_days + 1) :]
+    rets: list[float] = []
+    for i in range(1, len(window)):
+        prev = window[i - 1][1]
+        if prev == 0.0:
+            continue
+        rets.append(window[i][1] / prev - 1.0)
+    if not rets:
+        return None
+    return -max(rets)
 
 
 def _value_from_metric(metric) -> float | None:

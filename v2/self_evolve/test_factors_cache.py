@@ -94,3 +94,30 @@ def test_generate_holdings_cache_passthrough():
     with_cache = generate_holdings(bundles, ASOF, cfg, cache=cache)
     assert with_cache == no_cache  # identical holdings
     assert len(cache) >= 1  # cache was populated via compute_factors
+
+
+def _sample_bundles():
+    # Daily bars 2022..2025 so each monthly rebalance in the 'test' sample (2024+)
+    # has >252 days of prior history -> real factor values at every rebalance.
+    days = _days("2022-01-01", 1260)
+    a = _bundle([_price(d, 100 + i * 0.05) for i, d in enumerate(days)])
+    b = _bundle([_price(d, 300 - i * 0.03) for i, d in enumerate(days)])
+    return {"AAA": a, "BBB": b}
+
+
+def test_backtest_cache_same_metrics_and_no_recompute(monkeypatch):
+    from v2.self_evolve.backtest import backtest
+
+    bundles, cfg = _sample_bundles(), _cfg()
+    plain = backtest(bundles, cfg, "test")
+    cache = {}
+    cached = backtest(bundles, cfg, "test", cache=cache)
+    assert cached == plain  # identical metrics
+    assert len(cache) >= 1  # factors were memoized across the run's rebalances
+
+    calls = []
+    orig = fmod._compute_one
+    monkeypatch.setattr(fmod, "_compute_one", lambda b, a, c: calls.append(1) or orig(b, a, c))
+    again = backtest(bundles, cfg, "test", cache=cache)  # same cache, same lookbacks
+    assert calls == []  # ZERO recomputes the second time
+    assert again == plain

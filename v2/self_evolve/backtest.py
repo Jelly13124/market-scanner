@@ -125,7 +125,7 @@ def _empty_result(n_rebalances: int) -> dict:
     return out
 
 
-def backtest(bundles, config, sample: str) -> dict:
+def backtest(bundles, config, sample: str, *, cache=None) -> dict:
     """Score ``config`` on ``sample`` — monthly, long-only, fully-invested.
 
     Parameters
@@ -192,7 +192,7 @@ def backtest(bundles, config, sample: str) -> dict:
     prev_weights: dict[str, float] = {}
     for i in range(n_rebalances - 1):
         entry, exit_ = dates[i], dates[i + 1]
-        weights = generate_holdings(bundles, entry, config) or {}
+        weights = generate_holdings(bundles, entry, config, cache=cache) or {}
 
         # L1 traded notional vs the previous book ({} on the first period → initial
         # deployment). Drives the transaction cost charged to THIS period.

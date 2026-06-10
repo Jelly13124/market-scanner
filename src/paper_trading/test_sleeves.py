@@ -8,7 +8,7 @@ every later paper-trading task depends on.
 
 from __future__ import annotations
 
-from src.paper_trading.sleeves import SLEEVE_NAMES, compute_targets
+from src.paper_trading.sleeves import SLEEVE_NAMES, active_sleeves, compute_targets
 
 
 # -- stub seams ---------------------------------------------------------------
@@ -222,3 +222,48 @@ def test_scanner_agent_flow_missing_agent_fn_returns_empty() -> None:
         agent_fn=None,
     )
     assert targets == []
+
+
+# -- active_sleeves (PAPER_SLEEVES env gate) ----------------------------------
+
+
+def test_active_sleeves_unset_returns_all(monkeypatch) -> None:
+    monkeypatch.delenv("PAPER_SLEEVES", raising=False)
+    assert active_sleeves() == SLEEVE_NAMES
+
+
+def test_active_sleeves_blank_returns_all(monkeypatch) -> None:
+    monkeypatch.setenv("PAPER_SLEEVES", "   ")
+    assert active_sleeves() == SLEEVE_NAMES
+
+
+def test_active_sleeves_subset_in_canonical_order(monkeypatch) -> None:
+    # request out of order + with whitespace; result follows SLEEVE_NAMES order
+    monkeypatch.setenv("PAPER_SLEEVES", "scanner_only , spy_benchmark,scanner_agent")
+    assert active_sleeves() == ("scanner_agent", "scanner_only", "spy_benchmark")
+
+
+def test_active_sleeves_excludes_factor_evolved(monkeypatch) -> None:
+    monkeypatch.setenv("PAPER_SLEEVES", "scanner_agent,scanner_only,spy_benchmark,scanner_agent_flow")
+    result = active_sleeves()
+    assert "factor_evolved" not in result
+    assert result == ("scanner_agent", "scanner_only", "spy_benchmark", "scanner_agent_flow")
+
+
+def test_active_sleeves_drops_unknown_with_warning(monkeypatch, caplog) -> None:
+    monkeypatch.setenv("PAPER_SLEEVES", "scanner_only,bogus_sleeve")
+    with caplog.at_level("WARNING"):
+        result = active_sleeves()
+    assert result == ("scanner_only",)
+    assert any("bogus_sleeve" in r.message for r in caplog.records)
+
+
+def test_active_sleeves_all_unknown_falls_back_to_all(monkeypatch) -> None:
+    # a fully garbage env must never silently run zero sleeves
+    monkeypatch.setenv("PAPER_SLEEVES", "nope,nada")
+    assert active_sleeves() == SLEEVE_NAMES
+
+
+def test_active_sleeves_only_separators_treated_as_blank(monkeypatch) -> None:
+    monkeypatch.setenv("PAPER_SLEEVES", ",,, ,")
+    assert active_sleeves() == SLEEVE_NAMES

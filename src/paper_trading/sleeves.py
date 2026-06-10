@@ -33,6 +33,7 @@ returns ``["SPY"]`` because it does not depend on the scan.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,37 @@ logger = logging.getLogger(__name__)
 # instead holds the book of the best self-evolved factor config (via the injected
 # ``factor_fn``), forward-testing the self-evolve loop's output against the rest.
 SLEEVE_NAMES: tuple[str, ...] = ("scanner_agent", "scanner_only", "spy_benchmark", "scanner_agent_flow", "factor_evolved")
+
+
+def active_sleeves() -> tuple[str, ...]:
+    """The sleeves to run unattended, from the ``PAPER_SLEEVES`` env var.
+
+    ``PAPER_SLEEVES`` is a comma-separated list. Unset/blank -> all
+    :data:`SLEEVE_NAMES` (local default, so nothing changes off prod). Names not
+    in ``SLEEVE_NAMES`` are dropped with a warning. A request that leaves zero
+    known sleeves falls back to all (never silently runs nothing). The result
+    preserves ``SLEEVE_NAMES`` order. Never raises.
+
+    Prod sets ``PAPER_SLEEVES`` to the 4 light sleeves so the heavy
+    ``factor_evolved`` sleeve is excluded from the unattended forward test until
+    its backtest/bundle path is sped up (sub-project B+C).
+    """
+    raw = os.environ.get("PAPER_SLEEVES", "").strip()
+    if not raw:
+        return SLEEVE_NAMES
+    requested = [tok.strip() for tok in raw.split(",") if tok.strip()]
+    if not requested:
+        return SLEEVE_NAMES
+    known = set(SLEEVE_NAMES)
+    for tok in requested:
+        if tok not in known:
+            logger.warning("active_sleeves: ignoring unknown sleeve %r (not in SLEEVE_NAMES)", tok)
+    selected = {tok for tok in requested if tok in known}
+    if not selected:
+        logger.warning("active_sleeves: PAPER_SLEEVES=%r had no known sleeves; falling back to all", raw)
+        return SLEEVE_NAMES
+    return tuple(name for name in SLEEVE_NAMES if name in selected)
+
 
 RunScanFn = Callable[[str, int], "Optional[list[str]]"]
 AgentFn = Callable[[list[str], str], "Optional[dict[str, dict]]"]

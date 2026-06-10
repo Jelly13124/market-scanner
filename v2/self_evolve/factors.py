@@ -305,18 +305,29 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
     vol_series = _asof_volumes(prices, asof)
     turnover = _turnover_factor(vol_series, to_days)
 
-    # -- value: earnings yield E/P from the latest line item at <= asof - 60d.
-    # eps / close[asof] when both are positive (cheap stock = high E/P = high z),
-    # else None (the ticker keeps its price factors).
+    # Fundamentals: one lagged line item (<= asof - 60d) feeds value / gross_prof /
+    # quality; the prior fiscal year feeds asset_growth. The lagged metrics record
+    # supplies the gross_prof gross_margin fallback. All access is via getattr so a
+    # missing field/record degrades that factor to None (never drops the ticker).
     line_items = getattr(bundle, "line_items_history", None) or []
     li = _latest_lagged_line_item(line_items, asof)
+    lagged_metric = _latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof)
+
+    # -- value: earnings yield E/P. eps / close[asof] when both are positive (cheap
+    # stock = high E/P = high z), else None.
     eps = getattr(li, "earnings_per_share", None) if li is not None else None
     if eps is not None and eps > 0 and asof_close > 0:
         value = eps / asof_close
     else:
         value = None
 
-    quality = _quality_from_metric(_latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof))
+    # -- gross_prof: Novy-Marx gross profitability = gross_profit / total_assets. When
+    # the line item lacks gross_profit, derive it as revenue - cost_of_revenue. When no
+    # line-items gross profit / assets is available, fall back to the metrics
+    # gross_margin (which the yfinance enrich DOES populate). None if no source at all.
+    gross_prof = _gross_profitability(li, lagged_metric)
+
+    quality = _quality_from_metric(lagged_metric)
 
     return {
         "momentum": momentum,
@@ -327,6 +338,7 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
         "max_lottery": max_lottery,
         "high_52w": high_52w,
         "turnover": turnover,
+        "gross_prof": gross_prof,
     }
 
 
@@ -403,6 +415,33 @@ def _turnover_factor(vol_series: list[tuple[str, float]], to_days: int) -> float
         return None
     recent_mean = statistics.fmean(v for _, v in recent)
     return -(recent_mean / full_mean)
+
+
+def _gross_profitability(li, metric) -> float | None:
+    """Novy-Marx gross profitability ``gross_profit / total_assets``, or a fallback.
+
+    Reads the lagged line item ``li``: ``gross_profit`` (or ``revenue -
+    cost_of_revenue`` when ``gross_profit`` is absent but both are present) over
+    ``total_assets``. When the line-items ratio is not computable (no gross profit, or
+    no positive total assets) it falls back to the lagged metrics ``gross_margin`` —
+    which the yfinance enrich populates. Returns ``None`` only when neither source
+    exists. Every access is via :func:`getattr`; the division is zero-guarded. Never
+    raises — a missing field degrades the factor, it does not drop the ticker.
+    """
+    gp = getattr(li, "gross_profit", None) if li is not None else None
+    if gp is None and li is not None:
+        rev = getattr(li, "revenue", None)
+        cogs = getattr(li, "cost_of_revenue", None)
+        if rev is not None and cogs is not None:
+            gp = rev - cogs
+    ta = getattr(li, "total_assets", None) if li is not None else None
+    if gp is not None and ta is not None and ta > 0:
+        return gp / ta
+    # Fallback: the gross_margin off the lagged metrics record (enrich-populated).
+    gm = getattr(metric, "gross_margin", None) if metric is not None else None
+    if isinstance(gm, (int, float)) and not isinstance(gm, bool):
+        return float(gm)
+    return None
 
 
 def _value_from_metric(metric) -> float | None:

@@ -372,3 +372,63 @@ def test_value_none_when_no_line_item():
     out = compute_factors(bundles, _ASOF, _config())["V"]
     assert out["value"] is None
     assert all(k in out for k in _PRICE_KEYS)
+
+
+# ===========================================================================
+# TASK 8 — gross_prof = gross_profit / total_assets  (Novy-Marx profitability)
+#          fallback: metrics gross_margin when no line-items gross profit/assets.
+# ===========================================================================
+
+
+def test_gross_prof_known_value_from_gross_profit():
+    # gross_profit = 300, total_assets = 1000 → gross_prof = 0.3.
+    items = [_li(_FY, gross_profit=300.0, total_assets=1000.0)]
+    out = compute_factors({"GP": _fund_bundle(items)}, _ASOF, _config())["GP"]
+    assert out["gross_prof"] == 0.3
+    assert all(k in out for k in _PRICE_KEYS)
+
+
+def test_gross_prof_derived_from_revenue_minus_cogs():
+    # No gross_profit field → derive gp = revenue - cost_of_revenue = 1000 - 600 = 400,
+    # over total_assets = 800 → 0.5.
+    items = [_li(_FY, revenue=1000.0, cost_of_revenue=600.0, total_assets=800.0)]
+    out = compute_factors({"GP": _fund_bundle(items)}, _ASOF, _config())["GP"]
+    assert out["gross_prof"] == 400.0 / 800.0
+
+
+def test_gross_prof_no_lookahead_uses_lagged_line_item():
+    # A huge-profitability record dated INSIDE the 60-day lag must be excluded; the
+    # older knowable record (gp/assets = 0.2) is used, never the leaked 9.0.
+    items = [
+        _li(_FY_TOO_RECENT, gross_profit=9000.0, total_assets=1000.0),  # < 60d → not knowable
+        _li(_FY, gross_profit=200.0, total_assets=1000.0),  # knowable → used
+    ]
+    out = compute_factors({"GP": _fund_bundle(items)}, _ASOF, _config())["GP"]
+    assert out["gross_prof"] == 0.2
+    assert out["gross_prof"] != 9.0
+
+
+def test_gross_prof_fallback_to_gross_margin():
+    # No line-items gross profit / assets at all, but the lagged metrics record carries
+    # gross_margin → the factor falls back to that margin directly.
+    bundle = _fund_bundle([], metrics=[_gm(_FY, gross_margin=0.42)])
+    out = compute_factors({"GP": bundle}, _ASOF, _config())["GP"]
+    assert out["gross_prof"] == 0.42
+
+
+def test_gross_prof_fallback_when_line_item_lacks_assets():
+    # A line item exists with gross_profit but NO total_assets → the GP/assets ratio is
+    # not computable, so the factor falls back to the metrics gross_margin.
+    items = [_li(_FY, gross_profit=300.0)]  # no total_assets
+    bundle = _fund_bundle(items, metrics=[_gm(_FY, gross_margin=0.33)])
+    out = compute_factors({"GP": bundle}, _ASOF, _config())["GP"]
+    assert out["gross_prof"] == 0.33
+
+
+def test_gross_prof_none_when_no_source():
+    # No line-items gross/assets and no gross_margin metric → gross_prof None; the
+    # ticker still returns its price factors.
+    bundle = _fund_bundle([_li(_FY, total_assets=1000.0)])  # assets but no profit
+    out = compute_factors({"GP": bundle}, _ASOF, _config())["GP"]
+    assert out["gross_prof"] is None
+    assert out["momentum"] is not None

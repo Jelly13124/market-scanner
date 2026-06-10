@@ -222,7 +222,15 @@ def evolve(
         entry across this and any prior runs, in append order.
     """
     propose_fn = propose_fn or _proposer_mod.propose
-    backtest_fn = backtest_fn or _backtest_mod.backtest
+    # One shared factor cache for the whole run: bundles are immutable across all
+    # iterations, so a weight-only delta is a pure hit. Only bound when the DEFAULT
+    # backtest is used — an injected backtest_fn keeps its (bundles, config, sample)
+    # contract untouched (it never receives a cache kwarg).
+    if backtest_fn is None:
+        _factor_cache: dict = {}
+
+        def backtest_fn(b, c, s):
+            return _backtest_mod.backtest(b, c, s, cache=_factor_cache)
 
     # -- 1. Establish the running-best, resuming from disk if possible.
     resumed = _resume_state(base_dir)

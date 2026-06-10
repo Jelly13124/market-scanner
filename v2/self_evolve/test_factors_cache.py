@@ -121,3 +121,35 @@ def test_backtest_cache_same_metrics_and_no_recompute(monkeypatch):
     again = backtest(bundles, cfg, "test", cache=cache)  # same cache, same lookbacks
     assert calls == []  # ZERO recomputes the second time
     assert again == plain
+
+
+def test_evolve_shares_one_cache_across_iterations(monkeypatch, tmp_path):
+    import shutil
+
+    from v2.self_evolve.loop import evolve
+
+    bundles, cfg = _sample_bundles(), _cfg()
+    base_dir = str(tmp_path)
+    shutil.copy(_SKILL_CONFIG, os.path.join(base_dir, "skill_config.yaml"))
+
+    # Stub proposer: weight-only deltas (lookbacks unchanged) -> every iteration
+    # is a pure cache hit after the baseline computes the panel once.
+    deltas = iter(
+        [
+            {"path": "factor_weights.momentum", "value": 0.4, "hypothesis": "w"},
+            {"path": "factor_weights.reversal", "value": 0.25, "hypothesis": "w"},
+        ]
+    )
+
+    def propose_fn(skill_md, config, val_history, *, llm_fn=None):
+        return next(deltas, None)
+
+    calls = []
+    orig = fmod._compute_one
+    monkeypatch.setattr(fmod, "_compute_one", lambda b, a, c: calls.append((id(b), a)) or orig(b, a, c))
+
+    evolve(bundles, cfg, iterations=2, base_dir=base_dir, propose_fn=propose_fn)
+
+    # Baseline + 2 weight-only rounds = 3 train+val passes, but lookbacks never
+    # change -> each (bundle, asof) computed ONCE, not 3x.
+    assert len(calls) == len(set(calls)), f"expected no recomputes: {len(calls)} calls, {len(set(calls))} distinct"

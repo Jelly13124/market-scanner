@@ -38,7 +38,7 @@ from app.backend.database import SessionLocal  # noqa: E402
 
 from .marks import mark_all  # noqa: E402
 from .report import write_report  # noqa: E402
-from .sleeves import SLEEVE_NAMES, compute_targets  # noqa: E402
+from .sleeves import active_sleeves, compute_targets  # noqa: E402
 from .state import reconstruct_broker  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -189,7 +189,7 @@ def run_once(
 
     summaries: dict[str, dict] = {}
     try:
-        for sleeve_name in SLEEVE_NAMES:
+        for sleeve_name in active_sleeves():
             try:
                 # 0. Gate institutional-flow context for THIS sleeve's agent run.
                 # Only scanner_agent_flow sees flow; scanner_agent (and the

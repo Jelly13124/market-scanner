@@ -19,6 +19,7 @@ primary_region = "nrt"   # Tokyo (low latency for Asia). near your users: iad=US
   RATE_LIMIT_ENABLED = "true"                      # slowapi on /auth/* + analyze/scan
   FRONTEND_ORIGINS = "https://quantlab.fly.dev"   # CORS allow-list (same-origin, but set it)
   FRONTEND_BASE_URL = "https://quantlab.fly.dev"  # base URL baked into email verify links (was defaulting to localhost)
+  PAPER_SLEEVES = "scanner_agent,scanner_only,spy_benchmark,scanner_agent_flow"  # 4 light sleeves; factor_evolved excluded until B+C speeds its bundle build
 
 # SQLite lives here. Create it once: `fly volumes create data --size 3 --region <r>`.
 [[mounts]]

@@ -432,3 +432,67 @@ def test_gross_prof_none_when_no_source():
     out = compute_factors({"GP": bundle}, _ASOF, _config())["GP"]
     assert out["gross_prof"] is None
     assert out["momentum"] is not None
+
+
+# ===========================================================================
+# TASK 9 — asset_growth = -(ta_t / ta_prev - 1)  (Cooper-Gulen-Schill / FF5 CMA)
+#          high asset growth → low future return → NEGATIVE sign.
+# ===========================================================================
+
+
+def test_asset_growth_known_value():
+    # total_assets 200 now vs 100 prior year → growth +1.0 → asset_growth = -1.0.
+    items = [
+        _li(_FY, total_assets=200.0),
+        _li(_FY_PRIOR, total_assets=100.0),
+    ]
+    out = compute_factors({"AG": _fund_bundle(items)}, _ASOF, _config())["AG"]
+    assert out["asset_growth"] == -1.0
+    # Higher-z-is-better: rapid asset growth is PENALISED (negative factor).
+    assert out["asset_growth"] < 0
+    assert all(k in out for k in _PRICE_KEYS)
+
+
+def test_asset_growth_shrinking_assets_is_positive():
+    # Assets SHRANK (100 now vs 200 prior) → growth -0.5 → asset_growth = +0.5 (good).
+    items = [
+        _li(_FY, total_assets=100.0),
+        _li(_FY_PRIOR, total_assets=200.0),
+    ]
+    out = compute_factors({"AG": _fund_bundle(items)}, _ASOF, _config())["AG"]
+    assert out["asset_growth"] == 0.5
+
+
+def test_asset_growth_no_lookahead_uses_lagged_pair():
+    # A record INSIDE the 60-day lag must NOT serve as ta_t. The knowable pair
+    # (ta_t=200 @ _FY, ta_prev=100 @ _FY_PRIOR) → -1.0. A leak of the too-recent
+    # 1000 as ta_t would give -(1000/200 - 1) = -4.0.
+    items = [
+        _li(_FY_TOO_RECENT, total_assets=1000.0),  # < 60d → not knowable
+        _li(_FY, total_assets=200.0),  # latest knowable → ta_t
+        _li(_FY_PRIOR, total_assets=100.0),  # prior fiscal year → ta_prev
+    ]
+    out = compute_factors({"AG": _fund_bundle(items)}, _ASOF, _config())["AG"]
+    assert out["asset_growth"] == -1.0
+    assert out["asset_growth"] != -4.0
+
+
+def test_asset_growth_none_when_no_prior_year():
+    # Only one knowable record → no prior year to compare → asset_growth None, but the
+    # ticker keeps its price factors.
+    items = [_li(_FY, total_assets=200.0)]
+    out = compute_factors({"AG": _fund_bundle(items)}, _ASOF, _config())["AG"]
+    assert out["asset_growth"] is None
+    assert out["momentum"] is not None
+
+
+def test_asset_growth_none_when_prior_assets_zero():
+    # Prior-year total_assets == 0 → division guarded → asset_growth None; price
+    # factors survive.
+    items = [
+        _li(_FY, total_assets=200.0),
+        _li(_FY_PRIOR, total_assets=0.0),
+    ]
+    out = compute_factors({"AG": _fund_bundle(items)}, _ASOF, _config())["AG"]
+    assert out["asset_growth"] is None
+    assert out["momentum"] is not None

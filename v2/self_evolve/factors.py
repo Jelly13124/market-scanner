@@ -327,6 +327,18 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
     # gross_margin (which the yfinance enrich DOES populate). None if no source at all.
     gross_prof = _gross_profitability(li, lagged_metric)
 
+    # -- asset_growth: Cooper-Gulen-Schill investment factor (FF5 CMA). YoY change in
+    # total assets, negated: -(ta_t / ta_prev - 1). High asset growth → low future
+    # return → negative factor. ta_t is the latest knowable line item; ta_prev the
+    # prior fiscal year. None when either is missing or ta_prev is not positive.
+    ta_t = getattr(li, "total_assets", None) if li is not None else None
+    prior_li = _prior_year_line_item(line_items, asof)
+    ta_prev = getattr(prior_li, "total_assets", None) if prior_li is not None else None
+    if ta_t is not None and ta_prev is not None and ta_prev > 0:
+        asset_growth = -(ta_t / ta_prev - 1.0)
+    else:
+        asset_growth = None
+
     quality = _quality_from_metric(lagged_metric)
 
     return {
@@ -339,6 +351,7 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
         "high_52w": high_52w,
         "turnover": turnover,
         "gross_prof": gross_prof,
+        "asset_growth": asset_growth,
     }
 
 

@@ -83,3 +83,14 @@ def test_lookback_change_invalidates_and_matches_fresh():
         cached2 = compute_factors(bundles, ASOF, cfg2, cache=cache)
         assert cached2 == fresh2
     assert len(cache) > n_after_first  # new lookbacks added entries, didn't overwrite
+
+
+def test_generate_holdings_cache_passthrough():
+    from v2.self_evolve.strategy_gen import generate_holdings
+
+    bundles, cfg = _bundles(), _cfg()
+    no_cache = generate_holdings(bundles, ASOF, cfg)
+    cache = {}
+    with_cache = generate_holdings(bundles, ASOF, cfg, cache=cache)
+    assert with_cache == no_cache  # identical holdings
+    assert len(cache) >= 1  # cache was populated via compute_factors

@@ -238,7 +238,7 @@ def _cap_and_normalize(raw: dict[str, float], max_weight: float) -> dict[str, fl
 # ---------------------------------------------------------------------------
 
 
-def generate_holdings(bundles, asof: str, config) -> dict[str, float]:
+def generate_holdings(bundles, asof: str, config, *, cache=None) -> dict[str, float]:
     """Build the long-only, top-N, vol-inverse book for ``asof``.
 
     Parameters
@@ -303,7 +303,7 @@ def generate_holdings(bundles, asof: str, config) -> dict[str, float]:
     # -- factor matrix for survivors only (compute_factors may omit short-history
     # names; those drop out here too).
     sub_bundles = {t: bundles[t] for t in survivors}
-    factor_rows = compute_factors(sub_bundles, asof_iso, config)
+    factor_rows = compute_factors(sub_bundles, asof_iso, config, cache=cache)
     if not factor_rows:
         return {}
 

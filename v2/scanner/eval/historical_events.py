@@ -28,11 +28,27 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import date
 
+from src.tools.api import search_line_items
 from v2.data.models import FinancialMetrics
 from v2.data.yfinance_client import YFinanceClient
 
 logger = logging.getLogger(__name__)
+
+#: Raw statement line items pulled per fiscal period for the fundamental factors.
+#: These are the dynamic fields ``v2/self_evolve/factors.py`` reads off each
+#: ``LineItem`` (total assets / EPS / book value / revenue + cost / gross profit /
+#: net income). yfinance-backed via ``search_line_items`` — annual period only.
+_LINE_ITEM_FIELDS = [
+    "total_assets",
+    "earnings_per_share",
+    "book_value_per_share",
+    "revenue",
+    "cost_of_revenue",
+    "gross_profit",
+    "net_income",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -70,22 +86,22 @@ def probe_availability(
 
     result = {
         "earnings": _truthy(lambda: fetch_earnings_history(sample_ticker, limit=4)),
-        "analyst": _truthy(
-            lambda: fetch_analyst_actions(
-                sample_ticker, start_date=start, end_date=end, limit=10
-            )
-        ),
+        "analyst": _truthy(lambda: fetch_analyst_actions(sample_ticker, start_date=start, end_date=end, limit=10)),
         "insider": _truthy(
             lambda: insider_client is not None
             and fetch_insider_window(
-                sample_ticker, start_date=start, end_date=end,
+                sample_ticker,
+                start_date=start,
+                end_date=end,
                 insider_client=insider_client,
             )
         ),
         "news": _truthy(
             lambda: news_client is not None
             and fetch_news_history(
-                sample_ticker, start_date=start, end_date=end,
+                sample_ticker,
+                start_date=start,
+                end_date=end,
                 news_client=news_client,
             )
         ),
@@ -124,9 +140,7 @@ def fetch_analyst_actions(
     Best-effort: returns ``[]`` on any failure.
     """
     try:
-        return YFinanceClient().get_analyst_actions(
-            ticker, end_date=end_date, start_date=start_date, limit=limit
-        )
+        return YFinanceClient().get_analyst_actions(ticker, end_date=end_date, start_date=start_date, limit=limit)
     except Exception as e:  # noqa: BLE001 — best-effort
         logger.debug("fetch_analyst_actions(%s) failed: %s", ticker, e)
         return []
@@ -146,9 +160,7 @@ def fetch_insider_window(
     if insider_client is None:
         return []
     try:
-        return insider_client.get_insider_trades(
-            ticker, end_date=end_date, start_date=start_date, limit=1000
-        )
+        return insider_client.get_insider_trades(ticker, end_date=end_date, start_date=start_date, limit=1000)
     except Exception as e:  # noqa: BLE001 — best-effort
         logger.debug("fetch_insider_window(%s) failed: %s", ticker, e)
         return []
@@ -168,9 +180,7 @@ def fetch_news_history(
     if news_client is None:
         return []
     try:
-        return news_client.get_news(
-            ticker, end_date=end_date, start_date=start_date, limit=1000
-        )
+        return news_client.get_news(ticker, end_date=end_date, start_date=start_date, limit=1000)
     except Exception as e:  # noqa: BLE001 — best-effort
         logger.debug("fetch_news_history(%s) failed: %s", ticker, e)
         return []
@@ -401,12 +411,34 @@ def fetch_financials_history(ticker: str) -> list:
         except Exception as e:  # noqa: BLE001
             logger.debug(
                 "fetch_financials_history(%s) period %s skipped: %s",
-                ticker, period, e,
+                ticker,
+                period,
+                e,
             )
             continue
         out.append(metric)
 
     return out
+
+
+def fetch_line_items_history(ticker: str, *, end_date: str | None = None, limit: int = 10) -> list:
+    """Best-effort raw statement line items per fiscal period via ``search_line_items``.
+
+    Pulls the :data:`_LINE_ITEM_FIELDS` (annual period) ending on/before
+    ``end_date`` (defaulting to today). Each returned record is a ``LineItem``
+    carrying ``report_period`` plus the requested fields as dynamic attributes —
+    exactly what the fundamental factors read off it.
+
+    Best-effort like every fetcher here: returns ``[]`` on ANY failure (including
+    yfinance not installed inside ``search_line_items``) and NEVER raises.
+    """
+    end = end_date or date.today().isoformat()
+    try:
+        recs = search_line_items(ticker, list(_LINE_ITEM_FIELDS), end, period="annual", limit=limit)
+    except Exception as e:  # noqa: BLE001 — best-effort
+        logger.debug("fetch_line_items_history(%s) failed: %s", ticker, e)
+        return []
+    return list(recs or [])
 
 
 # ---------------------------------------------------------------------------
@@ -432,16 +464,25 @@ def enrich_bundle(
     """Populate a :class:`TickerBundle`'s historical lists, best-effort.
 
     Fills ``earnings_history``, ``analyst_actions``, ``insider``, ``news`` and
-    (when ``do_financials``) ``metrics_history``. Each step is guarded and
-    respects ``deadline`` — a ``time.monotonic()`` value past which we stop
-    early and leave the remaining lists untouched. Always returns a counts dict::
+    (when ``do_financials``) ``metrics_history`` + ``line_items_history``. Each
+    step is guarded and respects ``deadline`` — a ``time.monotonic()`` value past
+    which we stop early and leave the remaining lists untouched. Always returns a
+    counts dict::
 
-        {"earnings": n, "analyst": n, "insider": n, "news": n, "financials": n}
+        {"earnings": n, "analyst": n, "insider": n, "news": n,
+         "financials": n, "line_items": n}
 
     Steps already done before the deadline keep their counts; skipped steps
     report ``0``. Never raises.
     """
-    counts = {"earnings": 0, "analyst": 0, "insider": 0, "news": 0, "financials": 0}
+    counts = {
+        "earnings": 0,
+        "analyst": 0,
+        "insider": 0,
+        "news": 0,
+        "financials": 0,
+        "line_items": 0,
+    }
 
     if not _expired(deadline):
         recs = fetch_earnings_history(bundle.ticker)
@@ -449,15 +490,15 @@ def enrich_bundle(
         counts["earnings"] = len(recs)
 
     if not _expired(deadline):
-        acts = fetch_analyst_actions(
-            bundle.ticker, start_date=start_date, end_date=end_date
-        )
+        acts = fetch_analyst_actions(bundle.ticker, start_date=start_date, end_date=end_date)
         bundle.analyst_actions = acts
         counts["analyst"] = len(acts)
 
     if not _expired(deadline):
         ins = fetch_insider_window(
-            bundle.ticker, start_date=start_date, end_date=end_date,
+            bundle.ticker,
+            start_date=start_date,
+            end_date=end_date,
             insider_client=insider_client,
         )
         bundle.insider = ins
@@ -465,7 +506,9 @@ def enrich_bundle(
 
     if not _expired(deadline):
         nws = fetch_news_history(
-            bundle.ticker, start_date=start_date, end_date=end_date,
+            bundle.ticker,
+            start_date=start_date,
+            end_date=end_date,
             news_client=news_client,
         )
         bundle.news = nws
@@ -475,5 +518,10 @@ def enrich_bundle(
         fins = fetch_financials_history(bundle.ticker)
         bundle.metrics_history = fins
         counts["financials"] = len(fins)
+
+    if do_financials and not _expired(deadline):
+        items = fetch_line_items_history(bundle.ticker, end_date=end_date)
+        bundle.line_items_history = items
+        counts["line_items"] = len(items)
 
     return counts

@@ -90,14 +90,15 @@ class TickerBundle:
     """
 
     ticker: str
-    prices: list = field(default_factory=list)            # list[Price], time-ascending
+    prices: list = field(default_factory=list)  # list[Price], time-ascending
     earnings_history: list = field(default_factory=list)  # list[EarningsRecord]
-    insider: list = field(default_factory=list)           # list[InsiderTrade]
-    news: list = field(default_factory=list)              # list[CompanyNews]
-    metrics_history: list = field(default_factory=list)   # list[FinancialMetrics]
-    analyst_actions: list = field(default_factory=list)   # list[AnalystAction]
-    analyst_targets: list = field(default_factory=list)   # list[AnalystTarget]
-    facts: object | None = None                           # CompanyFacts | None
+    insider: list = field(default_factory=list)  # list[InsiderTrade]
+    news: list = field(default_factory=list)  # list[CompanyNews]
+    metrics_history: list = field(default_factory=list)  # list[FinancialMetrics]
+    line_items_history: list = field(default_factory=list)  # list[LineItem]
+    analyst_actions: list = field(default_factory=list)  # list[AnalystAction]
+    analyst_targets: list = field(default_factory=list)  # list[AnalystTarget]
+    facts: object | None = None  # CompanyFacts | None
     market_cap: float | None = None
 
 
@@ -232,9 +233,7 @@ class CachedAsOfClient:
         ``filing_date`` (the always-present field). Returns ``None`` if neither
         parses, so the row is excluded.
         """
-        return _parse_iso(getattr(r, "transaction_date", None)) or _parse_iso(
-            getattr(r, "filing_date", None)
-        )
+        return _parse_iso(getattr(r, "transaction_date", None)) or _parse_iso(getattr(r, "filing_date", None))
 
     # -- company facts (static snapshot) ------------------------------------
 

@@ -12,13 +12,18 @@ This mirrors the discipline of ``v2/scanner/eval/cached_asof_client.py``:
 
 The public entry point is :func:`compute_factors`. It is **total and defensive**:
 a ticker with insufficient price history is OMITTED entirely (never crashes), and
-missing fundamentals yield ``None`` for ``value`` / ``quality`` while the price
-factors still compute. It never raises on bad/sparse data.
+each fundamental factor (``value`` / ``quality`` / ``gross_prof`` / ``asset_growth``)
+degrades to ``None`` on a missing field/record while the price factors still compute.
+It never raises on bad/sparse data.
 
 Bundles are duck-typed — each value exposes ``.prices`` (objects with ``.time`` /
-``.close``) and ``.metrics_history`` (objects with ``.report_period`` /
-``.earnings_per_share`` / ``.return_on_equity`` / ``.price_to_earnings_ratio``).
-All access is via :func:`getattr` so plain ``SimpleNamespace`` fakes work in tests.
+``.close`` / ``.volume``), ``.line_items_history`` (raw statement records with
+``.report_period`` + dynamic fields ``total_assets`` / ``earnings_per_share`` /
+``book_value_per_share`` / ``revenue`` / ``cost_of_revenue`` / ``gross_profit``), and
+``.metrics_history`` (records with ``.report_period`` / ``.gross_margin``, the
+gross-profitability fallback source). The four fundamental factors are computed from
+the line items (E/P, ROE, Novy-Marx gross profitability, FF5-CMA asset growth); all
+access is via :func:`getattr` so plain ``SimpleNamespace`` fakes work in tests.
 
 Pure Python — no network, no pandas, no LLM.
 """
@@ -235,8 +240,8 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
     Price factors (momentum / low_vol / reversal) require enough as-of bars; when
     any cannot be computed from the available history the ticker is OMITTED (return
     ``None``) rather than emitting a partial/garbage row. Fundamental factors
-    (value / quality) degrade to ``None`` independently — a missing statement does
-    not drop the ticker.
+    (value / quality / gross_prof / asset_growth) degrade to ``None`` independently —
+    a missing statement does not drop the ticker.
     """
     prices = getattr(bundle, "prices", None) or []
     series = _asof_closes(prices, asof)
@@ -339,7 +344,15 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
     else:
         asset_growth = None
 
-    quality = _quality_from_metric(lagged_metric)
+    # -- quality: return on equity = EPS / book_value_per_share (= NI / equity). Unlike
+    # value, a loss is admissible — negative ROE is a meaningful quality signal — so
+    # the only guard is a positive BVPS denominator. None when EPS or BVPS is missing
+    # or BVPS is not positive.
+    bvps = getattr(li, "book_value_per_share", None) if li is not None else None
+    if eps is not None and bvps is not None and bvps > 0:
+        quality = eps / bvps
+    else:
+        quality = None
 
     return {
         "momentum": momentum,
@@ -455,32 +468,6 @@ def _gross_profitability(li, metric) -> float | None:
     if isinstance(gm, (int, float)) and not isinstance(gm, bool):
         return float(gm)
     return None
-
-
-def _value_from_metric(metric) -> float | None:
-    """Earnings yield = ``1 / price_to_earnings_ratio`` when ``pe > 0``, else ``None``.
-
-    A non-positive or missing P/E is not a meaningful earnings yield, so it maps to
-    ``None`` (the ticker keeps its price factors; ``value`` is just absent).
-    """
-    if metric is None:
-        return None
-    pe = getattr(metric, "price_to_earnings_ratio", None)
-    if not isinstance(pe, (int, float)) or isinstance(pe, bool):
-        return None
-    if pe <= 0.0:
-        return None
-    return 1.0 / pe
-
-
-def _quality_from_metric(metric) -> float | None:
-    """Return-on-equity off the lagged record, or ``None`` if absent / non-numeric."""
-    if metric is None:
-        return None
-    roe = getattr(metric, "return_on_equity", None)
-    if not isinstance(roe, (int, float)) or isinstance(roe, bool):
-        return None
-    return float(roe)
 
 
 # ---------------------------------------------------------------------------

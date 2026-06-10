@@ -496,3 +496,85 @@ def test_asset_growth_none_when_prior_assets_zero():
     out = compute_factors({"AG": _fund_bundle(items)}, _ASOF, _config())["AG"]
     assert out["asset_growth"] is None
     assert out["momentum"] is not None
+
+
+# ===========================================================================
+# TASK 10 — quality = eps / book_value_per_share  (= NI/equity = ROE)
+# ===========================================================================
+
+
+def test_quality_known_roe():
+    # EPS = 5, BVPS = 25 → quality = EPS/BVPS = NI/equity = ROE = 0.2.
+    items = [_li(_FY, earnings_per_share=5.0, book_value_per_share=25.0)]
+    out = compute_factors({"Q": _fund_bundle(items)}, _ASOF, _config())["Q"]
+    assert out["quality"] == 0.2
+    # Higher-z-is-better: positive ROE is a POSITIVE factor.
+    assert out["quality"] > 0
+    assert all(k in out for k in _PRICE_KEYS)
+
+
+def test_quality_negative_eps_yields_negative_roe():
+    # Unlike value (E/P, which requires EPS>0), quality (ROE) admits a loss: EPS=-5,
+    # BVPS=25 → quality = -0.2 (negative ROE is still a meaningful quality signal).
+    items = [_li(_FY, earnings_per_share=-5.0, book_value_per_share=25.0)]
+    out = compute_factors({"Q": _fund_bundle(items)}, _ASOF, _config())["Q"]
+    assert out["quality"] == -0.2
+    # value, by contrast, is None on a loss (EPS <= 0).
+    assert out["value"] is None
+
+
+def test_quality_no_lookahead_uses_lagged_line_item():
+    # A high-ROE record dated INSIDE the 60-day lag must be excluded; the older
+    # knowable record (ROE=0.2) is used, never the leaked 5.0.
+    items = [
+        _li(_FY_TOO_RECENT, earnings_per_share=50.0, book_value_per_share=10.0),  # < 60d → not knowable
+        _li(_FY, earnings_per_share=5.0, book_value_per_share=25.0),  # knowable → used
+    ]
+    out = compute_factors({"Q": _fund_bundle(items)}, _ASOF, _config())["Q"]
+    assert out["quality"] == 0.2
+    assert out["quality"] != 5.0
+
+
+def test_quality_none_when_bvps_not_positive():
+    # BVPS == 0 → ROE not computable (division guarded) → quality None; price factors
+    # survive.
+    items = [_li(_FY, earnings_per_share=5.0, book_value_per_share=0.0)]
+    out = compute_factors({"Q": _fund_bundle(items)}, _ASOF, _config())["Q"]
+    assert out["quality"] is None
+    assert out["momentum"] is not None
+
+
+def test_quality_none_when_no_line_item():
+    # No knowable line item → quality None; the ticker keeps all its price factors.
+    out = compute_factors({"Q": _fund_bundle([])}, _ASOF, _config())["Q"]
+    assert out["quality"] is None
+    assert all(k in out for k in _PRICE_KEYS)
+
+
+def test_all_eleven_factor_keys_present():
+    # A fully-populated bundle emits every one of the 11 registered factor keys (the
+    # 3 price + 3 Part-3a price/vol + 4 fundamentals; resid_mom is registered but not
+    # emitted by _compute_one yet, so it is intentionally absent here).
+    items = [
+        _li(_FY, earnings_per_share=5.0, book_value_per_share=25.0, gross_profit=300.0, total_assets=1000.0),
+        _li(_FY_PRIOR, total_assets=800.0),
+    ]
+    out = compute_factors({"ALL": _fund_bundle(items)}, _ASOF, _config())["ALL"]
+    expected = {
+        "momentum",
+        "low_vol",
+        "reversal",
+        "value",
+        "quality",
+        "max_lottery",
+        "high_52w",
+        "turnover",
+        "gross_prof",
+        "asset_growth",
+    }
+    assert set(out) == expected
+    # Every emitted fundamental factor computed (none degraded to None on this bundle).
+    assert out["value"] == 0.05
+    assert out["quality"] == 0.2
+    assert out["gross_prof"] == 0.3
+    assert out["asset_growth"] == -(1000.0 / 800.0 - 1.0)

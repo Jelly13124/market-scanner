@@ -36,13 +36,13 @@ def _price(d: str, close: float, volume: float) -> SimpleNamespace:
     return SimpleNamespace(time=d, close=close, volume=volume)
 
 
-def _metric(report_period: str, *, roe=None, pe=None) -> SimpleNamespace:
-    return SimpleNamespace(
-        report_period=report_period,
-        earnings_per_share=None,
-        return_on_equity=roe,
-        price_to_earnings_ratio=pe,
-    )
+def _li(report_period: str, **fields) -> SimpleNamespace:
+    """A raw line-item record (``report_period`` + dynamic statement fields).
+
+    ``value`` (E/P) and ``quality`` (ROE = EPS/BVPS) are computed from these line
+    items; the factor layer reads each field via ``getattr``.
+    """
+    return SimpleNamespace(report_period=report_period, **fields)
 
 
 def _series(
@@ -179,7 +179,8 @@ def test_missing_fundamentals_not_dropped():
     # plus its price factors. With top_n large enough to hold both, NOFUND is present.
     withfund = SimpleNamespace(
         prices=_series(_ASOF_D, 400, start_price=100.0, step=0.5, jitter=0.3),
-        metrics_history=[_metric((_ASOF_D - timedelta(days=90)).isoformat(), roe=0.20, pe=10.0)],
+        metrics_history=[],
+        line_items_history=[_li((_ASOF_D - timedelta(days=90)).isoformat(), earnings_per_share=20.0, book_value_per_share=100.0)],
     )
     nofund = SimpleNamespace(
         prices=_series(_ASOF_D, 400, start_price=100.0, step=0.6, jitter=0.3),
@@ -212,9 +213,11 @@ def test_zero_std_factor_no_divide_by_zero():
     # quality so a winner still exists; the book must be well-formed.
     bundles = {}
     for i, t in enumerate(["A", "B", "C", "D"]):
+        # ROE = EPS / BVPS = (10 + 5i) / 100 → 0.10, 0.15, 0.20, 0.25 (C, D highest).
         bundles[t] = SimpleNamespace(
             prices=_series(_ASOF_D, 400, start_price=100.0, step=0.5, jitter=0.3),
-            metrics_history=[_metric((_ASOF_D - timedelta(days=90)).isoformat(), roe=0.10 + 0.05 * i, pe=10.0)],
+            metrics_history=[],
+            line_items_history=[_li((_ASOF_D - timedelta(days=90)).isoformat(), earnings_per_share=10.0 + 5.0 * i, book_value_per_share=100.0)],
         )
     cfg = _config(
         # momentum/low_vol/reversal are identical (zero std); quality breaks the tie.

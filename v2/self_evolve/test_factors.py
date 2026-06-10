@@ -6,9 +6,10 @@ tests pin the factor signs/formulas, prove that bars AFTER ``asof`` are invisibl
 prove the 60-day fundamental availability lag is honoured.
 
 Bundles are synthetic ``SimpleNamespace`` fakes — no network, no data files, no LLM.
-The duck-typed shape (``.prices`` with ``.time``/``.close``; ``.metrics_history`` with
-``.report_period``/``.earnings_per_share``/``.return_on_equity``/``.price_to_earnings_ratio``)
-is exactly what :func:`compute_factors` reads via ``getattr``.
+The duck-typed shape (``.prices`` with ``.time``/``.close``; ``.line_items_history``
+with ``.report_period`` + statement fields such as ``.earnings_per_share`` /
+``.book_value_per_share``) is exactly what :func:`compute_factors` reads via ``getattr``.
+``value`` (E/P) and ``quality`` (ROE = EPS/BVPS) are computed from those line items.
 """
 
 from __future__ import annotations
@@ -30,15 +31,6 @@ from v2.self_evolve.factors import (
 
 def _price(d: str, close: float) -> SimpleNamespace:
     return SimpleNamespace(time=d, close=close)
-
-
-def _metric(report_period: str, *, eps=None, roe=None, pe=None) -> SimpleNamespace:
-    return SimpleNamespace(
-        report_period=report_period,
-        earnings_per_share=eps,
-        return_on_equity=roe,
-        price_to_earnings_ratio=pe,
-    )
 
 
 def _li(report_period: str, **fields) -> SimpleNamespace:
@@ -147,26 +139,24 @@ def test_fundamental_60d_lag_excludes_recent_record():
     asof_d = date(2020, 12, 31)
     asof_close = bars[-1].close  # linear series: 100 + 399*0.5 = 299.5
     # Inside the lag window (asof - 10d): NOT yet knowable → must be ignored. Its EPS
-    # (for value) and ROE (for quality) would both be wildly different if leaked.
-    too_recent = _metric((asof_d - timedelta(days=10)).isoformat(), roe=0.99, pe=2.0)
-    too_recent_li = _li((asof_d - timedelta(days=10)).isoformat(), earnings_per_share=299.5)
-    # Outside the lag window (asof - 90d > 60d lag): knowable → these are used.
-    available = _metric((asof_d - timedelta(days=90)).isoformat(), roe=0.15, pe=20.0)
-    available_li = _li((asof_d - timedelta(days=90)).isoformat(), earnings_per_share=29.95)
+    # (value) and EPS/BVPS (quality) would both be wildly different if leaked.
+    too_recent_li = _li((asof_d - timedelta(days=10)).isoformat(), earnings_per_share=299.5, book_value_per_share=299.5)
+    # Outside the lag window (asof - 90d > 60d lag): knowable → this one is used.
+    available_li = _li((asof_d - timedelta(days=90)).isoformat(), earnings_per_share=29.95, book_value_per_share=299.5)
 
-    bundles = {"F": SimpleNamespace(prices=bars, metrics_history=[too_recent, available], line_items_history=[too_recent_li, available_li])}
+    bundles = {"F": SimpleNamespace(prices=bars, metrics_history=[], line_items_history=[too_recent_li, available_li])}
     out = compute_factors(bundles, asof, _config())["F"]
 
-    # value (E/P) comes from the AVAILABLE line item; quality (ROE) from the available
-    # metric — never the too-recent ones.
-    assert out["quality"] == 0.15
+    # value (E/P) and quality (EPS/BVPS = ROE) both come from the AVAILABLE line item,
+    # never the too-recent one.
     assert out["value"] == 29.95 / asof_close  # = 0.1
-    # Explicitly NOT the inside-the-window records' values.
-    assert out["quality"] != 0.99
+    assert out["quality"] == 29.95 / 299.5  # = 0.1
+    # Explicitly NOT the inside-the-window record's values.
     assert out["value"] != 299.5 / asof_close  # the leaked-EPS yield (= 1.0)
+    assert out["quality"] != 299.5 / 299.5  # the leaked ROE (= 1.0)
 
-    # And if the ONLY records are inside the lag window → value/quality fall back to None.
-    only_recent = {"G": SimpleNamespace(prices=bars, metrics_history=[too_recent], line_items_history=[too_recent_li])}
+    # And if the ONLY record is inside the lag window → value/quality fall back to None.
+    only_recent = {"G": SimpleNamespace(prices=bars, metrics_history=[], line_items_history=[too_recent_li])}
     g = compute_factors(only_recent, asof, _config())["G"]
     assert g["value"] is None
     assert g["quality"] is None
@@ -180,14 +170,13 @@ def test_value_requires_positive_eps():
     start = date(2020, 12, 31) - timedelta(days=399)
     bars = _daily_series(start, 400, start_price=100.0, step=0.5)
     asof_d = date(2020, 12, 31)
-    # Negative EPS (loss-making) → earnings yield is not meaningful → value=None,
-    # but quality (ROE) still comes through from the lagged metric.
-    neg_eps = _li((asof_d - timedelta(days=90)).isoformat(), earnings_per_share=-3.0)
-    roe_metric = _metric((asof_d - timedelta(days=90)).isoformat(), roe=0.08)
-    bundles = {"N": SimpleNamespace(prices=bars, metrics_history=[roe_metric], line_items_history=[neg_eps])}
+    # Negative EPS (loss-making) → earnings yield is not meaningful → value=None. But
+    # quality (ROE = EPS/BVPS) admits a loss: it still computes, and is negative.
+    neg_eps = _li((asof_d - timedelta(days=90)).isoformat(), earnings_per_share=-3.0, book_value_per_share=30.0)
+    bundles = {"N": SimpleNamespace(prices=bars, metrics_history=[], line_items_history=[neg_eps])}
     out = compute_factors(bundles, asof, _config())["N"]
     assert out["value"] is None
-    assert out["quality"] == 0.08
+    assert out["quality"] == -3.0 / 30.0  # = -0.1 (negative ROE, still computed)
 
 
 # ---------------------------------------------------------------------------
@@ -239,13 +228,13 @@ def test_mixed_universe_partitions_correctly():
     good_close = good_prices[-1].close  # 299.5
     good = SimpleNamespace(
         prices=good_prices,
-        metrics_history=[_metric("2020-06-30", roe=0.2)],
-        line_items_history=[_li("2020-06-30", earnings_per_share=29.95)],
+        metrics_history=[],
+        line_items_history=[_li("2020-06-30", earnings_per_share=29.95, book_value_per_share=149.75)],
     )
     bad = SimpleNamespace(prices=_daily_series(date(2020, 12, 29), 3, start_price=10.0, step=1.0), metrics_history=[])
     out = compute_factors({"GOOD": good, "BAD": bad}, asof, _config())
 
     assert set(out) == {"GOOD"}
-    assert out["GOOD"]["quality"] == 0.2
+    assert out["GOOD"]["quality"] == 29.95 / 149.75  # ROE = EPS/BVPS = 0.2
     assert out["GOOD"]["value"] == 29.95 / good_close  # E/P = 0.1
     assert all(k in out["GOOD"] for k in ("momentum", "low_vol", "reversal", "value", "quality"))

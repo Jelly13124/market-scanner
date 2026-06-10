@@ -305,8 +305,17 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
     vol_series = _asof_volumes(prices, asof)
     turnover = _turnover_factor(vol_series, to_days)
 
-    # -- value / quality: from the latest fundamentals record at <= asof - 60d.
-    value = _value_from_metric(_latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof))
+    # -- value: earnings yield E/P from the latest line item at <= asof - 60d.
+    # eps / close[asof] when both are positive (cheap stock = high E/P = high z),
+    # else None (the ticker keeps its price factors).
+    line_items = getattr(bundle, "line_items_history", None) or []
+    li = _latest_lagged_line_item(line_items, asof)
+    eps = getattr(li, "earnings_per_share", None) if li is not None else None
+    if eps is not None and eps > 0 and asof_close > 0:
+        value = eps / asof_close
+    else:
+        value = None
+
     quality = _quality_from_metric(_latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof))
 
     return {

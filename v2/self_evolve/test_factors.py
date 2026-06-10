@@ -41,6 +41,15 @@ def _metric(report_period: str, *, eps=None, roe=None, pe=None) -> SimpleNamespa
     )
 
 
+def _li(report_period: str, **fields) -> SimpleNamespace:
+    """A raw line-item record (``report_period`` + dynamic statement fields).
+
+    ``value`` (E/P) and ``quality`` (ROE) are computed from these line items, not
+    from the ratio metrics; ``_compute_one`` reads each field via ``getattr``.
+    """
+    return SimpleNamespace(report_period=report_period, **fields)
+
+
 def _daily_series(start: date, n: int, *, start_price: float, step: float) -> list[SimpleNamespace]:
     """``n`` consecutive calendar-day bars from ``start``, close = start_price + i*step.
 
@@ -136,23 +145,28 @@ def test_fundamental_60d_lag_excludes_recent_record():
     bars = _daily_series(start, 400, start_price=100.0, step=0.5)
 
     asof_d = date(2020, 12, 31)
-    # Inside the lag window (asof - 10d): NOT yet knowable → must be ignored.
+    asof_close = bars[-1].close  # linear series: 100 + 399*0.5 = 299.5
+    # Inside the lag window (asof - 10d): NOT yet knowable → must be ignored. Its EPS
+    # (for value) and ROE (for quality) would both be wildly different if leaked.
     too_recent = _metric((asof_d - timedelta(days=10)).isoformat(), roe=0.99, pe=2.0)
-    # Outside the lag window (asof - 90d > 60d lag): knowable → this one is used.
+    too_recent_li = _li((asof_d - timedelta(days=10)).isoformat(), earnings_per_share=299.5)
+    # Outside the lag window (asof - 90d > 60d lag): knowable → these are used.
     available = _metric((asof_d - timedelta(days=90)).isoformat(), roe=0.15, pe=20.0)
+    available_li = _li((asof_d - timedelta(days=90)).isoformat(), earnings_per_share=29.95)
 
-    bundles = {"F": SimpleNamespace(prices=bars, metrics_history=[too_recent, available])}
+    bundles = {"F": SimpleNamespace(prices=bars, metrics_history=[too_recent, available], line_items_history=[too_recent_li, available_li])}
     out = compute_factors(bundles, asof, _config())["F"]
 
-    # value/quality come from the AVAILABLE (older) record, never the too-recent one.
+    # value (E/P) comes from the AVAILABLE line item; quality (ROE) from the available
+    # metric — never the too-recent ones.
     assert out["quality"] == 0.15
-    assert out["value"] == 1.0 / 20.0
-    # Explicitly NOT the inside-the-window record's values.
+    assert out["value"] == 29.95 / asof_close  # = 0.1
+    # Explicitly NOT the inside-the-window records' values.
     assert out["quality"] != 0.99
-    assert out["value"] != 1.0 / 2.0
+    assert out["value"] != 299.5 / asof_close  # the leaked-EPS yield (= 1.0)
 
-    # And if the ONLY record is inside the lag window → value/quality fall back to None.
-    only_recent = {"G": SimpleNamespace(prices=bars, metrics_history=[too_recent])}
+    # And if the ONLY records are inside the lag window → value/quality fall back to None.
+    only_recent = {"G": SimpleNamespace(prices=bars, metrics_history=[too_recent], line_items_history=[too_recent_li])}
     g = compute_factors(only_recent, asof, _config())["G"]
     assert g["value"] is None
     assert g["quality"] is None
@@ -161,15 +175,16 @@ def test_fundamental_60d_lag_excludes_recent_record():
     assert FUNDAMENTAL_AVAILABILITY_LAG_DAYS == 60
 
 
-def test_value_requires_positive_pe():
+def test_value_requires_positive_eps():
     asof = "2020-12-31"
     start = date(2020, 12, 31) - timedelta(days=399)
     bars = _daily_series(start, 400, start_price=100.0, step=0.5)
     asof_d = date(2020, 12, 31)
-    # Negative P/E (loss-making) → earnings yield is not meaningful → value=None,
-    # but quality (ROE) still comes through from the same lagged record.
-    neg_pe = _metric((asof_d - timedelta(days=90)).isoformat(), roe=0.08, pe=-12.0)
-    bundles = {"N": SimpleNamespace(prices=bars, metrics_history=[neg_pe])}
+    # Negative EPS (loss-making) → earnings yield is not meaningful → value=None,
+    # but quality (ROE) still comes through from the lagged metric.
+    neg_eps = _li((asof_d - timedelta(days=90)).isoformat(), earnings_per_share=-3.0)
+    roe_metric = _metric((asof_d - timedelta(days=90)).isoformat(), roe=0.08)
+    bundles = {"N": SimpleNamespace(prices=bars, metrics_history=[roe_metric], line_items_history=[neg_eps])}
     out = compute_factors(bundles, asof, _config())["N"]
     assert out["value"] is None
     assert out["quality"] == 0.08
@@ -220,11 +235,17 @@ def test_unparseable_asof_returns_empty():
 def test_mixed_universe_partitions_correctly():
     asof = "2020-12-31"
     start = date(2020, 12, 31) - timedelta(days=399)
-    good = SimpleNamespace(prices=_daily_series(start, 400, start_price=100.0, step=0.5), metrics_history=[_metric("2020-06-30", roe=0.2, pe=10.0)])
+    good_prices = _daily_series(start, 400, start_price=100.0, step=0.5)
+    good_close = good_prices[-1].close  # 299.5
+    good = SimpleNamespace(
+        prices=good_prices,
+        metrics_history=[_metric("2020-06-30", roe=0.2)],
+        line_items_history=[_li("2020-06-30", earnings_per_share=29.95)],
+    )
     bad = SimpleNamespace(prices=_daily_series(date(2020, 12, 29), 3, start_price=10.0, step=1.0), metrics_history=[])
     out = compute_factors({"GOOD": good, "BAD": bad}, asof, _config())
 
     assert set(out) == {"GOOD"}
     assert out["GOOD"]["quality"] == 0.2
-    assert out["GOOD"]["value"] == 1.0 / 10.0
+    assert out["GOOD"]["value"] == 29.95 / good_close  # E/P = 0.1
     assert all(k in out["GOOD"] for k in ("momentum", "low_vol", "reversal", "value", "quality"))

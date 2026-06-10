@@ -268,3 +268,107 @@ def test_turnover_none_when_to_days_zero():
     out = compute_factors(bundles, _ASOF, _config(to_days=0))["TZ"]
     assert out["turnover"] is None
     assert out["momentum"] is not None
+
+
+# ===========================================================================
+# Fundamental-factor test infrastructure (Tasks 7-10)
+# ===========================================================================
+#
+# The four fundamental factors (value / gross_prof / asset_growth / quality) are
+# computed from raw line items on ``bundle.line_items_history`` — newest record with
+# ``report_period <= asof - 60d`` (plus the prior fiscal year for asset_growth). The
+# same hard no-lookahead lag the price factors use, applied to statements.
+#
+# A line-item record is a ``SimpleNamespace`` mirroring the dynamic-attr ``LineItem``:
+# ``report_period`` + any of ``total_assets / earnings_per_share /
+# book_value_per_share / revenue / cost_of_revenue / gross_profit / net_income``.
+# A ``StrategyConfig``-shaped metrics record (``report_period`` + ``gross_margin``)
+# feeds the gross_prof fallback.
+#
+# All fundamental bundles reuse ``_flat_bars`` so the price factors survive (the
+# ticker is never dropped) and the as-of close is exactly 100.0 — making E/P and the
+# gross/asset ratios pin to round numbers.
+
+# A fiscal period comfortably OUTSIDE the 60-day lag before asof (2020-12-31) → the
+# record is knowable as-of and wins ``_latest_lagged_line_item``.
+_FY = "2020-06-30"
+#: The prior fiscal year, for the asset-growth YoY comparison.
+_FY_PRIOR = "2019-06-30"
+#: A period INSIDE the 60-day lag window before asof — NOT yet knowable as-of.
+_FY_TOO_RECENT = "2020-12-15"
+
+
+def _li(report_period: str, **fields) -> SimpleNamespace:
+    """A line-item record: ``report_period`` + dynamic statement fields.
+
+    Mirrors the dynamic-attr ``LineItem`` the enrich attaches; ``_compute_one`` reads
+    each field via ``getattr(rec, name, None)``, so only the supplied fields exist.
+    """
+    return SimpleNamespace(report_period=report_period, **fields)
+
+
+def _gm(report_period: str, gross_margin: float) -> SimpleNamespace:
+    """A metrics record exposing only ``gross_margin`` (the gross_prof fallback source)."""
+    return SimpleNamespace(report_period=report_period, gross_margin=gross_margin)
+
+
+def _fund_bundle(line_items, *, metrics=None, close: float = 100.0) -> SimpleNamespace:
+    """A bundle whose price history survives, carrying synthetic fundamentals.
+
+    ``_flat_bars`` gives a long flat history (as-of close == ``close``) so all price
+    factors compute; ``line_items_history`` / ``metrics_history`` carry the synthetic
+    fundamentals under test.
+    """
+    return SimpleNamespace(
+        prices=_flat_bars(_START, _N, close=close),
+        line_items_history=list(line_items),
+        metrics_history=list(metrics or []),
+    )
+
+
+_PRICE_KEYS = ("momentum", "low_vol", "reversal", "max_lottery", "high_52w", "turnover")
+
+
+# ===========================================================================
+# TASK 7 — value = eps / close[asof]  (earnings yield; cheap stock → high z)
+# ===========================================================================
+
+
+def test_value_known_earnings_yield():
+    # EPS = 5 on the lagged line item, as-of close = 100 → E/P = 0.05.
+    bundles = {"V": _fund_bundle([_li(_FY, earnings_per_share=5.0)], close=100.0)}
+    out = compute_factors(bundles, _ASOF, _config())["V"]
+    assert out["value"] == 0.05
+    # Higher-z-is-better: a positive earnings yield is a POSITIVE factor.
+    assert out["value"] > 0
+    # The ticker keeps all of its price factors.
+    assert all(k in out for k in _PRICE_KEYS)
+
+
+def test_value_no_lookahead_uses_lagged_line_item():
+    # A high-EPS record dated INSIDE the 60-day lag before asof must be excluded; the
+    # older knowable record (EPS=2) is used → value = 0.02, never 0.99.
+    items = [
+        _li(_FY_TOO_RECENT, earnings_per_share=99.0),  # < 60d old → not knowable
+        _li(_FY, earnings_per_share=2.0),  # knowable → used
+    ]
+    out = compute_factors({"V": _fund_bundle(items, close=100.0)}, _ASOF, _config())["V"]
+    assert out["value"] == 0.02
+    assert out["value"] != 0.99
+
+
+def test_value_none_when_eps_not_positive():
+    # Loss-making (EPS <= 0) → earnings yield not meaningful → value None, but the
+    # ticker still returns its price factors.
+    bundles = {"V": _fund_bundle([_li(_FY, earnings_per_share=-3.0)], close=100.0)}
+    out = compute_factors(bundles, _ASOF, _config())["V"]
+    assert out["value"] is None
+    assert out["momentum"] is not None
+
+
+def test_value_none_when_no_line_item():
+    # No knowable line item at all → value None; price factors survive.
+    bundles = {"V": _fund_bundle([], close=100.0)}
+    out = compute_factors(bundles, _ASOF, _config())["V"]
+    assert out["value"] is None
+    assert all(k in out for k in _PRICE_KEYS)

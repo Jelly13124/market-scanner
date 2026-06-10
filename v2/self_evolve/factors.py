@@ -142,6 +142,53 @@ def _latest_lagged_metric(metrics_history: list, asof: str):
     return best
 
 
+def _latest_lagged_line_item(items: list, asof: str):
+    """Newest line-item record with ``report_period <= asof - 60d``, or ``None``.
+
+    Same no-lookahead clamp as :func:`_latest_lagged_metric` applied to raw
+    :class:`LineItem` records: a record whose period falls inside the 60-day
+    window before ``asof`` (or after it) is NOT yet knowable and is excluded.
+    Among the knowable records the latest ``report_period`` wins; records with an
+    unparseable ``report_period`` are skipped. Never raises.
+    """
+    cutoff = _minus_days(asof, FUNDAMENTAL_AVAILABILITY_LAG_DAYS)
+    best = None
+    best_d: str | None = None
+    for it in items:
+        d = _parse_iso(getattr(it, "report_period", None))
+        if d is None or d > cutoff:
+            continue
+        if best_d is None or d > best_d:
+            best, best_d = it, d
+    return best
+
+
+def _prior_year_line_item(items: list, asof: str):
+    """The knowable line-item record one fiscal step BELOW the latest knowable one.
+
+    i.e. the newest record (still subject to the same ``<= asof - 60d`` lag clamp)
+    whose ``report_period`` is STRICTLY OLDER than the one
+    :func:`_latest_lagged_line_item` returns — the prior fiscal year, used for
+    asset-growth-style YoY factors. Returns ``None`` when fewer than two knowable
+    records exist (no prior period to compare against). Never raises.
+    """
+    top = _latest_lagged_line_item(items, asof)
+    if top is None:
+        return None
+    top_d = _parse_iso(getattr(top, "report_period", None))
+    if top_d is None:
+        return None
+    best = None
+    best_d: str | None = None
+    for it in items:
+        d = _parse_iso(getattr(it, "report_period", None))
+        if d is None or d >= top_d:
+            continue
+        if best_d is None or d > best_d:
+            best, best_d = it, d
+    return best
+
+
 # ---------------------------------------------------------------------------
 # Per-ticker factor computation
 # ---------------------------------------------------------------------------

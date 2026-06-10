@@ -185,3 +185,86 @@ def test_high_52w_none_when_no_bars_in_window():
     out = compute_factors(bundles, _ASOF, _config(hi_days=0))["Z"]
     assert out["high_52w"] is None
     assert out["momentum"] is not None
+
+
+# ===========================================================================
+# TASK 6 — turnover = -(mean(vol last to_days) / mean(vol full as-of series))
+# ===========================================================================
+
+
+def test_turnover_constant_volume_is_minus_one():
+    # Constant volume everywhere → recent mean == full mean → ratio 1.0 → turnover -1.0.
+    bars = _flat_bars(_START, _N, close=100.0, volume=500_000.0)
+    bundles = {"T": SimpleNamespace(prices=bars, metrics_history=[])}
+    out = compute_factors(bundles, _ASOF, _config(to_days=21))["T"]
+    assert out["turnover"] == -1.0
+
+
+def test_turnover_rising_recent_volume_is_more_negative():
+    # Baseline volume 100 on the full history; the last `to_days` bars carry a much
+    # higher volume → recent mean >> full mean → turnover strictly below -1.0.
+    to_days = 10
+    bars = _flat_bars(_START, _N, close=100.0, volume=100.0)
+    for i in range(_N - to_days, _N):
+        bars[i] = _price(bars[i].time, 100.0, 1_000.0)
+    bundles = {"TR": SimpleNamespace(prices=bars, metrics_history=[])}
+    out = compute_factors(bundles, _ASOF, _config(to_days=to_days))["TR"]
+    # Elevated recent volume is PENALISED (more negative than the flat -1.0 baseline).
+    assert out["turnover"] < -1.0
+
+
+def test_turnover_known_value_two_level_volume():
+    # Crafted exact value. Full series: N bars. The last `to_days` bars have volume
+    # HI, the rest have volume LO. recent_mean = HI; full_mean = (LO*(N-to)+HI*to)/N.
+    to_days = 10
+    lo, hi = 200.0, 800.0
+    bars = _flat_bars(_START, _N, close=100.0, volume=lo)
+    for i in range(_N - to_days, _N):
+        bars[i] = _price(bars[i].time, 100.0, hi)
+    bundles = {"TK": SimpleNamespace(prices=bars, metrics_history=[])}
+    out = compute_factors(bundles, _ASOF, _config(to_days=to_days))["TK"]
+
+    recent_mean = hi
+    full_mean = (lo * (_N - to_days) + hi * to_days) / _N
+    expected = -(recent_mean / full_mean)
+    assert abs(out["turnover"] - expected) < 1e-9
+
+
+def test_turnover_no_lookahead_post_asof_volume_ignored():
+    # Identical volume history through asof; bundle B adds an enormous post-asof
+    # volume spike. The spike sits after asof → must not change turnover at all.
+    base = _flat_bars(_START, _N, close=100.0, volume=300.0)
+    a = {"X": SimpleNamespace(prices=list(base), metrics_history=[])}
+
+    after = date(2020, 12, 31)
+    spike = [_price((after + timedelta(days=k)).isoformat(), 100.0, 1_000_000_000.0) for k in range(1, 6)]
+    b = {"X": SimpleNamespace(prices=list(base) + spike, metrics_history=[])}
+
+    cfg = _config(to_days=21)
+    fa = compute_factors(a, _ASOF, cfg)["X"]
+    fb = compute_factors(b, _ASOF, cfg)["X"]
+    assert fa["turnover"] == fb["turnover"]
+    # Flat volume through asof → recent mean == full mean → exactly -1.0. A leak of the
+    # 1e9 post-asof volume into either mean would have moved this far from -1.0.
+    assert fa["turnover"] == -1.0
+
+
+def test_turnover_none_when_no_volume_attr():
+    # Bars expose NO .volume attribute → turnover cannot be computed → None, but the
+    # ticker still returns its price factors (momentum/low_vol/reversal/high_52w).
+    bars = [_no_vol_price((_START + timedelta(days=i)).isoformat(), 100.0 + (i % 5)) for i in range(_N)]
+    bundles = {"NV": SimpleNamespace(prices=bars, metrics_history=[])}
+    out = compute_factors(bundles, _ASOF, _config(to_days=21))["NV"]
+    assert out["turnover"] is None
+    # The ticker survived with its other factors.
+    assert out["momentum"] is not None
+    assert out["low_vol"] is not None
+
+
+def test_turnover_none_when_to_days_zero():
+    # to_days = 0 → no recent window → turnover None; ticker keeps its other factors.
+    bars = _flat_bars(_START, _N, close=100.0, volume=500_000.0)
+    bundles = {"TZ": SimpleNamespace(prices=bars, metrics_history=[])}
+    out = compute_factors(bundles, _ASOF, _config(to_days=0))["TZ"]
+    assert out["turnover"] is None
+    assert out["momentum"] is not None

@@ -118,6 +118,27 @@ def _asof_closes(prices: list, asof: str) -> list[tuple[str, float]]:
     return out
 
 
+def _asof_volumes(prices: list, asof: str) -> list[tuple[str, float]]:
+    """Extract ``(date, volume)`` pairs dated ``<= asof``, ascending by date.
+
+    The volume sibling of :func:`_asof_closes` — the SAME hard no-lookahead clamp: a
+    bar dated after ``asof`` is dropped here so no volume-based factor can observe a
+    future bar. Bars with an unparseable date, a missing ``volume`` attribute, or a
+    non-numeric volume are skipped (treated as not-available). Never raises.
+    """
+    out: list[tuple[str, float]] = []
+    for p in prices:
+        d = _parse_iso(getattr(p, "time", None))
+        if d is None or d > asof:
+            continue
+        vol = getattr(p, "volume", None)
+        if not isinstance(vol, (int, float)) or isinstance(vol, bool):
+            continue
+        out.append((d, float(vol)))
+    out.sort(key=lambda dv: dv[0])
+    return out
+
+
 def _close_at_or_before(series: list[tuple[str, float]], target: str) -> float | None:
     """Close of the bar NEAREST to ``target`` at-or-before it, or ``None`` if none.
 
@@ -277,6 +298,13 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
     # Degrades to None when the window is empty or its max is non-positive.
     high_52w = _high_proximity_factor(series, hi_days)
 
+    # -- turnover: relative recent volume — -(mean(vol over last to_days as-of bars)
+    # / mean(vol over the FULL as-of volume series)). Elevated recent volume → more
+    # negative (penalised). Uses _asof_volumes (the <= asof clamp); degrades to None
+    # when there is no volume or the full-series mean is below a tiny floor.
+    vol_series = _asof_volumes(prices, asof)
+    turnover = _turnover_factor(vol_series, to_days)
+
     # -- value / quality: from the latest fundamentals record at <= asof - 60d.
     value = _value_from_metric(_latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof))
     quality = _quality_from_metric(_latest_lagged_metric(getattr(bundle, "metrics_history", None) or [], asof))
@@ -289,6 +317,7 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
         "quality": quality,
         "max_lottery": max_lottery,
         "high_52w": high_52w,
+        "turnover": turnover,
     }
 
 
@@ -335,6 +364,36 @@ def _high_proximity_factor(series: list[tuple[str, float]], hi_days: int) -> flo
         return None
     asof_close = series[-1][1]
     return asof_close / hi
+
+
+#: A tiny absolute volume floor used to guard the turnover denominator. The full-series
+#: mean volume must exceed this for the ratio to be meaningful; below it (all-zero / no
+#: real volume) the factor degrades to None rather than dividing by ~0.
+_TURNOVER_VOLUME_FLOOR = 1e-9
+
+
+def _turnover_factor(vol_series: list[tuple[str, float]], to_days: int) -> float | None:
+    """``-(mean(recent vol) / mean(full vol))`` over the as-of volume series, or ``None``.
+
+    Relative recent turnover: the mean volume over the trailing ``to_days`` bars divided
+    by the mean over the FULL as-of series, negated so elevated recent volume is
+    penalised (more negative; higher z = better). ``vol_series`` is already clamped to
+    bars ``<= asof`` by :func:`_asof_volumes`, so this is inherently no-lookahead.
+
+    ``None`` when ``to_days <= 0``, there are no volume bars, or the full-series mean is
+    at/below :data:`_TURNOVER_VOLUME_FLOOR` (divide-by-zero guard). The factor degrades
+    individually; the ticker keeps its other factors. Never raises.
+    """
+    if to_days <= 0 or not vol_series:
+        return None
+    full_mean = statistics.fmean(v for _, v in vol_series)
+    if full_mean <= _TURNOVER_VOLUME_FLOOR:
+        return None
+    recent = vol_series[-to_days:]
+    if not recent:
+        return None
+    recent_mean = statistics.fmean(v for _, v in recent)
+    return -(recent_mean / full_mean)
 
 
 def _value_from_metric(metric) -> float | None:

@@ -58,10 +58,24 @@ ADJUSTABLE: dict[str, tuple[float, float]] = {
     "factor_weights.reversal": (0.0, 1.0),
     "factor_weights.value": (0.0, 1.0),
     "factor_weights.quality": (0.0, 1.0),
+    # Part C: 6 new factors (NEUTRAL until computed — see factors.py). Each is a
+    # relative weight in [0, 1], re-normalized into the blend like the originals.
+    "factor_weights.max_lottery": (0.0, 1.0),
+    "factor_weights.high_52w": (0.0, 1.0),
+    "factor_weights.turnover": (0.0, 1.0),
+    "factor_weights.resid_mom": (0.0, 1.0),
+    "factor_weights.gross_prof": (0.0, 1.0),
+    "factor_weights.asset_growth": (0.0, 1.0),
     # Lookback windows (trading days).
     "lookback.momentum_days": (120, 300),
     "lookback.vol_days": (20, 120),
     "lookback.reversal_days": (5, 42),
+    # Part C: lookbacks for the new windowed factors (max-lottery short window,
+    # 52-week-high window, turnover averaging window, residual-momentum window).
+    "lookback.max_days": (10, 42),
+    "lookback.hi_days": (120, 300),
+    "lookback.to_days": (10, 63),
+    "lookback.resid_days": (120, 300),
     # Portfolio construction.
     "top_n": (20, 50),
     "max_weight": (0.03, 0.08),
@@ -76,8 +90,23 @@ ADJUSTABLE: dict[str, tuple[float, float]] = {
     # iterations tuning an inert knob (see final review H1).
 }
 
-# The canonical factor keys, in display order.
-FACTOR_KEYS: tuple[str, ...] = ("momentum", "low_vol", "reversal", "value", "quality")
+# The canonical factor keys, in display order. The first five are computed; the
+# six Part-C additions are registered here (and re-normalized into the blend) but
+# remain NEUTRAL — absent from factor rows, scored z=0 — until their later
+# factor-implementation tasks land. ``factors.FACTOR_KEYS`` MUST mirror this.
+FACTOR_KEYS: tuple[str, ...] = (
+    "momentum",
+    "low_vol",
+    "reversal",
+    "value",
+    "quality",
+    "max_lottery",
+    "high_52w",
+    "turnover",
+    "resid_mom",
+    "gross_prof",
+    "asset_growth",
+)
 
 
 @dataclass

@@ -15,12 +15,26 @@ factor_weights:
   reversal: 0.15   # short-horizon mean reversion
   value: 0.15      # shallow value (earnings yield, E/P)
   quality: 0.15    # shallow quality (ROE)
+  # Part C factors — registered with small seed weights; NEUTRAL (z=0) until the
+  # later factor-implementation tasks compute them. Sum is re-normalized to 1.0
+  # on load, so the five originals stay dominant.
+  max_lottery: 0.05    # negative max-daily-return (lottery-demand) tilt
+  high_52w: 0.05       # proximity to 52-week high
+  turnover: 0.05       # negative average turnover (liquidity premium)
+  resid_mom: 0.05      # residual (idiosyncratic) momentum
+  gross_prof: 0.05     # gross profitability
+  asset_growth: 0.05   # negative asset growth (conservative investment)
 
 # Lookback windows (trading days).
 lookback:
   momentum_days: 252   # ~12 months
   vol_days: 63         # ~3 months realized vol
   reversal_days: 21    # ~1 month reversal
+  # Part C windows (consumed once the matching factors are computed).
+  max_days: 21         # ~1 month max-daily-return window
+  hi_days: 252         # ~12 months for the 52-week high
+  to_days: 21          # ~1 month turnover averaging
+  resid_days: 252      # ~12 months residual-momentum window
 
 # Portfolio construction.
 top_n: 30              # number of names held [20, 50]

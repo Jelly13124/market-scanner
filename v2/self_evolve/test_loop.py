@@ -42,10 +42,35 @@ from v2.self_evolve.versioning import list_versions, read_path_log, read_version
 
 
 def _base_config() -> StrategyConfig:
-    """A real ``StrategyConfig`` (weights sum-normalized in ``__post_init__``)."""
+    """A real ``StrategyConfig`` (weights sum-normalized in ``__post_init__``).
+
+    Carries all 11 FACTOR_KEYS so it survives ``apply_delta``'s validate() inside
+    ``evolve``. The 6 Part-C factors are seeded at 0.0 — they normalize away and
+    are neutral (z=0) anyway, so the loop's selection / metrics are unchanged.
+    """
     return StrategyConfig(
-        factor_weights={"momentum": 0.30, "low_vol": 0.25, "reversal": 0.15, "value": 0.15, "quality": 0.15},
-        lookback={"momentum_days": 120, "vol_days": 20, "reversal_days": 5},
+        factor_weights={
+            "momentum": 0.30,
+            "low_vol": 0.25,
+            "reversal": 0.15,
+            "value": 0.15,
+            "quality": 0.15,
+            "max_lottery": 0.0,
+            "high_52w": 0.0,
+            "turnover": 0.0,
+            "resid_mom": 0.0,
+            "gross_prof": 0.0,
+            "asset_growth": 0.0,
+        },
+        lookback={
+            "momentum_days": 120,
+            "vol_days": 20,
+            "reversal_days": 5,
+            "max_days": 21,
+            "hi_days": 252,
+            "to_days": 21,
+            "resid_days": 252,
+        },
         top_n=30,
         holding_buffer=5,
         max_weight=0.05,

@@ -37,13 +37,20 @@ def test_load_baseline_returns_strategy_config():
 def test_load_baseline_weights_sum_normalized():
     cfg = load_config(BASELINE)
     assert sum(cfg.factor_weights.values()) == pytest.approx(1.0)
-    # The five canonical factors are all present.
+    # All 11 canonical factors are present (5 computed + 6 Part-C, neutral until
+    # implemented). The baseline yaml registers every FACTOR_KEYS entry.
     assert set(cfg.factor_weights) == {
         "momentum",
         "low_vol",
         "reversal",
         "value",
         "quality",
+        "max_lottery",
+        "high_52w",
+        "turnover",
+        "resid_mom",
+        "gross_prof",
+        "asset_growth",
     }
 
 
@@ -192,3 +199,60 @@ def test_validate_still_passes_after_removing_inert_knobs():
     validate(cfg)  # must not raise
     assert cfg.tilt_strength == pytest.approx(0.50)
     assert cfg.holding_buffer == 5
+
+
+# ---------------------------------------------------------------------------
+# 11-factor registration (Part C, Task 3): the 6 new factor keys + new lookback
+# ranges are registered in BOTH FACTOR_KEYS mirrors, in ADJUSTABLE, and in the
+# baseline yaml — so later factor-implementation tasks have keys + weights +
+# cache slots ready. The factors are NEUTRAL (absent from factor rows → z=0)
+# until those tasks compute them.
+# ---------------------------------------------------------------------------
+
+
+def test_eleven_factor_keys_registered():
+    import os
+
+    from v2.self_evolve.config import ADJUSTABLE, FACTOR_KEYS, load_config, validate
+    from v2.self_evolve.factors import FACTOR_KEYS as F_KEYS
+
+    expected = {
+        "momentum",
+        "low_vol",
+        "reversal",
+        "value",
+        "quality",
+        "max_lottery",
+        "high_52w",
+        "turnover",
+        "resid_mom",
+        "gross_prof",
+        "asset_growth",
+    }
+    assert set(FACTOR_KEYS) == expected
+    assert set(F_KEYS) == expected  # the two FACTOR_KEYS in sync
+    for k in expected:
+        assert f"factor_weights.{k}" in ADJUSTABLE
+    for lb in ("max_days", "hi_days", "to_days", "resid_days"):
+        assert f"lookback.{lb}" in ADJUSTABLE
+    cfg = load_config(os.path.join("strategy_skill", "skill_config.yaml"))
+    validate(cfg)  # 11 weights present + normalized to 1.0
+    assert set(cfg.factor_weights) == expected
+
+
+def test_new_lookbacks_are_in_factor_cache_key():
+    # LOAD-BEARING: every windowed factor's lookback must be in the Part-B cache
+    # key, else the cache returns a stale value when that window changes. Changing
+    # each NEW lookback via apply_delta must produce a DIFFERENT cache key.
+    from v2.self_evolve.factors import _lookback_cache_key
+
+    cfg = load_config(BASELINE)
+    base_key = _lookback_cache_key(cfg)
+    for path, val in [
+        ("lookback.max_days", 30),
+        ("lookback.hi_days", 200),
+        ("lookback.to_days", 40),
+        ("lookback.resid_days", 200),
+    ]:
+        cfg2 = apply_delta(cfg, {path: val})
+        assert _lookback_cache_key(cfg2) != base_key, f"{path} not reflected in cache key"

@@ -45,8 +45,22 @@ MOMENTUM_SKIP_DAYS = 21
 MIN_PRICE_BARS = 2
 
 #: The factor keys this module produces, in canonical order. Mirrors
-#: ``config.FACTOR_KEYS`` — kept local to avoid a hard import dependency.
-FACTOR_KEYS = ("momentum", "low_vol", "reversal", "value", "quality")
+#: ``config.FACTOR_KEYS`` — kept local to avoid a hard import dependency. The six
+#: Part-C additions are registered for parity but NOT yet emitted by
+#: ``_compute_one`` (they stay neutral z=0 downstream until computed).
+FACTOR_KEYS = (
+    "momentum",
+    "low_vol",
+    "reversal",
+    "value",
+    "quality",
+    "max_lottery",
+    "high_52w",
+    "turnover",
+    "resid_mom",
+    "gross_prof",
+    "asset_growth",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +313,14 @@ def _lookback_cache_key(config) -> tuple:
         int(lb.get("momentum_days", 0)),
         int(lb.get("vol_days", 0)),
         int(lb.get("reversal_days", 0)),
+        # Part C windows. Registered here BEFORE the factors are computed so the
+        # cache key is correct from day one: when a later task makes _compute_one
+        # read one of these, an existing cache entry keyed on the old window is
+        # already distinguished and won't be served stale.
+        int(lb.get("max_days", 0)),
+        int(lb.get("hi_days", 0)),
+        int(lb.get("to_days", 0)),
+        int(lb.get("resid_days", 0)),
     )
 
 

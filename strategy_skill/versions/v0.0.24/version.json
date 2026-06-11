@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.2737430167597765,
+      "reversal": 0.11173184357541897,
+      "low_vol": 0.11173184357541897,
+      "resid_mom": 0.0931098696461825,
+      "high_52w": 0.07448789571694599,
+      "max_lottery": 0.07448789571694599,
+      "turnover": 0.05586592178770949,
+      "value": 0.0931098696461825,
+      "gross_prof": 0.05586592178770949,
+      "asset_growth": 0.0,
+      "quality": 0.05586592178770949
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.8826726703985144,
+    "ann_return": 0.19863276671966434,
+    "ann_vol": 0.1739598992728143,
+    "max_drawdown": -21.839841956445905,
+    "turnover": 0.3236339680526892,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.05414054726491832,
+    "ann_return": 0.020693246720886016,
+    "ann_vol": 0.1660600504008765,
+    "max_drawdown": -15.973508868889855,
+    "turnover": 0.27301528573008105,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Increasing momentum weight amplifies the strongest factor, improving validation Sharpe in trending regimes.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.momentum",
+    "value": 0.3
+  }
+}

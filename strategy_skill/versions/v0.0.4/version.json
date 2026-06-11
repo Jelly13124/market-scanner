@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.23636363636363641,
+      "reversal": 0.1090909090909091,
+      "low_vol": 0.1090909090909091,
+      "resid_mom": 0.09090909090909093,
+      "high_52w": 0.07272727272727275,
+      "max_lottery": 0.07272727272727275,
+      "turnover": 0.05454545454545455,
+      "value": 0.09090909090909093,
+      "gross_prof": 0.05454545454545455,
+      "asset_growth": 0.05454545454545455,
+      "quality": 0.05454545454545455
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.9167280112894257,
+    "ann_return": 0.20592215987161766,
+    "ann_vol": 0.17412096938911223,
+    "max_drawdown": -21.5022473546855,
+    "turnover": 0.3231008949131501,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.036064254482438475,
+    "ann_return": 0.024646423423913433,
+    "ann_vol": 0.16209014802355237,
+    "max_drawdown": -15.206896166423917,
+    "turnover": 0.27793654784878546,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Further increasing momentum weight to 0.25 to capitalize on the observed benefit of trend-following, expecting continued improvement toward positive validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.momentum",
+    "value": 0.25
+  }
+}

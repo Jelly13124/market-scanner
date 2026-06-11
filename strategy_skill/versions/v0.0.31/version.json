@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.18939393939393945,
+      "reversal": 0.11363636363636365,
+      "low_vol": 0.1856060606060606,
+      "resid_mom": 0.09469696969696972,
+      "high_52w": 0.07575757575757576,
+      "max_lottery": 0.07575757575757576,
+      "turnover": 0.05681818181818182,
+      "value": 0.09469696969696972,
+      "gross_prof": 0.05681818181818182,
+      "asset_growth": 0.0,
+      "quality": 0.05681818181818182
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.03,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.8988256127589807,
+    "ann_return": 0.1925530125282433,
+    "ann_vol": 0.1627703427670565,
+    "max_drawdown": -19.230817389527278,
+    "turnover": 0.2695714285714286,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.006395670365157368,
+    "ann_return": 0.030968391575849408,
+    "ann_vol": 0.15449775029228277,
+    "max_drawdown": -15.594952114312502,
+    "turnover": 0.23590909090909087,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Increasing low_vol weight tilts the composite towards the robust low-volatility anomaly, expected to improve risk-adjusted returns and validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.low_vol",
+    "value": 0.2
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.20408163265306128,
+      "reversal": 0.12244897959183675,
+      "low_vol": 0.12244897959183675,
+      "resid_mom": 0.10204081632653064,
+      "high_52w": 0.0816326530612245,
+      "max_lottery": 0.0816326530612245,
+      "turnover": 0.06122448979591837,
+      "value": 0.10204081632653064,
+      "gross_prof": 0.06122448979591837,
+      "asset_growth": 0.0,
+      "quality": 0.06122448979591837
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 42.0,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.03,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.8905996008714577,
+    "ann_return": 0.18969618400680943,
+    "ann_vol": 0.16130982601571897,
+    "max_drawdown": -18.56207732228045,
+    "turnover": 0.23742857142857143,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.057230593107303974,
+    "ann_return": 0.019233585813550835,
+    "ann_vol": 0.16994159676381942,
+    "max_drawdown": -18.627025650687763,
+    "turnover": 0.20727272727272725,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Extending the reversal lookback window to 42 days (up from 21) captures longer-lag mean reversion, potentially improving the reversal factor's risk-adjusted performance and boosting overall validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "lookback.reversal_days",
+    "value": 42
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.19230769230769235,
+      "reversal": 0.11538461538461539,
+      "low_vol": 0.11538461538461539,
+      "resid_mom": 0.09615384615384617,
+      "high_52w": 0.07692307692307693,
+      "max_lottery": 0.07692307692307693,
+      "turnover": 0.057692307692307696,
+      "value": 0.09615384615384617,
+      "gross_prof": 0.057692307692307696,
+      "asset_growth": 0.057692307692307696,
+      "quality": 0.057692307692307696
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.896198071954185,
+    "ann_return": 0.20146657260372303,
+    "ann_vol": 0.17385798343021291,
+    "max_drawdown": -21.647280324539338,
+    "turnover": 0.3263341694402856,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.010111253468209609,
+    "ann_return": 0.028810894872631776,
+    "ann_vol": 0.16351346826620966,
+    "max_drawdown": -15.272537028654726,
+    "turnover": 0.2663581622750064,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Adding asset_growth with weight equal to other shallow fundamentals (gross_prof, quality) reintroduces the conservative investment factor, potentially improving the risk-return profile by adding an orthogonal quality-like premium.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.asset_growth",
+    "value": 0.06122448979591836
+  }
+}

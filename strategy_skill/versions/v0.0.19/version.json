@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.20408163265306128,
+      "reversal": 0.12244897959183675,
+      "low_vol": 0.12244897959183675,
+      "resid_mom": 0.10204081632653064,
+      "high_52w": 0.0816326530612245,
+      "max_lottery": 0.0816326530612245,
+      "turnover": 0.06122448979591837,
+      "value": 0.10204081632653064,
+      "gross_prof": 0.06122448979591837,
+      "asset_growth": 0.0,
+      "quality": 0.06122448979591837
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 25.0,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.843454396120943,
+    "ann_return": 0.1940236223851588,
+    "ann_vol": 0.1781332450708107,
+    "max_drawdown": -21.279360433347776,
+    "turnover": 0.374760626565054,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.0042162779320399635,
+    "ann_return": 0.029455895603710536,
+    "ann_vol": 0.16550149767126415,
+    "max_drawdown": -17.126775604266353,
+    "turnover": 0.3341678446515805,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Reducing number of holdings to 25 concentrates in top-ranked stocks, improving signal purity and Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "top_n",
+    "value": 25
+  }
+}

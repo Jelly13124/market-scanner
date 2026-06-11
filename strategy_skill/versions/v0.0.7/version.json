@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.17730496453900713,
+      "reversal": 0.10638297872340426,
+      "low_vol": 0.1843971631205674,
+      "resid_mom": 0.08865248226950356,
+      "high_52w": 0.07092198581560284,
+      "max_lottery": 0.07092198581560284,
+      "turnover": 0.05319148936170213,
+      "value": 0.08865248226950356,
+      "gross_prof": 0.05319148936170213,
+      "asset_growth": 0.05319148936170213,
+      "quality": 0.05319148936170213
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.8563577657697017,
+    "ann_return": 0.19174221496337718,
+    "ann_vol": 0.17202473582464167,
+    "max_drawdown": -22.08850386393899,
+    "turnover": 0.3025626446862613,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.15148310634854384,
+    "ann_return": 0.006287928991731029,
+    "ann_vol": 0.15876976443122326,
+    "max_drawdown": -16.503691287844966,
+    "turnover": 0.26832893850715506,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Increasing low_vol weight from 0.115 to 0.20 strengthens the low-volatility anomaly capture, reducing portfolio volatility and improving validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.low_vol",
+    "value": 0.2
+  }
+}

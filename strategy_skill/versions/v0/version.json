@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.16,
+      "reversal": 0.12,
+      "low_vol": 0.12,
+      "resid_mom": 0.1,
+      "high_52w": 0.08,
+      "max_lottery": 0.08,
+      "turnover": 0.06,
+      "value": 0.1,
+      "gross_prof": 0.06,
+      "asset_growth": 0.06,
+      "quality": 0.06
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.8979669461668787,
+    "ann_return": 0.201121431141301,
+    "ann_vol": 0.1729994018365923,
+    "max_drawdown": -21.541268798010098,
+    "turnover": 0.3318687536932563,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.0374832026230902,
+    "ann_return": 0.024514347118824498,
+    "ann_vol": 0.1615107181638002,
+    "max_drawdown": -15.60921647617154,
+    "turnover": 0.28207707861357517,
+    "n_rebalances": 24
+  },
+  "hypothesis": "baseline",
+  "kept": true,
+  "attribution": {
+    "parent": null,
+    "delta": null
+  }
+}

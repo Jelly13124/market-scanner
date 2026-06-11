@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.17204301075268819,
+      "reversal": 0.05376344086021506,
+      "low_vol": 0.12903225806451613,
+      "resid_mom": 0.10752688172043012,
+      "high_52w": 0.08602150537634409,
+      "max_lottery": 0.08602150537634409,
+      "turnover": 0.06451612903225806,
+      "value": 0.10752688172043012,
+      "gross_prof": 0.06451612903225806,
+      "asset_growth": 0.06451612903225806,
+      "quality": 0.06451612903225806
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.852328175153136,
+    "ann_return": 0.19287779302066932,
+    "ann_vol": 0.17444880206873217,
+    "max_drawdown": -21.722705120501775,
+    "turnover": 0.2707867201637612,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.1486828473736444,
+    "ann_return": 0.005861113771450155,
+    "ann_vol": 0.16152758687884242,
+    "max_drawdown": -18.14850933604545,
+    "turnover": 0.22076297140207857,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Lowering reversal weight reduces the strategy's exposure to short-term mean-reversion, allowing momentum-driven factors to dominate and improve risk-adjusted returns.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.reversal",
+    "value": 0.05
+  }
+}

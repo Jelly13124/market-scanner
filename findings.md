@@ -165,3 +165,20 @@ Investigated whether the Screener (Phase 1, `ScreenerPreset`) can take the same 
 Per the plan's Open Item 1 ("If its scheduling is global only, STOP and report — per-user screener scheduling is a separate spec; do not invent one"): **stopped, not implemented** at the time.
 
 **UPDATE 2026-06-03 — now IMPLEMENTED** (user explicitly asked "screener也加定时"): added `ScreenerPreset.cron_expr` (migration `c5d2f0a1e9b7`, server_default `"5 22 * * *"`), replaced the single global 22:05 preset cron with a per-preset job (`SchedulerService.register_screener_preset` in the owner's tz, `_run_single_preset_job`), re-registered on preset CRUD + timezone change, kept the snapshot cron. Routes validate cron + (un)register; preset-manager UI has a per-preset freq/time editor. See progress.md 2026-06-03 session + commits 5bd7fb9 / 7e5e240.
+
+## Fundamental report sections — capital_structure + ownership_structure (2026-06-11)
+
+Two new Analyze-report LLM sections shipped (overnight run). Defaults chosen (all consistent with the institutional_flow / financial_statements templates):
+
+- **ctx.shared has NO raw line items** (only `financials` = FinancialMetrics). So `capital_structure._capital_block` fetches them itself via `src.tools.api.search_line_items(ticker, [...], scan_date, period="annual")` — exactly the CROSS-CUTTING fallback the prompt allowed. Wrapped try/except → [] (never raises).
+- **60d availability lag**: re-implemented `_parse_iso`/`_minus_days`/`_latest_lagged`/`_prior_year` LOCALLY in capital_structure.py rather than importing from `v2/self_evolve/factors.py`. Rationale: keep `src/research/` free of a `v2/` cross-dependency (same rationale shared_data.py documents for duplicating the sector-ETF map). The logic mirrors factors.py exactly.
+- **Fetch seam = module-level import of the symbol** (`from src.tools.api import search_line_items` / `from src.research.ownership_fetch import fetch_ownership`), so tests monkeypatch `capital_structure.search_line_items` / `ownership_structure.fetch_ownership` on the SECTION module — identical to how institutional_flow exposes its fetches for patching.
+- **Grounded block is PREPENDED to the prompt** (before the system-prompt + task) so `_llm_runner`'s QUANT_CONTEXT_DIRECTIVE anti-hallucination governs it; the prompt md explicitly says "use ONLY the provided numbers".
+- **Percent formatting**: ownership block renders pcts at 2dp (e.g. `62.00%`, `8.34%`) for internal consistency within the block (top-holder pcts need 2dp). institutional_flow's `_fmt_pct` uses 1dp but that's a different (short-vol) context — not shared.
+- **Insider net** = signed Σ `transaction_shares` over the existing `ctx.shared.insider_trades` enrich (positive = net buying). Direction labelled; `n/a` when no trades have a usable share count.
+- **Never-raise asserted in BOTH section tests**: a fetch that raises + an all-None/empty fetch both yield a "data unavailable" note with `skipped=False` (honest note, ticker still reported) — never an exception.
+- **Interest coverage** line is OMITTED entirely (not "n/a") when operating_income is absent, per the plan; every other ratio is None/zero-denominator guarded → "n/a".
+
+Section-count: SECTION_ORDER 18 → 20. Test counts: 17 new offline tests (5 ownership_fetch + 6 capital_structure + 6 ownership_structure) + 2 updated/added in test_models_phase4. Full `tests/research/ src/research/` suite = 315 passed.
+
+FRONTEND scope decision: NOT wired into the default canvas (default-template.ts PARALLEL_SECTIONS) — institutional_flow set that precedent (backend-only). Backend runs them for direct/API/cron (included_sections defaults to all of SECTION_ORDER). A frontend canvas/i18n update is a separate change; the frontend's package.json/pnpm-lock already carry unrelated uncommitted edits, left untouched.

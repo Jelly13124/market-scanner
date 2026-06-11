@@ -376,54 +376,40 @@ def test_value_none_when_no_line_item():
 
 
 # ===========================================================================
-# TASK 8 — gross_prof = gross_profit / total_assets  (Novy-Marx profitability)
-#          fallback: metrics gross_margin when no line-items gross profit/assets.
+# TASK 8 — gross_prof = gross_margin (gross_profit / revenue) from lagged metrics.
+#          A SINGLE homogeneous source (M1 fix): NO line-items asset-scaled path, so
+#          the cross-section is never a mix of margin-scaled and asset-scaled ratios.
 # ===========================================================================
 
 
-def test_gross_prof_known_value_from_gross_profit():
-    # gross_profit = 300, total_assets = 1000 → gross_prof = 0.3.
-    items = [_li(_FY, gross_profit=300.0, total_assets=1000.0)]
-    out = compute_factors({"GP": _fund_bundle(items)}, _ASOF, _config())["GP"]
-    assert out["gross_prof"] == 0.3
+def test_gross_prof_from_gross_margin():
+    # The lagged metrics gross_margin IS the factor: 0.30 → 0.30.
+    bundle = _fund_bundle([], metrics=[_gm(_FY, gross_margin=0.30)])
+    out = compute_factors({"GP": bundle}, _ASOF, _config())["GP"]
+    assert out["gross_prof"] == 0.30
     assert all(k in out for k in _PRICE_KEYS)
 
 
-def test_gross_prof_derived_from_revenue_minus_cogs():
-    # No gross_profit field → derive gp = revenue - cost_of_revenue = 1000 - 600 = 400,
-    # over total_assets = 800 → 0.5.
-    items = [_li(_FY, revenue=1000.0, cost_of_revenue=600.0, total_assets=800.0)]
+def test_gross_prof_ignores_line_items_for_homogeneity():
+    # Line items carry gross_profit + total_assets, but with NO metrics gross_margin the
+    # factor is None — proving gross_prof uses ONLY the homogeneous gross_margin source
+    # and does NOT mix in the asset-scaled line-items ratio (the M1 fix).
+    items = [_li(_FY, gross_profit=300.0, total_assets=1000.0)]
     out = compute_factors({"GP": _fund_bundle(items)}, _ASOF, _config())["GP"]
-    assert out["gross_prof"] == 400.0 / 800.0
+    assert out["gross_prof"] is None
+    assert all(k in out for k in _PRICE_KEYS)
 
 
-def test_gross_prof_no_lookahead_uses_lagged_line_item():
-    # A huge-profitability record dated INSIDE the 60-day lag must be excluded; the
-    # older knowable record (gp/assets = 0.2) is used, never the leaked 9.0.
-    items = [
-        _li(_FY_TOO_RECENT, gross_profit=9000.0, total_assets=1000.0),  # < 60d → not knowable
-        _li(_FY, gross_profit=200.0, total_assets=1000.0),  # knowable → used
+def test_gross_prof_no_lookahead_uses_lagged_metric():
+    # A high gross_margin dated INSIDE the 60-day lag must be excluded; the older
+    # knowable metrics record (0.20) is used, never the leaked 0.99.
+    metrics = [
+        _gm(_FY_TOO_RECENT, gross_margin=0.99),  # < 60d → not knowable
+        _gm(_FY, gross_margin=0.20),  # knowable → used
     ]
-    out = compute_factors({"GP": _fund_bundle(items)}, _ASOF, _config())["GP"]
-    assert out["gross_prof"] == 0.2
-    assert out["gross_prof"] != 9.0
-
-
-def test_gross_prof_fallback_to_gross_margin():
-    # No line-items gross profit / assets at all, but the lagged metrics record carries
-    # gross_margin → the factor falls back to that margin directly.
-    bundle = _fund_bundle([], metrics=[_gm(_FY, gross_margin=0.42)])
-    out = compute_factors({"GP": bundle}, _ASOF, _config())["GP"]
-    assert out["gross_prof"] == 0.42
-
-
-def test_gross_prof_fallback_when_line_item_lacks_assets():
-    # A line item exists with gross_profit but NO total_assets → the GP/assets ratio is
-    # not computable, so the factor falls back to the metrics gross_margin.
-    items = [_li(_FY, gross_profit=300.0)]  # no total_assets
-    bundle = _fund_bundle(items, metrics=[_gm(_FY, gross_margin=0.33)])
-    out = compute_factors({"GP": bundle}, _ASOF, _config())["GP"]
-    assert out["gross_prof"] == 0.33
+    out = compute_factors({"GP": _fund_bundle([], metrics=metrics)}, _ASOF, _config())["GP"]
+    assert out["gross_prof"] == 0.20
+    assert out["gross_prof"] != 0.99
 
 
 def test_gross_prof_none_when_no_source():
@@ -556,10 +542,12 @@ def test_all_eleven_factor_keys_present():
     # A fully-populated bundle emits every one of the 11 registered factor keys (the
     # 3 price + 3 Part-3a price/vol + 4 fundamentals + cross-sectional resid_mom).
     items = [
-        _li(_FY, earnings_per_share=5.0, book_value_per_share=25.0, gross_profit=300.0, total_assets=1000.0),
+        _li(_FY, earnings_per_share=5.0, book_value_per_share=25.0, total_assets=1000.0),
         _li(_FY_PRIOR, total_assets=800.0),
     ]
-    out = compute_factors({"ALL": _fund_bundle(items)}, _ASOF, _config())["ALL"]
+    # gross_prof now reads the homogeneous gross_margin off metrics (M1 fix), not the
+    # line-items asset-scaled ratio.
+    out = compute_factors({"ALL": _fund_bundle(items, metrics=[_gm(_FY, gross_margin=0.3)])}, _ASOF, _config())["ALL"]
     expected = {
         "momentum",
         "low_vol",
@@ -872,8 +860,11 @@ def _smoke_universe() -> dict[str, SimpleNamespace]:
         a_rets = [r + drift for r in _MKT_RETS]
         prices = _bars_from_returns(a_rets)  # close compounds faster for higher i
         items = [
-            _smoke_li(_FY, earnings_per_share=4.0, book_value_per_share=20.0, gross_profit=200.0, total_assets=1000.0 + 10.0 * i),
+            _smoke_li(_FY, earnings_per_share=4.0, book_value_per_share=20.0, total_assets=1000.0 + 10.0 * i),
             _smoke_li(_FY_PRIOR, total_assets=900.0 + 10.0 * i),
         ]
-        bundles[f"S{i:02d}"] = SimpleNamespace(prices=prices, line_items_history=items, metrics_history=[])
+        # gross_prof reads the homogeneous gross_margin off metrics (M1 fix); vary it
+        # slightly per name so it is non-degenerate (and non-None) across the cross-section.
+        metrics = [SimpleNamespace(report_period=_FY, gross_margin=0.20 + 0.001 * i)]
+        bundles[f"S{i:02d}"] = SimpleNamespace(prices=prices, line_items_history=items, metrics_history=metrics)
     return bundles

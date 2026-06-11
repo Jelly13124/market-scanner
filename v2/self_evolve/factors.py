@@ -396,11 +396,10 @@ def _compute_one(bundle, asof: str, config) -> dict[str, float] | None:
     else:
         value = None
 
-    # -- gross_prof: Novy-Marx gross profitability = gross_profit / total_assets. When
-    # the line item lacks gross_profit, derive it as revenue - cost_of_revenue. When no
-    # line-items gross profit / assets is available, fall back to the metrics
-    # gross_margin (which the yfinance enrich DOES populate). None if no source at all.
-    gross_prof = _gross_profitability(li, lagged_metric)
+    # -- gross_prof: gross-margin profitability (gross_profit / revenue) from the
+    # lagged metrics — a single homogeneous, enrich-populated source (see
+    # _gross_profitability for why we do NOT mix in the line-items asset-scaled ratio).
+    gross_prof = _gross_profitability(lagged_metric)
 
     # -- asset_growth: Cooper-Gulen-Schill investment factor (FF5 CMA). YoY change in
     # total assets, negated: -(ta_t / ta_prev - 1). High asset growth → low future
@@ -513,27 +512,23 @@ def _turnover_factor(vol_series: list[tuple[str, float]], to_days: int) -> float
     return -(recent_mean / full_mean)
 
 
-def _gross_profitability(li, metric) -> float | None:
-    """Novy-Marx gross profitability ``gross_profit / total_assets``, or a fallback.
+def _gross_profitability(metric) -> float | None:
+    """Gross-margin profitability ``gross_profit / revenue`` from the lagged metrics.
 
-    Reads the lagged line item ``li``: ``gross_profit`` (or ``revenue -
-    cost_of_revenue`` when ``gross_profit`` is absent but both are present) over
-    ``total_assets``. When the line-items ratio is not computable (no gross profit, or
-    no positive total assets) it falls back to the lagged metrics ``gross_margin`` —
-    which the yfinance enrich populates. Returns ``None`` only when neither source
-    exists. Every access is via :func:`getattr`; the division is zero-guarded. Never
-    raises — a missing field degrades the factor, it does not drop the ticker.
+    A profitability factor (higher gross margin → higher quality → higher z). Uses a
+    SINGLE homogeneous source — the ``gross_margin`` the yfinance enrich reliably
+    populates — on purpose:
+
+    * Novy-Marx's gross-profit/ASSETS (sales-vs-asset scaling) and gross-profit/REVENUE
+      (margin) are different quantities; pooling them into one cross-sectional z-score
+      ranks names on incomparable units. Earlier this fell back from a (often sparse)
+      line-items ``gross_profit/total_assets`` to ``gross_margin``, mixing the two
+      across the universe. Using only ``gross_margin`` keeps the cross-section
+      homogeneous AND reliably populated (the line-items asset path was frequently
+      absent → a silently-dead leg).
+
+    ``None`` when the metric is missing. Never raises.
     """
-    gp = getattr(li, "gross_profit", None) if li is not None else None
-    if gp is None and li is not None:
-        rev = getattr(li, "revenue", None)
-        cogs = getattr(li, "cost_of_revenue", None)
-        if rev is not None and cogs is not None:
-            gp = rev - cogs
-    ta = getattr(li, "total_assets", None) if li is not None else None
-    if gp is not None and ta is not None and ta > 0:
-        return gp / ta
-    # Fallback: the gross_margin off the lagged metrics record (enrich-populated).
     gm = getattr(metric, "gross_margin", None) if metric is not None else None
     if isinstance(gm, (int, float)) and not isinstance(gm, bool):
         return float(gm)

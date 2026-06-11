@@ -44,6 +44,13 @@ FUNDAMENTAL_AVAILABILITY_LAG_DAYS = 60
 #: so short-term reversal does not contaminate the medium-term momentum signal.
 MOMENTUM_SKIP_DAYS = 21
 
+#: Floor on the OLS slope denominator Σ(x-x̄)² for ``resid_mom``. Daily market
+#: returns are O(0.01), so over a real window Σ(x-x̄)² is O(1e-4)–O(1e-2); a value at
+#: or below this floor means the market series is (near-)constant — the market beta is
+#: undefined, so the factor degrades to None rather than dividing by ~0. Mirrors the
+#: "every denominator has a real floor" scanner invariant.
+_RESID_MARKET_VAR_FLOOR = 1e-12
+
 #: Minimum number of as-of bars required to compute price factors. A ticker with
 #: fewer is OMITTED. Two clean returns are the floor for a meaningful stdev; in
 #: practice the lookback windows demand far more, but this guards the degenerate case.
@@ -155,6 +162,69 @@ def _close_at_or_before(series: list[tuple[str, float]], target: str) -> float |
         if d <= target:
             return close
     return None
+
+
+def _asof_daily_returns(prices: list, asof: str, lookback_days: int) -> dict[str, float]:
+    """As-of daily returns over the trailing ``lookback_days`` bars, keyed by bar date.
+
+    Takes the last ``lookback_days + 1`` closes from :func:`_asof_closes` (already
+    clamped to bars ``<= asof`` — inherently no-lookahead) and forms consecutive-close
+    returns ``r[d] = close[d] / close[prev] - 1``, keyed by the LATER bar's date so the
+    cross-sectional market mean (:func:`compute_factors`) can align tickers by date.
+
+    Returns an empty dict when there is no usable window (``lookback_days <= 0`` or
+    fewer than two bars). A bar whose prior close is ``0.0`` is skipped. Never raises —
+    the residual-momentum factor degrades to ``None`` rather than blowing up.
+    """
+    if lookback_days <= 0:
+        return {}
+    series = _asof_closes(prices, asof)
+    window = series[-(lookback_days + 1) :]
+    out: dict[str, float] = {}
+    for i in range(1, len(window)):
+        prev = window[i - 1][1]
+        if prev == 0.0:
+            continue
+        out[window[i][0]] = window[i][1] / prev - 1.0
+    return out
+
+
+def _residual_drift(y: list[float], x: list[float]) -> float | None:
+    """Idiosyncratic drift of ``y`` after removing market co-movement ``x``, or ``None``.
+
+    One-factor OLS of stock returns ``y`` on market returns ``x`` (paired by index over
+    their shared dates): least-squares slope ``b`` (market beta) and intercept ``a``::
+
+        b = Σ(x-x̄)(y-ȳ) / Σ(x-x̄)²
+        a = ȳ - b·x̄
+
+    The fitted residual at each date is ``e[t] = y[t] - (a + b·x[t])``; because the fit
+    includes an intercept, the residuals average to exactly zero, so the *mean residual*
+    carries no drift signal. The market-residualized (idiosyncratic) drift is instead the
+    intercept ``a`` itself — the average stock return left once the market component
+    ``b·x`` is stripped out. This is :data:`resid_mom` (Blitz-Huij-Martens residual
+    momentum); HIGHER = better, so no sign flip is applied.
+
+    Returns ``None`` when there are fewer than two shared points or the market is
+    (near-)constant — ``Σ(x-x̄)² <= _RESID_MARKET_VAR_FLOOR`` — so the beta is undefined.
+    Never raises.
+    """
+    n = len(x)
+    if n < 2 or len(y) != n:
+        return None
+    x_mean = statistics.fmean(x)
+    y_mean = statistics.fmean(y)
+    sxx = 0.0
+    sxy = 0.0
+    for xi, yi in zip(x, y):
+        dx = xi - x_mean
+        sxx += dx * dx
+        sxy += dx * (yi - y_mean)
+    if sxx <= _RESID_MARKET_VAR_FLOOR:
+        return None
+    b = sxy / sxx
+    a = y_mean - b * x_mean
+    return a
 
 
 # ---------------------------------------------------------------------------
@@ -535,4 +605,66 @@ def compute_factors(bundles, asof: str, config, *, cache=None) -> dict[str, dict
                 cache[key] = factors
         if factors is not None:
             out[ticker] = factors
+
+    _attach_resid_mom(out, bundles, asof_iso, config)
     return out
+
+
+def _attach_resid_mom(out, bundles, asof: str, config) -> None:
+    """Attach the cross-sectional ``resid_mom`` factor to every row in ``out`` in place.
+
+    Residual (idiosyncratic) momentum needs the MARKET return series, which only exists
+    once every ticker's row is built — hence it lives here, after the per-ticker loop,
+    not in :func:`_compute_one`. The market is the equal-weight cross-sectional MEAN
+    daily return across all surviving tickers, per date (over the union of their as-of
+    return dates). Each ticker's :data:`resid_mom` is the intercept of a one-factor OLS
+    of its returns on that market (:func:`_residual_drift`) — ``None`` when it shares
+    fewer than two market dates or the market is (near-)constant.
+
+    CACHE SAFETY (load-bearing): the dicts in ``out`` may be the SAME objects stored in
+    the Part-B cache (``compute_factors`` stores each ``_compute_one`` result by
+    reference). ``resid_mom`` is cross-sectional and UNCACHED — it must be recomputed
+    every call and must never leak into a cache entry. So each row is first replaced
+    with a shallow COPY (``dict(row)``) and ``resid_mom`` is set on the copy, leaving the
+    cached object untouched. Never raises.
+    """
+    lookback = getattr(config, "lookback", {}) or {}
+    resid_days = int(lookback.get("resid_days", 0))
+
+    # Per-ticker as-of daily-return series, keyed by bar date (no-lookahead via _asof).
+    rets_by_ticker: dict[str, dict[str, float]] = {}
+    for ticker in out:
+        bundle = bundles.get(ticker)
+        prices = getattr(bundle, "prices", None) or []
+        rets_by_ticker[ticker] = _asof_daily_returns(prices, asof, resid_days)
+
+    # Fewer than two tickers → no meaningful cross-section (a one-stock "market" is the
+    # stock itself). Every row's resid_mom is None; still copy-on-write for cache safety.
+    if len(out) < 2:
+        for ticker in out:
+            row = dict(out[ticker])
+            row["resid_mom"] = None
+            out[ticker] = row
+        return
+
+    # MARKET = equal-weight cross-sectional mean daily return per date, over the union
+    # of all tickers' return dates.
+    market: dict[str, float] = {}
+    all_dates: set[str] = set()
+    for series in rets_by_ticker.values():
+        all_dates.update(series)
+    for d in all_dates:
+        vals = [s[d] for s in rets_by_ticker.values() if d in s]
+        if vals:
+            market[d] = statistics.fmean(vals)
+
+    for ticker in out:
+        series = rets_by_ticker[ticker]
+        shared = sorted(d for d in series if d in market)
+        y = [series[d] for d in shared]
+        x = [market[d] for d in shared]
+        resid_mom = _residual_drift(y, x)
+        # Copy-on-write: never mutate the (possibly cached) _compute_one dict.
+        row = dict(out[ticker])
+        row["resid_mom"] = resid_mom
+        out[ticker] = row

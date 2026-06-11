@@ -19,7 +19,7 @@ primary_region = "nrt"   # Tokyo (low latency for Asia). near your users: iad=US
   RATE_LIMIT_ENABLED = "true"                      # slowapi on /auth/* + analyze/scan
   FRONTEND_ORIGINS = "https://quantlab.fly.dev"   # CORS allow-list (same-origin, but set it)
   FRONTEND_BASE_URL = "https://quantlab.fly.dev"  # base URL baked into email verify links (was defaulting to localhost)
-  PAPER_SLEEVES = "scanner_agent,scanner_only,spy_benchmark,scanner_agent_flow,factor_evolved"  # factor_evolved graduated (11-factor v0.0.25); its weekly bundle build needs the 4gb below
+  PAPER_SLEEVES = "scanner_agent,scanner_only,spy_benchmark,scanner_agent_flow,factor_evolved"  # factor_evolved graduated (11-factor v0.0.25); its weekly bundle build is only ~tens of MB so 2gb suffices
 
 # SQLite lives here. Create it once: `fly volumes create data --size 3 --region <r>`.
 [[mounts]]
@@ -40,4 +40,4 @@ primary_region = "nrt"   # Tokyo (low latency for Asia). near your users: iad=US
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "4gb"                 # ~$24/mo. 4gb headroom for factor_evolved's weekly nasdaq100 bundle build (revert to 2gb if it's dropped).
+  memory = "2gb"                 # ~$12/mo (shared-cpu-1x max). factor_evolved's weekly bundle is only ~tens of MB; bump CPU size to shared-cpu-2x for 4gb if it ever OOMs.

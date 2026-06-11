@@ -80,20 +80,14 @@ class LLMModel(BaseModel):
 # Load models from JSON file
 def load_models_from_json(json_path: str) -> List[LLMModel]:
     """Load models from a JSON file"""
-    with open(json_path, 'r') as f:
+    with open(json_path, "r") as f:
         models_data = json.load(f)
-    
+
     models = []
     for model_data in models_data:
         # Convert string provider to ModelProvider enum
         provider_enum = ModelProvider(model_data["provider"])
-        models.append(
-            LLMModel(
-                display_name=model_data["display_name"],
-                model_name=model_data["model_name"],
-                provider=provider_enum
-            )
-        )
+        models.append(LLMModel(display_name=model_data["display_name"], model_name=model_data["model_name"], provider=provider_enum))
     return models
 
 
@@ -129,14 +123,7 @@ def find_model_by_name(model_name: str) -> LLMModel | None:
 
 def get_models_list():
     """Get the list of models for API responses."""
-    return [
-        {
-            "display_name": model.display_name,
-            "model_name": model.model_name,
-            "provider": model.provider.value
-        }
-        for model in AVAILABLE_MODELS
-    ]
+    return [{"display_name": model.display_name, "model_name": model.model_name, "provider": model.provider.value} for model in AVAILABLE_MODELS]
 
 
 def _resolve_key(api_keys, env_name, allow_env_fallback):
@@ -151,6 +138,18 @@ def _resolve_key(api_keys, env_name, allow_env_fallback):
     if not key and allow_env_fallback:
         key = os.getenv(env_name)
     return key
+
+
+#: App DeepSeek model name -> SiliconFlow model id (OpenAI-compatible host). An
+#: unmapped "deepseek-*" falls back to "deepseek-ai/<name>".
+_SILICONFLOW_DEEPSEEK_MODELS = {
+    "deepseek-v4-pro": "deepseek-ai/DeepSeek-V4-Pro",
+    "deepseek-v4-flash": "deepseek-ai/DeepSeek-V4-Flash",
+    "deepseek-chat": "deepseek-ai/DeepSeek-V3",
+    "deepseek-reasoner": "deepseek-ai/DeepSeek-R1",
+    "deepseek-v3": "deepseek-ai/DeepSeek-V3",
+    "deepseek-r1": "deepseek-ai/DeepSeek-R1",
+}
 
 
 def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = None, allow_env_fallback: bool = True) -> ChatOpenAI | ChatGroq | ChatOllama | GigaChat | None:
@@ -177,6 +176,13 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
             raise ValueError("Anthropic API key not found.  Please make sure ANTHROPIC_API_KEY is set in your .env file or provided via API keys.")
         return ChatAnthropic(model=model_name, api_key=api_key)
     elif model_provider == ModelProvider.DEEPSEEK:
+        # Route DeepSeek through SiliconFlow (OpenAI-compatible) when its key is set:
+        # the direct DeepSeek balance can deplete, and SiliconFlow hosts the same
+        # models. Transparent — callers keep using provider=DeepSeek / "deepseek-*".
+        sf_key = _resolve_key(api_keys, "SILICONFLOW_API_KEY", allow_env_fallback)
+        if sf_key:
+            sf_model = _SILICONFLOW_DEEPSEEK_MODELS.get(model_name, f"deepseek-ai/{model_name}")
+            return ChatOpenAI(model=sf_model, api_key=sf_key, base_url="https://api.siliconflow.cn/v1")
         api_key = _resolve_key(api_keys, "DEEPSEEK_API_KEY", allow_env_fallback)
         if not api_key:
             print(f"API Key Error: Please make sure DEEPSEEK_API_KEY is set in your .env file or provided via API keys.")
@@ -202,11 +208,11 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
         if not api_key:
             print(f"API Key Error: Please make sure OPENROUTER_API_KEY is set in your .env file or provided via API keys.")
             raise ValueError("OpenRouter API key not found. Please make sure OPENROUTER_API_KEY is set in your .env file or provided via API keys.")
-        
+
         # Get optional site URL and name for headers
         site_url = os.getenv("YOUR_SITE_URL", "https://github.com/virattt/ai-hedge-fund")
         site_name = os.getenv("YOUR_SITE_NAME", "AI Hedge Fund")
-        
+
         return ChatOpenAI(
             model=model_name,
             openai_api_key=api_key,
@@ -216,11 +222,10 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
                     "HTTP-Referer": site_url,
                     "X-Title": site_name,
                 }
-            }
+            },
         )
     elif model_provider == ModelProvider.KIMI:
-        api_key = _resolve_key(api_keys, "MOONSHOT_API_KEY", allow_env_fallback) \
-            or _resolve_key(api_keys, "KIMI_API_KEY", allow_env_fallback)
+        api_key = _resolve_key(api_keys, "MOONSHOT_API_KEY", allow_env_fallback) or _resolve_key(api_keys, "KIMI_API_KEY", allow_env_fallback)
         if not api_key:
             print(f"API Key Error: Please make sure MOONSHOT_API_KEY (or KIMI_API_KEY) is set in your .env file or provided via API keys.")
             raise ValueError("Kimi API key not found. Please make sure MOONSHOT_API_KEY (or KIMI_API_KEY) is set in your .env file or provided via API keys.")
@@ -267,7 +272,4 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
             raise ValueError("Azure OpenAI deployment name not found.  Please make sure AZURE_OPENAI_DEPLOYMENT_NAME is set in your .env file.")
         return AzureChatOpenAI(azure_endpoint=azure_endpoint, azure_deployment=azure_deployment_name, api_key=api_key, api_version="2024-10-21")
     else:
-        raise ValueError(
-            f"Unsupported model provider: {model_provider}. "
-            f"Supported providers: {', '.join(p.value for p in ModelProvider)}"
-        )
+        raise ValueError(f"Unsupported model provider: {model_provider}. " f"Supported providers: {', '.join(p.value for p in ModelProvider)}")

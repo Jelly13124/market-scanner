@@ -9,21 +9,26 @@
 
 # Composite factor blend. Sum-normalized to 1.0 on load, so these are relative
 # weights — what matters is their ratio, not the absolute sum.
+#
+# This is the balanced 11-factor v0 book (Part C complete). It is a PRICE-LED
+# strategy: the price/volume factors carry ~72% of the blend and momentum leads,
+# with a shallow-fundamental overlay (~28%) plus lottery/liquidity tilts. NOT
+# all-equal — every factor has a real say, but the kernel's price lead is
+# preserved. The self-evolve loop tunes from here, one weight at a time.
 factor_weights:
-  momentum: 0.30   # 12-1 month price momentum (the lead factor)
-  low_vol: 0.25    # inverse realized volatility tilt
-  reversal: 0.15   # short-horizon mean reversion
-  value: 0.15      # shallow value (earnings yield, E/P)
-  quality: 0.15    # shallow quality (ROE)
-  # Part C factors — registered with small seed weights; NEUTRAL (z=0) until the
-  # later factor-implementation tasks compute them. Sum is re-normalized to 1.0
-  # on load, so the five originals stay dominant.
-  max_lottery: 0.05    # negative max-daily-return (lottery-demand) tilt
-  high_52w: 0.05       # proximity to 52-week high
-  turnover: 0.05       # negative average turnover (liquidity premium)
-  resid_mom: 0.05      # residual (idiosyncratic) momentum
-  gross_prof: 0.05     # gross profitability
-  asset_growth: 0.05   # negative asset growth (conservative investment)
+  # Price/volume factors (the lead block).
+  momentum: 0.16   # 12-1 month price momentum (the lead factor)
+  reversal: 0.12   # short-horizon mean reversion
+  low_vol: 0.12    # inverse realized volatility tilt
+  resid_mom: 0.10  # residual (idiosyncratic) momentum
+  high_52w: 0.08   # proximity to 52-week high
+  max_lottery: 0.08  # negative max-daily-return (lottery-demand) tilt
+  turnover: 0.06   # negative average turnover (liquidity premium)
+  # Shallow-fundamental overlay.
+  value: 0.10      # shallow value (earnings yield, E/P)
+  gross_prof: 0.06  # gross profitability (Novy-Marx)
+  asset_growth: 0.06  # negative asset growth (conservative investment / CMA)
+  quality: 0.06    # shallow quality (ROE)
 
 # Lookback windows (trading days).
 lookback:

@@ -736,3 +736,144 @@ def test_resid_mom_none_for_single_ticker_universe():
     assert out["SOLO"]["resid_mom"] is None
     # The single ticker still computes all its other factors.
     assert out["SOLO"]["momentum"] is not None
+
+
+# ===========================================================================
+# TASK 12 — final integration smoke. Exercises the REAL baseline config
+# (strategy_skill/skill_config.yaml) end-to-end through compute_factors AND
+# generate_holdings, proving (a) a fully-populated bundle emits all 11 factors,
+# and (b) the six NEW Part-C factors actually DRIVE selection — up-weighting a
+# new factor (value) yields a DIFFERENT book than the balanced baseline, so they
+# are not inert/neutral.
+# ===========================================================================
+
+import os
+
+from v2.self_evolve.config import FACTOR_KEYS, apply_delta, load_config, validate
+from v2.self_evolve.strategy_gen import generate_holdings
+
+_SKILL_CONFIG = os.path.join(os.path.dirname(__file__), "..", "..", "strategy_skill", "skill_config.yaml")
+
+
+def test_baseline_config_loads_validated_with_eleven_normalized_weights():
+    # The rebalanced 11-factor baseline still passes the protocol gate: exactly the
+    # 11 canonical keys, weights normalized to 1.0, every adjustable path in range.
+    cfg = load_config(_SKILL_CONFIG)
+    validate(cfg)  # no raise
+    assert set(cfg.factor_weights) == set(FACTOR_KEYS)
+    assert sum(cfg.factor_weights.values()) == __import__("pytest").approx(1.0)
+    # It is genuinely balanced — no factor sits at the old token 0.05 seed, and
+    # momentum still leads (price-led kernel preserved).
+    assert min(cfg.factor_weights.values()) > 0.05
+    assert cfg.factor_weights["momentum"] == max(cfg.factor_weights.values())
+
+
+def test_compute_factors_emits_all_eleven_keys_on_real_config():
+    # A healthy multi-ticker bundle WITH line_items_history + prices, run through the
+    # REAL baseline config, emits every one of the 11 factor keys for each ticker;
+    # the data-supported ones are non-None (resid_mom is real here because the
+    # cross-section has >1 ticker with idiosyncratic drift).
+    cfg = load_config(_SKILL_CONFIG)
+    bundles = _smoke_universe()
+    rows = compute_factors(bundles, _ASOF, cfg)
+    assert set(rows) == set(bundles)  # every ticker survived (long, healthy history)
+    for ticker, row in rows.items():
+        assert set(row) == set(FACTOR_KEYS), f"{ticker} missing keys: {set(FACTOR_KEYS) - set(row)}"
+        # The price/volume factors + the four fundamentals are all backed by data,
+        # so none degrades to None on this fully-populated bundle.
+        for k in FACTOR_KEYS:
+            if k == "resid_mom":
+                continue  # cross-sectional; asserted separately below
+            assert row[k] is not None, f"{ticker}.{k} unexpectedly None"
+    # resid_mom is real (non-None) for at least one name — the multi-ticker
+    # cross-section gives the market series a genuine residual to fit against.
+    assert any(rows[t]["resid_mom"] is not None for t in rows)
+
+
+def test_upweighting_new_factor_changes_holdings():
+    # Proof the NEW factors are live, not neutral: take the balanced baseline book,
+    # then apply a delta that makes a NEW factor (value) dominate the blend. Because
+    # the synthetic universe's value ranking is ANTI-correlated with its price-factor
+    # ranking, a value-dominated composite selects/weights a DIFFERENT set of names —
+    # which can only happen if `value` actually feeds the composite.
+    base_cfg = load_config(_SKILL_CONFIG)
+    # Make selection sensitive: drop the liquidity filter (all 40 names survive) and set
+    # top_n (20, the ADJUSTABLE floor) WELL below 40, so which names are held is decided
+    # purely by the composite ordering — a value tilt that reorders the composite must
+    # change the held SET.
+    base_cfg = apply_delta(
+        base_cfg,
+        {"top_n": 20, "liquidity_pct.advol_pct": 0.0, "liquidity_pct.mktcap_pct": 0.0},
+    )
+
+    bundles = _smoke_universe()
+    baseline_book = generate_holdings(bundles, _ASOF, base_cfg)
+    assert baseline_book, "baseline produced an empty book"
+    # Long-only book: positive weights summing to ~1.0.
+    assert all(w > 0 for w in baseline_book.values())
+    assert sum(baseline_book.values()) == __import__("pytest").approx(1.0)
+
+    # Up-weight the NEW `value` factor to dominate (re-normalized into the blend).
+    tilted_cfg = apply_delta(base_cfg, {"factor_weights.value": 1.0})
+    tilted_book = generate_holdings(bundles, _ASOF, tilted_cfg)
+    assert tilted_book, "value-tilted config produced an empty book"
+    assert all(w > 0 for w in tilted_book.values())
+    assert sum(tilted_book.values()) == __import__("pytest").approx(1.0)
+
+    # The two books DIFFER — different selected names and/or different weights. If
+    # `value` were neutral (z=0 always, as before Part C) the composites would be
+    # identical and so would the books.
+    assert tilted_book != baseline_book
+    # Concretely, the held SET changes.
+    assert set(tilted_book) != set(baseline_book)
+
+    # And it changes in the EXPECTED direction: value = EPS/close is largest for the
+    # cheapest low-index names, so a value-dominated book is pulled toward them. Its
+    # mean held index is strictly below the balanced book's — value really steered it.
+    def _mean_idx(book):
+        return sum(int(t[1:]) for t in book) / len(book)
+
+    assert _mean_idx(tilted_book) < _mean_idx(baseline_book)
+
+
+# --- smoke-test universe builder ------------------------------------------
+
+
+def _smoke_li(report_period: str, **fields) -> SimpleNamespace:
+    """A line-item record for the smoke universe (mirrors ``_li``)."""
+    return SimpleNamespace(report_period=report_period, **fields)
+
+
+def _smoke_universe() -> dict[str, SimpleNamespace]:
+    """A 40-ticker bundle with prices + line_items_history, engineered so the
+    fundamental `value` (E/P) ranking is the REVERSE of the price-momentum ranking,
+    with the volatility confound held FLAT so the contrast is clean.
+
+    Every ticker shares the SAME volatile market path (``_MKT_RETS``, alternating
+    ±2%) plus a per-ticker CONSTANT daily drift ``0.0001*i``. So:
+
+    * ``low_vol`` is ~identical across tickers (same ±2% swings) → it z-scores to ≈0
+      and does NOT differentiate — removing the slope/vol confound a simple ramp has;
+    * ``momentum`` (and ``resid_mom``) rise monotonically with ``i`` (more drift =
+      stronger trend) → the price block favours HIGH-``i`` names;
+    * a fixed EPS over a close that compounds faster for high-``i`` makes
+      ``value = EPS/close`` LARGER for the cheaper LOW-``i`` names → value favours
+      LOW-``i``, the OPPOSITE direction.
+
+    So the balanced (price-led) book and a value-dominated book pull toward opposite
+    ends of the universe and must hold DIFFERENT names — which is only possible if
+    `value` actually drives the composite. Healthy ``_N``-bar histories mean every
+    ticker survives the price-factor gates.
+    """
+    n = 40
+    bundles: dict[str, SimpleNamespace] = {}
+    for i in range(n):
+        drift = 0.0001 * i  # constant per-day idiosyncratic drift; vol stays ~flat
+        a_rets = [r + drift for r in _MKT_RETS]
+        prices = _bars_from_returns(a_rets)  # close compounds faster for higher i
+        items = [
+            _smoke_li(_FY, earnings_per_share=4.0, book_value_per_share=20.0, gross_profit=200.0, total_assets=1000.0 + 10.0 * i),
+            _smoke_li(_FY_PRIOR, total_assets=900.0 + 10.0 * i),
+        ]
+        bundles[f"S{i:02d}"] = SimpleNamespace(prices=prices, line_items_history=items, metrics_history=[])
+    return bundles

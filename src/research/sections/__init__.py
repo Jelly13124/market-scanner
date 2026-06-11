@@ -25,6 +25,7 @@ from src.research.sections import (  # noqa: E402, F401  (side-effect imports)
     sector,
     company_fundamentals,
     financial_statements,
+    capital_structure,
     valuation,
     technical,
     institutional_flow,

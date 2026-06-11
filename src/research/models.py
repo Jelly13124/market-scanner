@@ -142,6 +142,8 @@ SECTION_ORDER: list[str] = [
     "sector",
     "company_fundamentals",
     "financial_statements",
+    "capital_structure",
+    "ownership_structure",
     "valuation",
     "technical",
     "institutional_flow",

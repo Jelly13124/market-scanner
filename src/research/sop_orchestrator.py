@@ -56,6 +56,8 @@ _PARALLEL_SECTIONS = {
     "sector",
     "company_fundamentals",
     "financial_statements",
+    "capital_structure",
+    "ownership_structure",
     "valuation",
     "technical",
     "institutional_flow",
@@ -208,7 +210,7 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
                 skip_reason=f"unhandled exception: {e}",
             )
 
-    # Walk SECTION_ORDER, but dispatch the 10 _PARALLEL_SECTIONS as a
+    # Walk SECTION_ORDER, but dispatch the _PARALLEL_SECTIONS as a
     # single concurrent batch (LLM I/O bound). Sequential phases:
     #   1. pre-parallel sections (e.g. data_health) run one-by-one
     #   2. parallel batch fires all included _PARALLEL_SECTIONS together,
@@ -223,7 +225,7 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
             continue
 
         # Flush the parallel batch before any later sequential section so
-        # debate / output / etc. see all 10 analyses in their `prior`.
+        # debate / output / etc. see all parallel analyses in their `prior`.
         if pending_parallel:
             included_parallel = [n for n in pending_parallel if n in request.included_sections]
             excluded_parallel = [n for n in pending_parallel if n not in request.included_sections]

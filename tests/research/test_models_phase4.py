@@ -22,7 +22,7 @@ def test_analyze_request_has_required_fields():
     assert "executive_summary" in req.included_sections
 
 
-def test_section_order_has_18_canonical_sections():
+def test_section_order_has_20_canonical_sections():
     expected = {
         "data_health",
         "executive_summary",
@@ -31,6 +31,8 @@ def test_section_order_has_18_canonical_sections():
         "sector",
         "company_fundamentals",
         "financial_statements",
+        "capital_structure",
+        "ownership_structure",
         "valuation",
         "technical",
         "institutional_flow",
@@ -44,9 +46,24 @@ def test_section_order_has_18_canonical_sections():
         "missing_data",
     }
     assert set(SECTION_ORDER) == expected
+    assert len(SECTION_ORDER) == 20
     # order matters - data_health first, missing_data last
     assert SECTION_ORDER[0] == "data_health"
     assert SECTION_ORDER[-1] == "missing_data"
+    # capital_structure sits right after financial_statements; ownership after it
+    fs = SECTION_ORDER.index("financial_statements")
+    assert SECTION_ORDER[fs + 1] == "capital_structure"
+    assert SECTION_ORDER[fs + 2] == "ownership_structure"
+
+
+def test_new_sections_have_en_and_zh_headings():
+    from src.research.html_render import _HEADING_MAP, _HEADING_ZH_MAP
+
+    assert _HEADING_MAP["capital_structure"] == "Capital Structure"
+    assert _HEADING_MAP["ownership_structure"] == "Ownership Structure"
+    # zh map is keyed by the English heading text
+    assert _HEADING_ZH_MAP["Capital Structure"] == "资本结构"
+    assert _HEADING_ZH_MAP["Ownership Structure"] == "股权结构"
 
 
 def test_section_payload_shape():

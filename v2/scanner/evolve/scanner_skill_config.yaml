@@ -1,0 +1,28 @@
+# Baseline scanner-evolve config — mirrors the real detector constructor
+# defaults (see v2/scanner/detectors/{high_breakout,ma_cross,gap,rsi_divergence}.py).
+# The LLM may tune only the paths in config.SCANNER_ADJUSTABLE, within bounds.
+# quant_weight is fixed at 0.0 (invariant #2: never re-enable the known-bad
+# fundamental signals); event_weight is fixed at 1.0.
+
+detectors:
+  high_breakout:
+    window: 252        # trading bars for the 52-week high
+  ma_cross:
+    fast: 50           # SMA(fast)
+    slow: 200          # SMA(slow)
+  gap:
+    threshold: 3.0     # |gap_z| must exceed this to fire
+  rsi_divergence:
+    div_window: 40     # divergence lookback window (bars)
+
+severity_mult:
+  high_breakout: 1.0
+  ma_cross: 1.0
+  gap: 1.0
+  rsi_divergence: 1.0
+
+top_n: 20
+
+# Fixed kernel — NOT adjustable.
+event_weight: 1.0
+quant_weight: 0.0

@@ -58,8 +58,6 @@ explodes by 10+ orders of magnitude. Floors:
 | news (polarity) | 0.10 |
 | intraday_move (cvo/gap/range) | 0.005 |
 | analyst_rating (action score) | 0.5 weight-points |
-| high_breakout (daily-return std) | 0.005 (50 bps) — `max(returns.std(ddof=1), 0.005)` |
-| gap (overnight gap std) | 0.003 (30 bps) — `max(np.std(gaps, ddof=1), 0.003)` |
 | ma_cross | N/A — no std computed; severity is fixed at 2.0 (binary regime event) |
 | rsi_divergence | N/A — severity is `rsi_gap / 10` (coefficient of RSI gap magnitude, capped at 8); no std divisor |
 

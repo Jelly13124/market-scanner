@@ -13,8 +13,6 @@ from v2.scanner.detectors.earnings import (
     EarningsSurpriseDetector,
 )
 from v2.scanner.detectors.earnings_upcoming import EarningsUpcomingDetector
-from v2.scanner.detectors.gap import GapDetector
-from v2.scanner.detectors.high_breakout import HighBreakoutDetector
 from v2.scanner.detectors.insider import InsiderClusterDetector
 from v2.scanner.detectors.ma_cross import MaCrossDetector
 from v2.scanner.detectors.intraday_move import IntradayMoveDetector
@@ -37,17 +35,23 @@ ALL_DETECTORS: tuple[type[EventDetector], ...] = (
     # regime-segmented eval (findings_scanner_eval.md + findings_scanner_round2.md).
     # Flagged events had significantly NEGATIVE interestingness-vs-random — they flag
     # stocks that then move LESS than a random pick, worst in the bear regime:
-    #   * HighBreakoutDetector   (high_breakout,        t=-4.2 / -4.4)
     #   * OBVDivergenceDetector  (obv_divergence,       t=-4.3 / -2.4)
     #   * NewsSentimentShiftDetector (news_sentiment_shift, t=-5.0 — also the
     #       long-planned removal as sentiment moves to the LLM agent layer)
     #   * VolumeAnomalyDetector  (price_volume_anomaly, flat-day volume ≈0/neg)
-    #   * GapDetector (gap) — RETIRED 2026-06-01 (round-2): z-scoring is BROKEN (a
-    #       5σ threshold still fires on ~49% of bear ticker-days), interestingness
-    #       negative at every swept threshold 3.0–5.0σ. No sane threshold exists.
-    #       See findings_scanner_round2.md.
     # Classes remain importable + re-registerable (files retained); drop them
     # back into this tuple + DETECTOR_METADATA to re-enable.
+    #
+    # HighBreakoutDetector (high_breakout) + GapDetector (gap) — DELETED
+    # 2026-06-12. Both were UNREGISTERED 2026-06-01 for significantly NEGATIVE
+    # interestingness-vs-random (high_breakout t=-4.2 / -4.4; gap z-scoring
+    # BROKEN — a 5σ threshold still fired ~49% of bear ticker-days, negative at
+    # every swept 3.0–5.0σ threshold, no sane threshold exists; see
+    # findings_scanner_round2.md). The scanner-evolve set no longer tunes them,
+    # so the source (gap.py / high_breakout.py) and their tests were deleted.
+    # The "gap" / "high_breakout" string names are KEPT in RETIRED_DETECTORS
+    # below so persisted ScannerConfig rows referencing them still pass
+    # ScannerWeights validation as harmless no-ops.
     #
     # EarningsSurpriseDetector + EarningsUpcomingDetector — UNREGISTERED
     # 2026-05-18. Merged into the unified ``EarningsEventDetector`` above.
@@ -77,14 +81,7 @@ DETECTOR_METADATA: dict[str, dict] = {
     "earnings_event": {
         "label": "Earnings Event",
         "default_mult": 1.20,
-        "description": (
-            "Unified earnings catalyst window: fires 5 business days BEFORE a "
-            "scheduled report (severity ramps 1→5 by proximity, direction "
-            "neutral) OR up to 5 business days AFTER a filing (severity z-scored "
-            "vs trailing 4 quarters' surprises, direction bullish on BEAT / "
-            "bearish on MISS). Components include signed biz_days_to_event "
-            "(negative = future, positive = past) and a phase flag."
-        ),
+        "description": ("Unified earnings catalyst window: fires 5 business days BEFORE a " "scheduled report (severity ramps 1→5 by proximity, direction " "neutral) OR up to 5 business days AFTER a filing (severity z-scored " "vs trailing 4 quarters' surprises, direction bullish on BEAT / " "bearish on MISS). Components include signed biz_days_to_event " "(negative = future, positive = past) and a phase flag."),
     },
     "insider_cluster": {
         "label": "Insider Cluster",
@@ -114,22 +111,12 @@ DETECTOR_METADATA: dict[str, dict] = {
     "rsi_divergence": {
         "label": "RSI Divergence",
         "default_mult": 1.00,
-        "description": (
-            "Classic price-vs-RSI(14) divergence over a 40-bar window split into "
-            "two 20-bar halves. Bearish: recent price high > older price high BUT "
-            "RSI at that high is lower. Bullish: recent price low < older price low "
-            "BUT RSI at that low is higher. Severity = RSI gap / 10, capped at 8."
-        ),
+        "description": ("Classic price-vs-RSI(14) divergence over a 40-bar window split into " "two 20-bar halves. Bearish: recent price high > older price high BUT " "RSI at that high is lower. Bullish: recent price low < older price low " "BUT RSI at that low is higher. Severity = RSI gap / 10, capped at 8."),
     },
     "ma_cross": {
         "label": "Golden/Death Cross",
         "default_mult": 1.00,
-        "description": (
-            "Fires on the day SMA(50) crosses SMA(200). Golden cross (SMA50 crosses "
-            "above SMA200) → bullish; death cross (SMA50 crosses below SMA200) → bearish. "
-            "Requires ≥202 bars. Severity is fixed at 2.0 — a cross is a binary regime "
-            "event, not a z-scored quantity; no std divisor is used."
-        ),
+        "description": ("Fires on the day SMA(50) crosses SMA(200). Golden cross (SMA50 crosses " "above SMA200) → bullish; death cross (SMA50 crosses below SMA200) → bearish. " "Requires ≥202 bars. Severity is fixed at 2.0 — a cross is a binary regime " "event, not a z-scored quantity; no std divisor is used."),
     },
 }
 
@@ -153,6 +140,8 @@ LEGACY_DETECTOR_ALIASES: dict[str, str] = {
 # class back into ALL_DETECTORS + DETECTOR_METADATA) to revive it.
 RETIRED_DETECTORS: frozenset[str] = frozenset(
     {
+        # "high_breakout" / "gap" classes were DELETED 2026-06-12 (see above);
+        # the names stay here so old configs that reference them still validate.
         "high_breakout",
         "obv_divergence",
         "news_sentiment_shift",
@@ -177,8 +166,6 @@ __all__ = [
     "EarningsUpcomingDetector",
     "OBVDivergenceDetector",
     "RsiDivergenceDetector",
-    "HighBreakoutDetector",
-    "GapDetector",
     "MaCrossDetector",
     "ALL_DETECTORS",
     "DETECTOR_METADATA",

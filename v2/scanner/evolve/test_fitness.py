@@ -23,6 +23,7 @@ from v2.scanner.detectors import (
     RsiDivergenceDetector,
 )
 from v2.scanner.eval.cached_asof_client import TickerBundle
+from v2.scanner.evolve import fitness as fitness_mod
 from v2.scanner.evolve.config import apply_delta, load_config
 from v2.scanner.evolve.fitness import _detectors_from_config, scanner_fitness
 
@@ -288,3 +289,121 @@ def test_alpha_computed_with_spy_bundle():
     assert out["n_fired"] > 0
     assert out["alpha_5d"] is not None
     assert isinstance(out["alpha_5d"], float)
+
+
+# ===========================================================================
+# Task 4: parse bundles ONCE, reuse the parsed series across iterations.
+# ===========================================================================
+
+
+def _multi_bundles(break_idx: int = 80) -> dict:
+    """A small universe that fires (AAA) plus several never-fire fillers.
+
+    The fillers widen the random baseline so multiple distinct tickers get
+    parsed via the forward-return path — giving the parse-counter something to
+    count across.
+    """
+    bundles = {"AAA": _bundle("AAA", _high_breakout_closes(break_idx))}
+    for name in ("BBB", "CCC", "DDD", "EEE"):
+        bundles[name] = _bundle(name, [100.0 + 0.1 * i for i in range(120)])
+    return bundles
+
+
+class _ParseCounter:
+    """Wrap ``fitness._parse_bundle_series`` and tally calls by (id) bundle.
+
+    Counting by ``id(bundle)`` is a faithful proxy for "by ticker" here: each
+    ticker has exactly one immutable bundle object for the run.
+    """
+
+    def __init__(self, monkeypatch):
+        self._real = fitness_mod._parse_bundle_series
+        self.calls: list[int] = []
+        monkeypatch.setattr(fitness_mod, "_parse_bundle_series", self)
+
+    def __call__(self, bundle):
+        self.calls.append(id(bundle))
+        return self._real(bundle)
+
+    @property
+    def total(self) -> int:
+        return len(self.calls)
+
+    @property
+    def distinct(self) -> int:
+        return len(set(self.calls))
+
+
+def test_parsed_once_per_ticker_across_calls(monkeypatch):
+    """A SHARED cache → each ticker's series is parsed at most once TOTAL across
+    two calls, not once-per-call-per-ticker."""
+    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
+    break_idx = 80
+    bundles = _multi_bundles(break_idx)
+    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+
+    counter = _ParseCounter(monkeypatch)
+    shared: dict = {}
+
+    scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, cache=shared)
+    scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, cache=shared)
+
+    # At most one parse per bundle object total — the second call is a pure hit.
+    assert counter.total <= len(bundles)
+    # And every parse was for a DISTINCT bundle (no re-parse of an already-seen one).
+    assert counter.total == counter.distinct
+
+
+def test_threshold_only_delta_reuses_cache(monkeypatch):
+    """A threshold-only config change between two cache-sharing calls adds no new
+    parse for already-seen tickers."""
+    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
+    break_idx = 80
+    bundles = _multi_bundles(break_idx)
+    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+
+    counter = _ParseCounter(monkeypatch)
+    shared: dict = {}
+
+    scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, cache=shared)
+    parsed_after_first = counter.total
+
+    cfg2 = apply_delta(cfg, {"detectors.gap.threshold": 4.0})
+    scanner_fitness(bundles, cfg2, "val", window_of=lambda s: window, cache=shared)
+
+    # No additional parse: every ticker was already in the shared cache.
+    assert counter.total == parsed_after_first
+
+
+def test_no_shared_cache_reparses(monkeypatch):
+    """Two calls WITHOUT a shared cache (each gets its own throwaway) → the
+    second call re-parses, proving the memoization is what saves the work."""
+    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
+    break_idx = 80
+    bundles = _multi_bundles(break_idx)
+    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+
+    counter = _ParseCounter(monkeypatch)
+
+    scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
+    after_first = counter.total
+    assert after_first > 0
+
+    scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
+    # The second throwaway-cache call parses again — total strictly grows.
+    assert counter.total > after_first
+
+
+def test_cache_is_pure_identical_results():
+    """Results with a shared cache are IDENTICAL to results without one (cache is
+    a perf optimization, never changes the returned dict)."""
+    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
+    break_idx = 80
+    bundles = _multi_bundles(break_idx)
+    spy = _bundle("SPY", [100.0] * 200)
+    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+
+    shared: dict = {}
+    out_cached = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, spy_bundle=spy, cache=shared)
+    out_uncached = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, spy_bundle=spy, cache=None)
+    assert out_cached == out_uncached

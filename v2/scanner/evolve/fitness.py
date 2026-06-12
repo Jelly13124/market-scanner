@@ -134,32 +134,75 @@ def _asof_dates(
     return ordered[::step]
 
 
-def _closes_and_index(bundle: TickerBundle, date_iso: str) -> tuple[list[float], int] | None:
-    """Build the FULL ascending close series and the index of ``date_iso``.
+def _parse_bundle_series(bundle: TickerBundle) -> tuple[list[float], dict[str, int]] | None:
+    """Parse a bundle into ``(ascending_closes, time_to_idx)`` ONCE.
 
-    Returns ``None`` if the date isn't in the series or any close is invalid.
-    Uses the WHOLE series (post-asof bars included) — this is the outcome the
-    detectors are graded against, not an input they saw.
+    Sorts the bundle's prices ascending by date, extracts each close (mirroring
+    :func:`close_of`), and builds a ``{time[:10]: idx}`` map (the
+    ``detector_ab.run_ab`` idiom) for O(1) as-of lookups. Returns ``None`` if any
+    close is invalid — that whole-series invalidity is what the old
+    ``_closes_and_index`` signalled, preserved here so a failed parse memoizes
+    too.
+
+    The returned series is the FULL series (post-asof bars included): it is the
+    outcome the detectors are graded against, not an input they saw.
     """
-    # Task 4: memoize sorted closes + time→idx map across calls.
     prices_sorted = sorted(bundle.prices, key=lambda p: (getattr(p, "time", "") or "")[:10])
     closes: list[float] = []
-    idx = -1
+    time_to_idx: dict[str, int] = {}
     for i, p in enumerate(prices_sorted):
         c = close_of(p)
         if c is None:
             return None
         closes.append(c)
-        if (getattr(p, "time", "") or "")[:10] == date_iso[:10]:
-            idx = i
+        time_to_idx[(getattr(p, "time", "") or "")[:10]] = i
+    return closes, time_to_idx
+
+
+def _closes_and_index(
+    bundle: TickerBundle,
+    date_iso: str,
+    *,
+    cache: dict | None = None,
+    cache_key: str | None = None,
+) -> tuple[list[float], int] | None:
+    """Build the FULL ascending close series and the index of ``date_iso``.
+
+    Returns ``None`` if the date isn't in the series or any close is invalid.
+    Uses the WHOLE series (post-asof bars included) — this is the outcome the
+    detectors are graded against, not an input they saw.
+
+    The parsed ``(closes, time_to_idx)`` is memoized in ``cache[cache_key]`` when
+    a ``cache`` dict is supplied; bundles are immutable for a run, so the parse
+    is a pure function of the bundle and reusing it never changes results — only
+    the per-date ``idx`` lookup varies. A ``None`` cache parses fresh each call.
+    """
+    parsed = None
+    if cache is not None and cache_key is not None and cache_key in cache:
+        parsed = cache[cache_key]
+    else:
+        parsed = _parse_bundle_series(bundle)
+        if cache is not None and cache_key is not None:
+            cache[cache_key] = parsed
+    if parsed is None:
+        return None
+    closes, time_to_idx = parsed
+    idx = time_to_idx.get(date_iso[:10], -1)
     if idx < 0:
         return None
     return closes, idx
 
 
-def _forward_from(bundle: TickerBundle, date_iso: str, horizon: int) -> float | None:
+def _forward_from(
+    bundle: TickerBundle,
+    date_iso: str,
+    horizon: int,
+    *,
+    cache: dict | None = None,
+    cache_key: str | None = None,
+) -> float | None:
     """``horizon``-bar forward return of ``bundle`` measured from ``date_iso``."""
-    cl = _closes_and_index(bundle, date_iso)
+    cl = _closes_and_index(bundle, date_iso, cache=cache, cache_key=cache_key)
     if cl is None:
         return None
     closes, idx = cl
@@ -183,6 +226,7 @@ def scanner_fitness(
     baseline_per_date: int = 20,
     rng_seed: int = 0,
     max_workers: int = 8,
+    cache: dict | None = None,
 ) -> dict:
     """A/B-vs-random fitness of a scanner config over a sample's regime window(s).
 
@@ -196,7 +240,20 @@ def scanner_fitness(
     Returns ``{"fitness", "diff", "t_stat", "n_fired", "alpha_5d"}``. Never
     raises on bad data: a config that fires nothing → graceful zero edge; a
     bundle with too few bars simply contributes no fired return.
+
+    ``cache`` is an OPTIONAL ``{ticker: parsed_series}`` dict for the
+    forward-return path: each bundle's ascending closes + time→idx map is parsed
+    ONCE and reused across as-of dates AND across calls that share the same dict
+    (e.g. successive iterations of the evolve loop over immutable bundles). Pass
+    a run-scoped ``{}`` to memoize across iterations; leave it ``None`` for a
+    throwaway per-call cache. It is a PURE performance optimization — keyed by
+    ticker with immutable values, it never changes the returned dict.
     """
+    if cache is None:
+        # Throwaway per-call cache so standalone calls still memoize within the
+        # call (parse each bundle once per call), without persisting across calls.
+        cache = {}
+
     if window_of is None:
         # Task 5 module; imported lazily so Task 3 can land first.
         from v2.scanner.evolve.samples import window_of
@@ -236,11 +293,11 @@ def scanner_fitness(
 
             spy_ret = None
             if spy_bundle is not None:
-                spy_ret = _forward_from(spy_bundle, date_iso, horizon)
+                spy_ret = _forward_from(spy_bundle, date_iso, horizon, cache=cache, cache_key="__spy__")
 
             for entry in scored:
                 try:
-                    ret = _forward_from(bundles[entry.ticker], date_iso, horizon)
+                    ret = _forward_from(bundles[entry.ticker], date_iso, horizon, cache=cache, cache_key=entry.ticker)
                 except Exception:
                     ret = None
                 if ret is None:
@@ -254,7 +311,7 @@ def scanner_fitness(
             if k > 0:
                 for ticker in rng.sample(universe, k):
                     try:
-                        ret = _forward_from(bundles[ticker], date_iso, horizon)
+                        ret = _forward_from(bundles[ticker], date_iso, horizon, cache=cache, cache_key=ticker)
                     except Exception:
                         ret = None
                     if ret is not None:

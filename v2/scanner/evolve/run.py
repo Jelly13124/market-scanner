@@ -23,12 +23,11 @@ exercises the CLI offline.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-from dataclasses import asdict, fields
+from dataclasses import fields
 from pathlib import Path
 
-from v2.scanner.evolve import samples
+from v2.scanner.evolve import report, samples
 from v2.scanner.evolve.config import (
     SCANNER_ADJUSTABLE,
     ScannerEvolveConfig,
@@ -38,10 +37,6 @@ from v2.scanner.evolve.config import apply_delta as scanner_apply_delta
 from v2.scanner.evolve.fitness import scanner_fitness
 
 logger = logging.getLogger(__name__)
-
-#: The retained config is read off disk post-loop; the version store lives under
-#: ``base_dir`` (same layout as the factor engine — see ``v2.self_evolve.run``).
-_SUMMARY_NAME = "scanner_evolve_summary.json"
 
 #: keep-rule guardrail constants (documented at each use in ``_scanner_keep``).
 _MIN_FIRED_ABS = 5  # absolute floor on n_fired (a config that fires almost nothing is noise)
@@ -259,12 +254,15 @@ def _full_span() -> tuple[str, str]:
     return start, end
 
 
-def main(argv=None, *, prefetch_fn=None, spy_fetch_fn=None) -> int:
-    """CLI: prefetch ONCE → evolve (train+val) → read TEST once post-loop → summary.
+def main(argv=None, *, prefetch_fn=None, spy_fetch_fn=None, propose_fn=None, llm_fn=None) -> int:
+    """CLI: prefetch ONCE → evolve (train+val) → read TEST once post-loop → report.
 
     ``prefetch_fn`` / ``spy_fetch_fn`` are injectable so Task 7's smoke test runs
-    the whole CLI offline.
+    the whole CLI offline; ``propose_fn`` / ``llm_fn`` are threaded into
+    ``evolve_scanner`` so the smoke can drive the full path with a stub proposer
+    (no LLM). All default to the real (live) seams.
     """
+    from datetime import datetime, timezone
     from dotenv import load_dotenv
 
     load_dotenv()
@@ -319,6 +317,8 @@ def main(argv=None, *, prefetch_fn=None, spy_fetch_fn=None) -> int:
         base_dir=out_dir,
         spy_bundle=spy,
         cache=cache,
+        propose_fn=propose_fn,
+        llm_fn=llm_fn,
     )
 
     # -- THE single, post-loop, held-out read: scanner_fitness("test") exactly ONCE,
@@ -334,19 +334,18 @@ def main(argv=None, *, prefetch_fn=None, spy_fetch_fn=None) -> int:
         cache=cache,
     )
 
-    # Task 7: replace inline summary with report.write_report
-    summary = {
-        "universe": args.universe,
-        "iterations": args.iterations,
-        "path_log": path_log,
-        "retained_config": asdict(best_config),
-        "test_metrics": test_metrics,
-        "caveat": "val != edge; the live scanner forward-test is the judge.",
-    }
-    summary_path = out_dir / _SUMMARY_NAME
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=False), encoding="utf-8")
-    logger.info("summary written: %s | test diff=%s", summary_path, test_metrics.get("diff"))
-    print(str(summary_path))
+    # -- The run report (md + html), rendered from the version store + the single
+    #    post-loop test read. ``generated_at`` is computed HERE (the report is pure
+    #    rendering and never calls datetime.now() itself).
+    del path_log  # the report reads the path log off disk; we don't pass it through.
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ")
+    md_path, html_path = report.write_report(
+        out_dir,
+        test_metrics=test_metrics,
+        generated_at=generated_at,
+    )
+    logger.info("report written: %s + %s | test diff=%s", md_path, html_path, test_metrics.get("diff"))
+    print(str(md_path))
     return 0
 
 

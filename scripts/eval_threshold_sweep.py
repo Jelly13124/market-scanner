@@ -1,21 +1,21 @@
-"""Fire-threshold sweep measurement — the fire-rate vs interestingness trade-off.
+"""Fire-threshold sweep harness — the fire-rate vs interestingness trade-off.
 
-NOTE (2026-06-12): the ``gap`` arm is INOPERATIVE — ``GapDetector`` was deleted,
-so importing/running it here raises ``ImportError`` (expected). This script is
-retained for provenance of the findings_scanner_round2.md gap-sweep result.
+Generic, detector-agnostic MEASUREMENT library. Given a ``make_detector(value)``
+factory and a list of threshold values, :func:`sweep_threshold` sweeps the
+fire-threshold and, for each setting, measures both the **fire-rate** (fraction
+of eligible ticker-days that fire) and the **interestingness** vs a random
+baseline (reusing the tested :func:`score_detector`). :func:`pick_knee`
+recommends the LOOSEST threshold whose interestingness becomes significant at a
+sane fire-rate, or ``None`` to retire the candidate. The scene this addresses: a
+detector that fires on a large fraction of ticker-days has a "fired" set ≈ the
+whole population, so its interestingness is ≈0 *by construction* — a
+mis-calibrated fire threshold, not a useless signal.
 
-MEASUREMENT ONLY — this changes NO production code (no detector change). The
-scene: ``gap`` fires on ~55% of ticker-days and ``rsi_divergence`` on ~24%. At
-those rates a detector's "fired" set is essentially the whole population, so its
-interestingness (do fired bars move MORE than random?) is ≈0 *by construction* —
-not because the signal is useless, but because the fire threshold is mis-calibrated.
-
-This script sweeps a detector's fire-threshold and, for each setting, measures
-both the **fire-rate** (fraction of eligible ticker-days that fire) and the
-**interestingness** vs a random baseline (reusing the tested
-:func:`score_detector`). The output is the trade-off curve plus a recommended
-"knee" — the LOOSEST threshold whose interestingness becomes significant at a
-sane fire-rate (:func:`pick_knee`).
+The original ``gap``-sweep ``main()`` was REMOVED 2026-06-12 when ``GapDetector``
+was deleted; its result is preserved in ``scanner_eval/threshold_sweep_gap.csv``
++ ``findings_scanner_round2.md``. The harness below is detector-agnostic and
+tested offline by ``test_eval_threshold_sweep.py`` — re-add a ``main()`` to sweep
+any threshold-tunable detector (e.g. ``intraday_move``'s gate thresholds).
 
 THE CRITICAL CORRECTNESS RULE (same as the rest of the harness)
 ---------------------------------------------------------------
@@ -27,17 +27,12 @@ time the future is known (this is a backtest). :func:`score_detector` already
 follows this rule; the light fire-rate replay here uses the IDENTICAL clamped
 as-of grid, so the fire COUNT is computed under the same no-lookahead discipline.
 
-Sweepability
-------------
-``GapDetector`` exposes a tunable fire threshold (the ``threshold`` ctor kwarg =
-the ``|gap_z|`` cutoff, default 3.0) — we sweep THIS. ``RsiDivergenceDetector``
-does NOT expose a tunable fire threshold: it fires on ANY detected divergence
-(its ctor only takes ``rsi_period`` / ``div_window`` / ``lookback_days``, none of
-which is a fire gate). Adding a min-RSI-gap fire gate would be a production change,
-out of scope for this measurement task — so :func:`main` logs + records that
-finding and skips rsi. See the run log / the "needs a param" record.
+A detector is "sweepable" iff its constructor exposes a fire-threshold knob.
+Wrap that in a ``make_detector(value)`` factory and pass ascending values to
+:func:`sweep_threshold`.
 
-Output: one row per (value, regime) → ``scanner_eval/threshold_sweep_<det>.csv``.
+Output: :func:`sweep_threshold` returns one row per (value, regime);
+:func:`write_csv` stamps a detector name → ``scanner_eval/threshold_sweep_<det>.csv``.
 """
 
 from __future__ import annotations
@@ -245,104 +240,6 @@ def write_csv(rows, path, detector: str) -> None:
             writer.writerow({"detector": detector, **{k: row[k] for k in CSV_COLUMNS[1:]}})
 
 
-# ---------------------------------------------------------------------------
-# main — real-data run (NOT exercised by the offline tests)
-# ---------------------------------------------------------------------------
-
-
-def main() -> None:
-    """Sweep ``gap``'s fire threshold on real data; record rsi's missing knob.
-
-    Reuses the exact data setup of the existing eval scripts: the
-    ``rerender_eval_report.REGIMES`` windows, the first 80 ``nasdaq100_sp500``
-    tickers, a one-shot price prefetch per ticker, and SPY over the same span.
-
-    ``gap``: sweep ``threshold`` in ``[3.0, 3.5, 4.0, 4.5, 5.0]`` → write
-    ``scanner_eval/threshold_sweep_gap.csv`` → log the picked knee.
-
-    ``rsi_divergence``: it has NO tunable fire threshold (fires on any divergence;
-    ctor takes only rsi_period/div_window/lookback_days). Sweeping it would
-    require ADDING a min-RSI-gap fire gate — a production change, out of scope
-    here. We log + record that finding and skip it.
-    """
-    from pathlib import Path
-
-    from dotenv import load_dotenv
-
-    from v2.data.factory import get_provider_factory
-    from v2.scanner.detectors.gap import GapDetector
-    from v2.scanner.eval.run_eval import fetch_spy, prefetch_price_bundles
-    from v2.scanner.universes import load_universe
-    from scripts.rerender_eval_report import REGIMES
-
-    # API keys (EODHD/FINNHUB) live in .env at repo root; load before clients.
-    load_dotenv()
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
-
-    repo = Path(__file__).resolve().parents[1]
-    out_dir = repo / "scanner_eval"
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    # Wide prefetch span covering all REGIMES plus detector lookback + forward.
-    span_start = "2020-11-01"
-    span_end = "2025-09-30"
-
-    tickers = load_universe("nasdaq100_sp500")[:80]
-    factory = get_provider_factory()
-    logger.info(
-        "threshold_sweep: %d tickers, span=%s..%s, regimes=%d",
-        len(tickers),
-        span_start,
-        span_end,
-        len(REGIMES),
-    )
-
-    bundles = prefetch_price_bundles(tickers, factory, span_start, span_end)
-    spy_prices = fetch_spy(factory, span_start, span_end)
-
-    # --- gap: sweep the |gap_z| fire threshold -----------------------------
-    gap_values = [3.0, 3.5, 4.0, 4.5, 5.0]
-    gap_rows = sweep_threshold(
-        lambda v: GapDetector(threshold=v),
-        gap_values,
-        bundles,
-        spy_prices,
-        REGIMES,
-        horizon=5,
-    )
-    gap_csv = out_dir / "threshold_sweep_gap.csv"
-    write_csv(gap_rows, gap_csv, detector="gap")
-    logger.info("threshold_sweep: wrote %d gap rows to %s", len(gap_rows), gap_csv)
-    for r in gap_rows:
-        logger.info(
-            "  gap thr=%.1f %s fire_rate=%.3f interest_diff=%+.4f t=%+.2f n_fired=%d",
-            r["value"],
-            r["regime"],
-            r["fire_rate"],
-            r["interestingness_diff"],
-            r["interestingness_t"],
-            r["n_fired"],
-        )
-    gap_knee = pick_knee(gap_rows)
-    if gap_knee is None:
-        logger.info(
-            "threshold_sweep[gap]: NO sane threshold in %s clears interestingness " "t>=2.0 in >=2 regimes at fire_rate<=%.2f → retire candidate",
-            gap_values,
-            FIRE_RATE_CAP_DEFAULT,
-        )
-    else:
-        logger.info(
-            "threshold_sweep[gap]: recommended knee = threshold=%.1f (loosest value " "significant in >=2 regimes at fire_rate<=%.2f)",
-            gap_knee,
-            FIRE_RATE_CAP_DEFAULT,
-        )
-
-    # --- rsi_divergence: NO tunable fire threshold -------------------------
-    logger.info("threshold_sweep[rsi_divergence]: SKIPPED — RsiDivergenceDetector has no " "tunable fire threshold (it fires on ANY detected divergence; ctor takes " "only rsi_period/div_window/lookback_days). Needs a min-RSI-gap fire " "param added in Wave B before it can be swept (production change, out of " "scope for this measurement).")
-
-
-if __name__ == "__main__":
-    main()
+# The real-data ``main()`` (a ``gap``-threshold sweep) was removed 2026-06-12
+# when ``GapDetector`` was deleted. The harness above is detector-agnostic and
+# offline-tested; re-add a ``main()`` to sweep any threshold-tunable detector.

@@ -23,7 +23,8 @@ from __future__ import annotations
 import json
 import logging
 
-from v2.self_evolve.config import ADJUSTABLE, ConfigError, StrategyConfig, apply_delta
+from v2.self_evolve.config import ADJUSTABLE, StrategyConfig
+from v2.self_evolve.config import apply_delta as _factor_apply_delta
 
 try:  # asdict on a StrategyConfig; dataclasses is stdlib so this always succeeds.
     from dataclasses import asdict
@@ -51,16 +52,17 @@ def _default_llm_fn(prompt: str) -> str:
     return model.invoke(prompt).content
 
 
-def _build_prompt(skill_md: str, config: StrategyConfig, val_history: list[dict]) -> str:
+def _build_prompt(skill_md: str, config: StrategyConfig, val_history: list[dict], adjustable: dict) -> str:
     """Assemble the proposer prompt from kernel + current config + recent history.
 
     The prompt is intentionally explicit about the OUTPUT contract (a single
     JSON object with ``path`` / ``value`` / ``hypothesis``) and lists the exact
-    set of legal paths so the model cannot wander outside the allow-list.
+    set of legal paths (from ``adjustable``) so the model cannot wander outside
+    the allow-list.
     """
     config_dict = asdict(config) if asdict is not None else {}
     recent = val_history[-5:] if val_history else []
-    adjustable_lines = "\n".join(f"  - {path}: range [{lo}, {hi}]" for path, (lo, hi) in ADJUSTABLE.items())
+    adjustable_lines = "\n".join(f"  - {path}: range [{lo}, {hi}]" for path, (lo, hi) in adjustable.items())
 
     return (
         "You are tuning a deterministic factor strategy. You may ONLY change one\n"
@@ -131,6 +133,8 @@ def propose(
     val_history: list[dict],
     *,
     llm_fn=None,
+    adjustable=None,
+    apply_delta=None,
 ) -> dict | None:
     """Ask the LLM for ONE bounded config delta; validate it; return it or ``None``.
 
@@ -148,20 +152,31 @@ def propose(
     llm_fn
         ``llm_fn(prompt: str) -> str`` returning the raw completion. Injected by
         tests; defaults to a lazily-bound DeepSeek call.
+    adjustable
+        The allow-list mapping ``{path: (lo, hi)}`` used for the path check and
+        the prompt. Defaults to the factor
+        :data:`~v2.self_evolve.config.ADJUSTABLE`. The scanner injects
+        ``SCANNER_ADJUSTABLE``.
+    apply_delta
+        The authoritative ``apply_delta(config, {path: value}) -> config`` gate
+        (raises a ``ValueError`` subclass on a bad delta). Defaults to the factor
+        :func:`~v2.self_evolve.config.apply_delta`. Must be paired with the
+        matching ``adjustable`` allow-list.
 
     Returns
     -------
     dict | None
-        ``{"path": <ADJUSTABLE path>, "value": <number>, "hypothesis": <str>}``
-        when the proposal validates (the path is in
-        :data:`~v2.self_evolve.config.ADJUSTABLE` AND
-        :func:`~v2.self_evolve.config.apply_delta` accepts it in-range), else
-        ``None``. NEVER raises — bad JSON, unknown/out-of-range paths, and an
-        ``llm_fn`` that raises all map to ``None`` (logged at debug).
+        ``{"path": <adjustable path>, "value": <number>, "hypothesis": <str>}``
+        when the proposal validates (the path is in ``adjustable`` AND
+        ``apply_delta`` accepts it in-range), else ``None``. NEVER raises — bad
+        JSON, unknown/out-of-range paths, and an ``llm_fn`` that raises all map to
+        ``None`` (logged at debug).
     """
     fn = llm_fn or _default_llm_fn
+    adjustable = ADJUSTABLE if adjustable is None else adjustable
+    apply_delta = _factor_apply_delta if apply_delta is None else apply_delta
 
-    prompt = _build_prompt(skill_md, config, val_history or [])
+    prompt = _build_prompt(skill_md, config, val_history or [], adjustable)
 
     try:
         raw = fn(prompt)
@@ -178,8 +193,8 @@ def propose(
     value = obj.get("value")
     hypothesis = obj.get("hypothesis", "")
 
-    if not isinstance(path, str) or path not in ADJUSTABLE:
-        logger.debug("proposer: path %r not in ADJUSTABLE", path)
+    if not isinstance(path, str) or path not in adjustable:
+        logger.debug("proposer: path %r not in adjustable allow-list", path)
         return None
     # Numeric-but-not-bool (apply_delta enforces this too, but reject early so a
     # bool/str never reaches it).
@@ -188,10 +203,11 @@ def propose(
         return None
 
     # The authoritative gate: apply_delta re-checks the range and rebuilds a
-    # validated config. If it complains, the proposal is rejected.
+    # validated config. If it complains (a ValueError subclass — both factor and
+    # scanner ConfigError subclass ValueError), the proposal is rejected.
     try:
         apply_delta(config, {path: value})
-    except ConfigError as exc:
+    except ValueError as exc:
         logger.debug("proposer: apply_delta rejected {%r: %r}: %s", path, value, exc)
         return None
 

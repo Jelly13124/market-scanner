@@ -37,7 +37,7 @@ from dataclasses import asdict, fields
 
 from v2.self_evolve import backtest as _backtest_mod
 from v2.self_evolve import proposer as _proposer_mod
-from v2.self_evolve.config import ConfigError, StrategyConfig, apply_delta
+from v2.self_evolve.config import StrategyConfig, apply_delta
 from v2.self_evolve.versioning import (
     append_path_log,
     list_versions,
@@ -89,8 +89,8 @@ def _parse_round(v_id: str) -> int | None:
         return None
 
 
-def _resume_state(base_dir):
-    """Best-effort resume: (start_round, running_best_config, best_sharpe, best_maxdd).
+def _resume_state(base_dir, rebuild_config_fn):
+    """Best-effort resume: ``(start_round, running_best_config, best_val_metrics, base_val_metrics)``.
 
     Returns ``None`` when ``base_dir`` holds no prior versions (fresh start).
     Otherwise scans the on-disk versions to find:
@@ -99,9 +99,15 @@ def _resume_state(base_dir):
       run continues the counter instead of clobbering existing versions; and
     * the running-best — taken from the LAST KEPT version (the most recent round
       whose ``kept`` is True, else the ``v0`` baseline), restoring its config and
-      its val Sharpe / max-drawdown so keep/rollback picks up where it left off.
+      its FULL ``val_metrics`` dict so the (possibly injected) keep rule picks up
+      where it left off; and
+    * ``base_val_metrics`` — the ``v0`` baseline's ``val_metrics`` dict, anchoring
+      keep guardrails (e.g. the factor turnover ceiling) to the ORIGINAL baseline
+      across resumes.
 
-    Anything unreadable is skipped; this never raises.
+    ``rebuild_config_fn`` reconstructs the stored config mapping into the right
+    config type (factor :class:`StrategyConfig` by default; the scanner injects
+    its own). Anything unreadable is skipped; this never raises.
     """
     existing = list_versions(base_dir)
     if not existing:
@@ -115,6 +121,12 @@ def _resume_state(base_dir):
             max_round = r
     start_round = max_round + 1
 
+    # The v0 baseline's val metrics anchor the baseline-relative guardrails.
+    v0 = read_version(base_dir, _BASELINE_ID)
+    base_val_metrics = v0.get("val_metrics") if isinstance(v0, dict) else None
+    if not isinstance(base_val_metrics, dict):
+        base_val_metrics = {}
+
     # Walk rounds high→low to find the last KEPT version; fall back to v0.
     best_record: dict | None = None
     for r in range(max_round, 0, -1):
@@ -123,38 +135,46 @@ def _resume_state(base_dir):
             best_record = rec
             break
     if best_record is None:
-        v0 = read_version(base_dir, _BASELINE_ID)
         if isinstance(v0.get("config"), dict):
             best_record = v0
 
     if best_record is None:
         # Versions exist but none are readable enough to restore a config.
-        return start_round, None, None, None
+        return start_round, None, {}, base_val_metrics
 
     try:
-        cfg = _rebuild_config(best_record["config"])
+        cfg = rebuild_config_fn(best_record["config"])
     except (TypeError, ValueError, KeyError):
-        return start_round, None, None, None
+        return start_round, None, {}, base_val_metrics
 
-    val_m = best_record.get("val_metrics") or {}
-    return start_round, cfg, val_m.get("sharpe"), val_m.get("max_drawdown")
+    best_val_metrics = best_record.get("val_metrics") or {}
+    return start_round, cfg, best_val_metrics, base_val_metrics
 
 
-def _keep(candidate_val: dict, best_sharpe, best_maxdd, turnover_ceiling) -> bool:
-    """The deterministic KEEP rule. ``True`` → keep the candidate, else roll back.
+def _default_keep(candidate_val: dict, best_val: dict, base_val: dict) -> bool:
+    """The default (FACTOR) deterministic KEEP rule. ``True`` → keep, else roll back.
 
-    Keep iff ALL hold:
+    This reproduces the original factor keep logic byte-for-byte: it extracts the
+    running-best Sharpe / max-drawdown from ``best_val`` and the ORIGINAL baseline
+    turnover from ``base_val`` (so the turnover ceiling stays anchored to v0), then
+    applies the historic rule. Keep iff ALL hold:
 
     * the candidate's val Sharpe is not ``None`` and strictly beats the
       running-best (``> best_sharpe``; a ``None`` best — degenerate baseline — is
       treated as ``-inf`` so any real Sharpe clears it);
-    * val turnover is within the ceiling ``base_turnover × TURNOVER_MULT``; and
+    * val turnover is within the ceiling ``base_turnover × TURNOVER_MULT`` (a
+      non-numeric baseline turnover degrades the ceiling to ``+inf``, a no-op); and
     * val max-drawdown is no worse than ``best_maxdd - MAXDD_TOLERANCE_PP``
       (drawdown is a negative percent; "not worse by more than 5pp").
 
     A missing turnover / drawdown on the candidate fails the corresponding
     guardrail (we cannot certify a metric we don't have).
     """
+    best_sharpe = best_val.get("sharpe")
+    best_maxdd = best_val.get("max_drawdown")
+    base_turnover = base_val.get("turnover")
+    turnover_ceiling = base_turnover * TURNOVER_MULT if isinstance(base_turnover, (int, float)) else float("inf")
+
     sharpe = candidate_val.get("sharpe")
     if sharpe is None:
         return False
@@ -186,6 +206,9 @@ def evolve(
     skill_md: str = "",
     propose_fn=None,
     backtest_fn=None,
+    apply_delta_fn=None,
+    rebuild_config_fn=None,
+    keep_fn=None,
 ) -> list[dict]:
     """Run the evolution loop and return the optimization path log.
 
@@ -214,6 +237,21 @@ def evolve(
         ``backtest_fn(bundles, config, sample) -> metrics``. Defaults to
         :func:`v2.self_evolve.backtest.backtest`. **Only ever called with**
         ``sample`` in ``{"train", "val"}`` — never ``"test"``.
+    apply_delta_fn
+        ``apply_delta_fn(config, {path: value}) -> config`` — applies one bounded
+        delta, raising a ``ValueError`` subclass on a bad/out-of-range delta.
+        Defaults to the factor :func:`v2.self_evolve.config.apply_delta`. The
+        scanner injects its own (config-type-specific) variant.
+    rebuild_config_fn
+        ``rebuild_config_fn(config_dict) -> config`` — reconstructs a persisted
+        ``asdict`` mapping into the right config type on resume. Defaults to the
+        factor :func:`_rebuild_config`.
+    keep_fn
+        ``keep_fn(candidate_val, best_val, base_val) -> bool`` — the deterministic
+        KEEP rule over the candidate's val metrics dict, the running-best's val
+        metrics dict, and the v0 baseline's val metrics dict. Defaults to
+        :func:`_default_keep` (the byte-identical factor rule). The scanner injects
+        a ``diff``/``t_stat``/``n_fired``-based rule.
 
     Returns
     -------
@@ -222,6 +260,9 @@ def evolve(
         entry across this and any prior runs, in append order.
     """
     propose_fn = propose_fn or _proposer_mod.propose
+    apply_delta_fn = apply_delta_fn or apply_delta
+    rebuild_config_fn = rebuild_config_fn or _rebuild_config
+    keep_fn = keep_fn or _default_keep
     # One shared factor cache for the whole run: bundles are immutable across all
     # iterations, so a weight-only delta is a pure hit. Only bound when the DEFAULT
     # backtest is used — an injected backtest_fn keeps its (bundles, config, sample)
@@ -233,16 +274,20 @@ def evolve(
             return _backtest_mod.backtest(b, c, s, cache=_factor_cache)
 
     # -- 1. Establish the running-best, resuming from disk if possible.
-    resumed = _resume_state(base_dir)
+    #
+    # State is carried as two val-metric DICTS so an injected keep_fn can read
+    # whatever metrics it needs: ``best_val_metrics`` (the running-best's val
+    # dict) and ``base_val_metrics`` (the v0 baseline's val dict, for baseline-
+    # relative guardrails like the factor turnover ceiling).
+    resumed = _resume_state(base_dir, rebuild_config_fn)
     if resumed is None:
         # Fresh start: backtest the baseline on TRAIN + VAL (never test) and
         # record it as v0 — the initial running-best.
         base_train = backtest_fn(bundles, base_config, "train")
         base_val = backtest_fn(bundles, base_config, "val")
         current_config = base_config
-        best_sharpe = base_val.get("sharpe")
-        best_maxdd = base_val.get("max_drawdown")
-        base_turnover = base_val.get("turnover")
+        best_val_metrics = base_val
+        base_val_metrics = base_val
 
         write_version(
             base_dir,
@@ -258,25 +303,13 @@ def evolve(
         )
         append_path_log(
             base_dir,
-            {"v_id": _BASELINE_ID, "hypothesis": "baseline", "val_sharpe": best_sharpe, "kept": True},
+            {"v_id": _BASELINE_ID, "hypothesis": "baseline", "val_sharpe": base_val.get("sharpe"), "kept": True},
         )
         start_round = 1
     else:
-        start_round, restored_cfg, best_sharpe, best_maxdd = resumed
+        start_round, restored_cfg, best_val_metrics, base_val_metrics = resumed
         current_config = restored_cfg if restored_cfg is not None else base_config
-        # Recover the baseline turnover ceiling from the persisted v0 record so
-        # the guardrail stays anchored to the ORIGINAL baseline across resumes.
-        base_turnover = None
-        v0 = read_version(base_dir, _BASELINE_ID)
-        v0_val = v0.get("val_metrics") if isinstance(v0, dict) else None
-        if isinstance(v0_val, dict):
-            base_turnover = v0_val.get("turnover")
-        logger.info("evolve: resuming at round %d (best val sharpe=%s)", start_round, best_sharpe)
-
-    # The turnover guardrail ceiling. If the baseline had no measurable turnover
-    # (degenerate baseline), fall back to +inf so the guardrail is a no-op rather
-    # than rejecting everything — Sharpe + drawdown still gate keeps.
-    turnover_ceiling = base_turnover * TURNOVER_MULT if isinstance(base_turnover, (int, float)) else float("inf")
+        logger.info("evolve: resuming at round %d (best val sharpe=%s)", start_round, best_val_metrics.get("sharpe"))
 
     # -- 2. Evolution rounds.
     for offset in range(iterations):
@@ -297,10 +330,12 @@ def evolve(
             logger.info("evolve: round %d proposer declined (None); skipping", r)
             continue
 
-        # b. Apply the bounded delta. A ConfigError (out-of-range / bad path) skips.
+        # b. Apply the bounded delta. A ValueError subclass (both the factor and
+        #    scanner ``ConfigError`` subclass ValueError → out-of-range / bad path)
+        #    skips the round.
         try:
-            candidate = apply_delta(current_config, {prop["path"]: prop["value"]})
-        except (ConfigError, KeyError, TypeError) as exc:
+            candidate = apply_delta_fn(current_config, {prop["path"]: prop["value"]})
+        except (ValueError, KeyError, TypeError) as exc:
             logger.warning("evolve: round %d delta %r rejected; skipping: %s", r, prop, exc)
             continue
 
@@ -312,14 +347,13 @@ def evolve(
             logger.warning("evolve: round %d backtest raised; skipping: %s", r, exc)
             continue
 
-        # d. Keep / rollback decision.
-        kept = _keep(val_m, best_sharpe, best_maxdd, turnover_ceiling)
+        # d. Keep / rollback decision (over the val-metric dicts).
+        kept = keep_fn(val_m, best_val_metrics, base_val_metrics)
 
         # e. On keep, the candidate becomes the new running-best.
         if kept:
             current_config = candidate
-            best_sharpe = val_m.get("sharpe")
-            best_maxdd = val_m.get("max_drawdown")
+            best_val_metrics = val_m
 
         # f. Persist the round (whether kept or rolled back).
         hypothesis = prop.get("hypothesis", "")

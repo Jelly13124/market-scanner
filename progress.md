@@ -16,9 +16,17 @@ Tasks:
 ### Tests
 `v2/scanner/evolve/` 57 passed · `v2/scanner/` 269 passed/2 skipped · `v2/self_evolve/` 161 passed + the 1 pre-existing `test_graduate` failure (unrelated). Final whole-feature review: READY; metric/detector-set coherent end-to-end; SPY no-lookahead-safe; deletion left no broken collected import.
 
-### Open
-- `scripts/eval_threshold_sweep.py` gap arm is now inoperative (GapDetector deleted) — flagged in its docstring, not collected by pytest. Optional follow-up cleanup.
-- Still no real evolve run executed; with effectively ONE strong tunable detector (intraday_move, ~7 knobs) the self-evolve ROI is modest — a manual sweep may be competitive. The LIVE scanner forward-test remains the real judge.
+### Baseline CONFIRMED POSITIVE on real data (`scripts/measure_intraday_baseline.py`, commit `72c1327`)
+Ran the re-scoped baseline `intraday_move` config over 30 nasdaq100/sp500 tickers (EODHD), train+val, no evolution:
+| sample | interestingness_diff | t | n_fired |
+|---|---|---|---|
+| train (bear+bull) | **+1.42pp** | **+4.56** | 226 |
+| val (choppy) | **+2.73pp** | **+3.73** | 73 |
+(raw/no-SPY nearly identical: +1.40pp t=4.85 / +2.95pp t=4.35.) So the scanner pre-filter backtest is **positive + significant** — intraday_move flags stocks that move ~1.4–2.7pp MORE than random over 5d. signed_diff is weak/mixed (it's a mover-flagger, not a direction predictor — direction is the agent's job). Re-scope validated.
+
+### Cleanup + open
+- ③ done: removed the inoperative gap arm (`main()`) from `scripts/eval_threshold_sweep.py` (commit `98d5493`); kept the generic offline-tested sweep harness.
+- Still no full *evolve* run executed; with effectively ONE strong tunable detector (intraday_move, ~7 knobs) the self-evolve ROI is modest — a manual threshold sweep may be competitive. The LIVE scanner forward-test remains the real judge.
 
 ## Session — 2026-06-11/12 (Scanner Self-Evolve — detector-threshold auto-tuning)
 

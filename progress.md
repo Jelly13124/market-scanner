@@ -1,5 +1,25 @@
 # Progress Log
 
+## Session — 2026-06-12 (Scanner-Evolve RE-SCOPE — interestingness + intraday_move)
+
+Re-scoped the scanner-evolve feature after an evidence review (subagent-driven, all Opus, per-task review + commit). Trigger: the scanner is an **LLM-cost PRE-FILTER** (flag stocks that will MOVE for the agent), NOT a direction predictor — so (a) the fitness metric was wrong, and (b) the original evolve set tuned dead detectors.
+
+Evidence that drove it (from `scanner_eval/` + `findings_scanner_*.md`):
+- **Fundamental quant is data-blocked, not just "harmful":** value/quality/earnings_quality read `get_financial_metrics`, which in the no-lookahead eval was sourced from yfinance-only (~5 quarters, no valuation multiples/ROE). The 3 real data sources can't supply historical point-in-time fundamentals — EODHD `/fundamentals` is 403 on basic, Finnhub-free is current-snapshot-only, yfinance is partial. So `quant_weight=0` is correct given the data; reversible only if a fundamentals source is paid for.
+- **Under the correct INTERESTINGNESS metric** (|fwd move| of fired vs random — the pre-filter lens), `intraday_move` is strongly positive (t=8/4/8 across regimes) while `gap`/`high_breakout` are NEGATIVE (flag stocks that move LESS than random). gap's threshold was already swept 3.0–5.0σ → negative everywhere (broken z-scoring, unfixable). Dealer gamma lives in the agent/research layer, not the scanner.
+
+Tasks:
+- **A** (`085d4ef`): `scanner_fitness` primary metric switched signed `diff` → `interestingness_diff`; `_scanner_keep` + `report.py` + `SCANNER_SKILL_MD` follow. signed kept as labelled secondary colour.
+- **B** (`66fca22`): evolve adjustable set re-scoped to **`intraday_move` only** (7 paths: z_window, close_vs_open_pct, gap_pct, range_pct, z_threshold, severity_mult, top_n); SPY benchmark threaded into the offline fitness (added to `_UniverseAsOfClient` under "SPY", `benchmark_ticker="SPY"` to run_scan; no-lookahead preserved). ma_cross/rsi remain prod detectors but leave the evolve set.
+- **C** (`93282b5` + `f13ede3`): deleted the retired `gap`/`high_breakout` detector classes + their tests; kept the names in `RETIRED_DETECTORS` for old-config back-compat (same as the EstimateRevisionDetector precedent).
+
+### Tests
+`v2/scanner/evolve/` 57 passed · `v2/scanner/` 269 passed/2 skipped · `v2/self_evolve/` 161 passed + the 1 pre-existing `test_graduate` failure (unrelated). Final whole-feature review: READY; metric/detector-set coherent end-to-end; SPY no-lookahead-safe; deletion left no broken collected import.
+
+### Open
+- `scripts/eval_threshold_sweep.py` gap arm is now inoperative (GapDetector deleted) — flagged in its docstring, not collected by pytest. Optional follow-up cleanup.
+- Still no real evolve run executed; with effectively ONE strong tunable detector (intraday_move, ~7 knobs) the self-evolve ROI is modest — a manual sweep may be competitive. The LIVE scanner forward-test remains the real judge.
+
 ## Session — 2026-06-11/12 (Scanner Self-Evolve — detector-threshold auto-tuning)
 
 Executed `docs/superpowers/plans/2026-06-11-scanner-self-evolve.md` via subagent-driven-development (all Opus 4.8; per-task implement → spec review → code-quality review; per-task commit). New package `v2/scanner/evolve/` reuses the `v2/self_evolve/` engine via backward-compatible injection seams. Auto-tunes PRICE detector thresholds + severity_mult + top_n; `quant_weight` fixed 0; A/B-vs-random fitness; no-lookahead; test sample read once post-loop, never in the loop.

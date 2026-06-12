@@ -28,9 +28,13 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from types import MappingProxyType
+
 from v2.data.models import Price
 from v2.scanner.eval.cached_asof_client import TickerBundle
 from v2.scanner.evolve import run as run_mod
+from v2.scanner.evolve import samples as samples_mod
+from v2.scanner.evolve.samples import RegimeSpan
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +43,7 @@ from v2.scanner.evolve import run as run_mod
 
 # Full daily calendar from before the earliest train window to after the test
 # window, so every sample's as-of dates exist in the synthetic series.
-_SPAN_START = "2021-10-01"  # ~400d before bear_2022 isn't needed (we ramp inline)
+_SPAN_START = "2021-10-01"  # covers the detector's lookback before the earliest engineered break
 _SPAN_END = "2026-06-05"
 
 # One breakout date inside EACH sample window, chosen well clear of the edges so
@@ -142,6 +146,11 @@ class _SampleRecorder:
 
     def __call__(self, bundles, config, sample, **kwargs):
         self.samples.append(sample)
+        # Single worker over the ~5-ticker synthetic universe: the thread pool is
+        # pure churn here and serializing the scan keeps the smoke fast. Forced on
+        # BOTH the loop's fitness calls and the post-loop test read (both route
+        # through this wrapper). Production code keeps its max_workers=8 default.
+        kwargs.setdefault("max_workers", 1)
         return self._real(bundles, config, sample, **kwargs)
 
 
@@ -150,7 +159,35 @@ class _SampleRecorder:
 # ---------------------------------------------------------------------------
 
 
+def _tiny_window(break_date: str) -> tuple[str, str]:
+    """A ~17-day span tightly bracketing ``break_date``.
+
+    Starts 10 days before and ends 6 days after the engineered break. With
+    ``rebalance_step=5`` the stepped as-of dates land on break-10, break-5,
+    break, break+5 — so the break date itself is always scored, and the window
+    is short enough that a fitness call replays ~4 as-of dates instead of ~142.
+    """
+    b = date.fromisoformat(break_date)
+    return ((b - timedelta(days=10)).isoformat(), (b + timedelta(days=6)).isoformat())
+
+
 def test_cli_end_to_end_offline_writes_report_and_holds_out_test(tmp_path, monkeypatch):
+    # MAIN speed lever: shrink the train/val/test sample windows to ~17-day spans
+    # bracketing each engineered break, so each scanner_fitness call replays ~4
+    # as-of dates instead of ~142 across the multi-year regimes. ``window_of`` and
+    # ``run.main``'s prefetch-span helper both resolve the module global
+    # ``samples.SAMPLES`` at call time, so patching it here shrinks BOTH the
+    # prefetch span and the replay windows. The synthetic series is still long
+    # enough that high_breakout(window=60) fires inside each tiny window.
+    tiny_samples = MappingProxyType(
+        {
+            "train": (RegimeSpan("train_tiny", *_tiny_window(_BREAK_DATES["train"])),),
+            "val": (RegimeSpan("val_tiny", *_tiny_window(_BREAK_DATES["val"])),),
+            "test": (RegimeSpan("test_tiny", *_tiny_window(_BREAK_DATES["test"])),),
+        }
+    )
+    monkeypatch.setattr(samples_mod, "SAMPLES", tiny_samples)
+
     bundles = _make_bundles()
     spy = _spy_bundle()
 

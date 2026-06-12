@@ -141,6 +141,7 @@ def _closes_and_index(bundle: TickerBundle, date_iso: str) -> tuple[list[float],
     Uses the WHOLE series (post-asof bars included) — this is the outcome the
     detectors are graded against, not an input they saw.
     """
+    # Task 4: memoize sorted closes + time→idx map across calls.
     prices_sorted = sorted(bundle.prices, key=lambda p: (getattr(p, "time", "") or "")[:10])
     closes: list[float] = []
     idx = -1
@@ -197,7 +198,8 @@ def scanner_fitness(
     bundle with too few bars simply contributes no fired return.
     """
     if window_of is None:
-        from v2.scanner.evolve.samples import window_of as window_of
+        # Task 5 module; imported lazily so Task 3 can land first.
+        from v2.scanner.evolve.samples import window_of
 
     dets_unused = _detectors_from_config(config)  # validate config early; fail loud on a bad name
     del dets_unused

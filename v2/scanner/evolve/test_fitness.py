@@ -246,6 +246,38 @@ def test_no_lookahead_future_spike_does_not_fire():
     assert out["n_fired"] == 0
 
 
+def test_no_lookahead_clamp_lets_break_bar_through_but_not_future_spike():
+    """PAIRED no-lookahead discriminator: clamp-to-<=asof, NOT errored-out.
+
+    The sibling ``test_no_lookahead_future_spike_does_not_fire`` only asserts
+    ``n_fired == 0`` on the future-spike case. That assertion ALSO holds if
+    ``_UniverseAsOfClient.set_asof`` is removed: the resulting ``RuntimeError``
+    inside the detector is swallowed by ``run_scan``'s per-detector isolation,
+    so the detector silently fires nothing and ``n_fired == 0`` either way.
+    A green ``== 0`` therefore can't distinguish "correctly clamped" from
+    "errored out" — false assurance on the load-bearing invariant.
+
+    This test adds the discriminating half: an ON-break as-of date that MUST
+    yield ``n_fired > 0``. The ``> 0`` is the discriminator — if ``set_asof``
+    were a no-op (or raised), the break bar would never be visible / the
+    detector would error, and this case would ALSO yield ``n_fired == 0`` and
+    FAIL. Both halves use the same breakout series; only the as-of date moves.
+    """
+    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
+    break_idx = 80
+    bundles = {"AAA": _bundle("AAA", _high_breakout_closes(break_idx))}
+
+    # ON the break bar: the clamp must let the break bar through → fires.
+    asof_on = _iso(_START, break_idx)
+    out_on = scanner_fitness(bundles, cfg, "val", window_of=lambda s: [(asof_on, asof_on)], rebalance_step=1)
+    assert out_on["n_fired"] > 0  # discriminator: fails if set_asof is a no-op
+
+    # ONE bar BEFORE the break: the spike is in the future → excluded.
+    asof_before = _iso(_START, break_idx - 1)
+    out_before = scanner_fitness(bundles, cfg, "val", window_of=lambda s: [(asof_before, asof_before)], rebalance_step=1)
+    assert out_before["n_fired"] == 0
+
+
 def test_alpha_computed_with_spy_bundle():
     cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
     break_idx = 80

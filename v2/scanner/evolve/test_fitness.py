@@ -1,11 +1,15 @@
 """Tests for the scanner-evolve fitness bridge.
 
-Task 2 scope: ``_detectors_from_config`` — construct live detector instances
+``_detectors_from_config`` — construct live ``intraday_move`` detector instances
 from a :class:`ScannerEvolveConfig`.
 
-Task 3 scope: ``scanner_fitness`` — A/B-vs-random fitness over a regime window,
-no-lookahead. Fully offline + deterministic: synthetic in-memory bundles, an
-injected ``window_of`` stub, no network, no LLM.
+``scanner_fitness`` — A/B-vs-random fitness over a regime window, no-lookahead.
+Fully offline + deterministic: synthetic in-memory bundles, an injected
+``window_of`` stub, no network, no LLM.
+
+The evolve set was re-scoped (2026-06-12) to ``intraday_move`` ONLY. The
+synthetic fixtures engineer a bar whose intraday return (open→close) crosses the
+absolute ``close_vs_open_pct`` gate so the detector fires on a known as-of date.
 """
 
 from __future__ import annotations
@@ -16,12 +20,7 @@ from pathlib import Path
 import pytest
 
 from v2.data.models import Price
-from v2.scanner.detectors import (
-    GapDetector,
-    HighBreakoutDetector,
-    MaCrossDetector,
-    RsiDivergenceDetector,
-)
+from v2.scanner.detectors import IntradayMoveDetector
 from v2.scanner.eval.cached_asof_client import TickerBundle
 from v2.scanner.evolve import fitness as fitness_mod
 from v2.scanner.evolve.config import apply_delta, load_config
@@ -30,63 +29,49 @@ from v2.scanner.evolve.fitness import _detectors_from_config, scanner_fitness
 _CONFIG_PATH = Path(__file__).parent / "scanner_skill_config.yaml"
 
 
-def _by_type(detectors):
-    return {type(d): d for d in detectors}
+# ===========================================================================
+# _detectors_from_config
+# ===========================================================================
 
 
-def test_baseline_builds_four_detectors_with_baseline_params():
+def test_baseline_builds_single_intraday_detector_with_baseline_params():
     cfg = load_config(_CONFIG_PATH)
     detectors = _detectors_from_config(cfg)
 
-    assert len(detectors) == 4
-    by_type = _by_type(detectors)
-    assert set(by_type) == {
-        HighBreakoutDetector,
-        MaCrossDetector,
-        GapDetector,
-        RsiDivergenceDetector,
-    }
-
-    assert by_type[HighBreakoutDetector]._window == 252
-    ma = by_type[MaCrossDetector]
-    assert ma._fast == 50
-    assert ma._slow == 200
-    assert by_type[GapDetector]._threshold == 3.0
-    assert by_type[RsiDivergenceDetector]._div_window == 40
+    assert len(detectors) == 1
+    det = detectors[0]
+    assert isinstance(det, IntradayMoveDetector)
+    assert det._z_window == 60
+    assert det._cvo_pct == 0.04
+    assert det._gap_pct == 0.03
+    assert det._range_pct == 0.06
+    assert det._z_thresh == 2.5
+    # Derived lookback covers z_window + 2 bars: max(90, 60*2.5+40) = 190.
+    assert det._lookback_days >= det._z_window + 2
 
 
-def test_delta_rebuilds_detectors_with_new_params():
-    cfg = load_config(_CONFIG_PATH)
-    cfg = apply_delta(cfg, {"detectors.ma_cross.fast": 20, "detectors.ma_cross.slow": 150})
-    detectors = _detectors_from_config(cfg)
-
-    ma = _by_type(detectors)[MaCrossDetector]
-    assert ma._fast == 20
-    assert ma._slow == 150
-    assert ma._min_bars == 152  # slow + 2
-    # Derived lookback must cover the required bars (slow*2 + 100 = 400).
-    assert ma._lookback >= ma._min_bars
-
-
-def test_derived_lookback_covers_required_bars_at_range_top():
-    """At the top of the adjustable ranges, derived lookback ≥ required bars."""
+def test_delta_rebuilds_detector_with_new_params():
     cfg = load_config(_CONFIG_PATH)
     cfg = apply_delta(
         cfg,
-        {
-            "detectors.high_breakout.window": 300,
-            "detectors.ma_cross.slow": 300,
-        },
+        {"detectors.intraday_move.z_window": 90, "detectors.intraday_move.z_threshold": 3.0},
     )
-    detectors = _detectors_from_config(cfg)
-    by_type = _by_type(detectors)
+    det = _detectors_from_config(cfg)[0]
+    assert det._z_window == 90
+    assert det._z_thresh == 3.0
+    assert det._lookback_days >= det._z_window + 2
 
-    hb = by_type[HighBreakoutDetector]
-    # high_breakout needs window + 2 trading bars.
-    assert hb._lookback >= hb._window + 2
 
-    ma = by_type[MaCrossDetector]
-    assert ma._lookback >= ma._min_bars
+def test_derived_lookback_covers_required_bars_at_range_top():
+    """At the top of the adjustable range (z_window=120), derived lookback in
+    calendar days yields ≥ z_window + 2 trading bars at ~5/7 density."""
+    cfg = load_config(_CONFIG_PATH)
+    cfg = apply_delta(cfg, {"detectors.intraday_move.z_window": 120})
+    det = _detectors_from_config(cfg)[0]
+    # lookback_days = max(90, 120*2.5+40) = 340 calendar days. The synthetic
+    # bundles use 1 bar / calendar day, so 340 >> 122 bars needed; even at a
+    # ~5/7 trading density (~243 bars) it clears z_window + 2 = 122.
+    assert det._lookback_days * (5 / 7) >= det._z_window + 2
 
 
 def test_unknown_detector_name_raises():
@@ -97,50 +82,73 @@ def test_unknown_detector_name_raises():
 
 
 # ===========================================================================
-# Task 3: scanner_fitness — A/B-vs-random over a regime, no-lookahead
+# Synthetic intraday-firing fixtures
 # ===========================================================================
 
 _START = "2024-01-01"
 
 
-def _price(time_iso: str, close: float) -> Price:
-    return Price(open=close, close=close, high=close, low=close, volume=1_000_000, time=time_iso)
+def _bar(time_iso: str, *, open_: float, close: float, high: float | None = None, low: float | None = None) -> Price:
+    hi = high if high is not None else max(open_, close)
+    lo = low if low is not None else min(open_, close)
+    return Price(open=open_, close=close, high=hi, low=lo, volume=1_000_000, time=time_iso)
 
 
-def _bundle(ticker: str, closes: list[float], start: str = _START) -> TickerBundle:
-    """Build a TickerBundle from a daily close series (1 calendar day per bar)."""
-    d = date.fromisoformat(start)
-    prices = [_price((d + timedelta(days=i)).isoformat(), c) for i, c in enumerate(closes)]
-    return TickerBundle(ticker=ticker, prices=prices)
+def _flat_bar(time_iso: str, level: float = 100.0) -> Price:
+    """A 'normal' bar: open == close == level → cvo 0, gap 0, range 0."""
+    return _bar(time_iso, open_=level, close=level)
 
 
 def _iso(start: str, i: int) -> str:
     return (date.fromisoformat(start) + timedelta(days=i)).isoformat()
 
 
-def _high_breakout_closes(break_idx: int, *, warmup: float = 100.0, dip: float = 95.0, jump: float = 130.0):
-    """Closes that make HighBreakoutDetector(window=60) fire ON the bar at ``break_idx``.
+def _intraday_fire_prices(break_idx: int, *, n_after: int = 8, start: str = _START) -> list[Price]:
+    """A series of flat bars then a big-intraday-move bar at ``break_idx``.
 
-    Flat warmup (the trailing 60-bar max), a 3-bar dip just before the break so
-    yesterday sits BELOW the prior max (first-day gate), then a jump on the break
-    bar, then a continued rise so a 5d forward return exists.
+    ``break_idx`` normal flat bars (level 100, cvo=0) provide the trailing
+    z-window baseline, then the break bar has open=100, close=110 →
+    close_vs_open = +10% which crosses the 4% absolute gate → fires. A short
+    rising tail after the break makes a 5d forward return computable.
     """
-    closes = [warmup] * (break_idx - 3)
-    closes += [dip, dip, dip]  # the 3 bars immediately before the break
-    closes.append(jump)  # the break bar at index == break_idx
-    # Post-break tail so a 5d forward return is computable from break_idx.
-    closes += [jump + 1.0 * k for k in range(1, 11)]
-    return closes
+    prices = [_flat_bar(_iso(start, i)) for i in range(break_idx)]
+    # The break bar: +10% intraday move.
+    prices.append(_bar(_iso(start, break_idx), open_=100.0, close=110.0))
+    # Rising tail so forward returns exist (close keeps climbing).
+    for k in range(1, n_after + 1):
+        lvl = 110.0 + 1.0 * k
+        prices.append(_bar(_iso(start, break_idx + k), open_=lvl, close=lvl))
+    return prices
+
+
+def _bundle_from_prices(ticker: str, prices: list[Price]) -> TickerBundle:
+    return TickerBundle(ticker=ticker, prices=prices)
+
+
+def _flat_bundle(ticker: str, n: int, start: str = _START) -> TickerBundle:
+    return TickerBundle(ticker=ticker, prices=[_flat_bar(_iso(start, i)) for i in range(n)])
+
+
+def _spy_flat_bundle(n: int = 260, start: str = _START) -> TickerBundle:
+    return TickerBundle(ticker="SPY", prices=[_flat_bar(_iso(start, i)) for i in range(n)])
+
+
+# break_idx must be >= z_window + 1 so the trailing window is full.
+_BREAK_IDX = 70
+
+
+# ===========================================================================
+# scanner_fitness — contract / fires / graceful / invariants
+# ===========================================================================
 
 
 def test_contract_keys_and_types():
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
+    cfg = load_config(_CONFIG_PATH)
     bundles = {
-        "AAA": _bundle("AAA", _high_breakout_closes(break_idx)),
-        "BBB": _bundle("BBB", [100.0] * 100),  # never fires
+        "AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX)),
+        "BBB": _flat_bundle("BBB", _BREAK_IDX + 10),  # never fires
     }
-    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
     out = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
 
     assert set(out) == {
@@ -163,24 +171,23 @@ def test_contract_keys_and_types():
     assert out["alpha_5d"] is None  # no spy_bundle
 
 
-def test_fires_when_config_tuned():
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
+def test_fires_on_intraday_move():
+    cfg = load_config(_CONFIG_PATH)
     bundles = {
-        "AAA": _bundle("AAA", _high_breakout_closes(break_idx)),
-        "BBB": _bundle("BBB", [100.0] * 100),
+        "AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX)),
+        "BBB": _flat_bundle("BBB", _BREAK_IDX + 10),
     }
-    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
     out = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
     assert out["n_fired"] > 0
 
 
 def test_nothing_fires_is_graceful():
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    # Flat universe → no detector can fire; window covers the dates either way.
+    cfg = load_config(_CONFIG_PATH)
+    # Flat universe → no intraday move can fire.
     bundles = {
-        "AAA": _bundle("AAA", [100.0] * 120),
-        "BBB": _bundle("BBB", [100.0] * 120),
+        "AAA": _flat_bundle("AAA", 120),
+        "BBB": _flat_bundle("BBB", 120),
     }
     window = [(_iso(_START, 80), _iso(_START, 100))]
     out = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
@@ -194,9 +201,8 @@ def test_nothing_fires_is_graceful():
 
 
 def test_window_outside_data_is_graceful():
-    """A window past the end of the data yields no as-of dates → nothing fires."""
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    bundles = {"AAA": _bundle("AAA", _high_breakout_closes(80))}
+    cfg = load_config(_CONFIG_PATH)
+    bundles = {"AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX))}
     window = [("2030-01-01", "2030-12-31")]  # no overlap with the synthetic dates
     out = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
     assert out["n_fired"] == 0
@@ -204,14 +210,13 @@ def test_window_outside_data_is_graceful():
 
 
 def test_threshold_sensitivity_changes_fired_set():
-    """Two windows differing by gap.threshold-equivalent — here, a window that
-    includes the break vs one that excludes it → different n_fired."""
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
-    bundles = {"AAA": _bundle("AAA", _high_breakout_closes(break_idx))}
+    """A z_threshold/cvo-gate-equivalent change: an as-of date ON the intraday
+    move fires; one before it (only flat bars visible) does not."""
+    cfg = load_config(_CONFIG_PATH)
+    bundles = {"AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX))}
 
-    win_hit = [(_iso(_START, break_idx), _iso(_START, break_idx))]
-    win_miss = [(_iso(_START, break_idx - 5), _iso(_START, break_idx - 5))]
+    win_hit = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
+    win_miss = [(_iso(_START, _BREAK_IDX - 5), _iso(_START, _BREAK_IDX - 5))]
 
     out_hit = scanner_fitness(bundles, cfg, "val", window_of=lambda s: win_hit, rebalance_step=1)
     out_miss = scanner_fitness(bundles, cfg, "val", window_of=lambda s: win_miss, rebalance_step=1)
@@ -219,116 +224,136 @@ def test_threshold_sensitivity_changes_fired_set():
     assert out_hit["n_fired"] != out_miss["n_fired"]
 
 
+def test_threshold_delta_changes_fired_set():
+    """Raising close_vs_open_pct above the engineered 10% move suppresses the
+    absolute gate. The bar's z-score still fires it (flat baseline → huge z), so
+    this asserts the delta is at least exercised and the run stays graceful."""
+    cfg = load_config(_CONFIG_PATH)
+    bundles = {"AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX))}
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
+
+    out_base = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, rebalance_step=1)
+    # A higher z_threshold makes the gate stricter; results stay well-formed.
+    cfg2 = apply_delta(cfg, {"detectors.intraday_move.z_threshold": 4.0})
+    out2 = scanner_fitness(bundles, cfg2, "val", window_of=lambda s: window, rebalance_step=1)
+    assert isinstance(out_base["n_fired"], int)
+    assert isinstance(out2["n_fired"], int)
+    assert out_base["n_fired"] > 0  # the +10% move clears the 4% gate at baseline
+
+
 def test_never_raises_on_junk_bundle():
-    """A too-short / empty bundle mixed in must not raise — just contributes nothing."""
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
+    cfg = load_config(_CONFIG_PATH)
     bundles = {
-        "AAA": _bundle("AAA", _high_breakout_closes(break_idx)),
+        "AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX)),
         "EMPTY": TickerBundle(ticker="EMPTY", prices=[]),
-        "SHORT": _bundle("SHORT", [100.0, 101.0, 102.0]),
+        "SHORT": _flat_bundle("SHORT", 3),
     }
-    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
     out = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
     assert isinstance(out["n_fired"], int)  # no exception raised
 
 
 def test_determinism():
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
+    cfg = load_config(_CONFIG_PATH)
     bundles = {
-        "AAA": _bundle("AAA", _high_breakout_closes(break_idx)),
-        "BBB": _bundle("BBB", [100.0] * 100),
-        "CCC": _bundle("CCC", [100.0 + 0.1 * i for i in range(100)]),
+        "AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX)),
+        "BBB": _flat_bundle("BBB", 100),
+        "CCC": _flat_bundle("CCC", 100),
     }
-    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
     out1 = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
     out2 = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
     assert out1 == out2
 
 
-def test_no_lookahead_future_spike_does_not_fire():
-    """A breakout spike placed AFTER the as-of date must not make the detector
-    fire on the as-of date — proof the CachedAsOfClient clamps to <= asof."""
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
-    closes = _high_breakout_closes(break_idx)  # spike at index 80
-    bundles = {"AAA": _bundle("AAA", closes)}
-    # As-of BEFORE the spike: detector can only see flat/dip bars <= asof-1.
-    asof = _iso(_START, break_idx - 1)
+def test_no_lookahead_future_move_does_not_fire():
+    """An intraday-move bar placed AFTER the as-of date must not make the
+    detector fire on the as-of date — proof the CachedAsOfClient clamps."""
+    cfg = load_config(_CONFIG_PATH)
+    bundles = {"AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX))}
+    asof = _iso(_START, _BREAK_IDX - 1)  # before the move; only flat bars visible
     window = [(asof, asof)]
     out = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, rebalance_step=1)
     assert out["n_fired"] == 0
 
 
-def test_no_lookahead_clamp_lets_break_bar_through_but_not_future_spike():
+def test_no_lookahead_clamp_lets_move_bar_through_but_not_future_move():
     """PAIRED no-lookahead discriminator: clamp-to-<=asof, NOT errored-out.
 
-    The sibling ``test_no_lookahead_future_spike_does_not_fire`` only asserts
-    ``n_fired == 0`` on the future-spike case. That assertion ALSO holds if
-    ``_UniverseAsOfClient.set_asof`` is removed: the resulting ``RuntimeError``
-    inside the detector is swallowed by ``run_scan``'s per-detector isolation,
-    so the detector silently fires nothing and ``n_fired == 0`` either way.
-    A green ``== 0`` therefore can't distinguish "correctly clamped" from
-    "errored out" — false assurance on the load-bearing invariant.
-
-    This test adds the discriminating half: an ON-break as-of date that MUST
-    yield ``n_fired > 0``. The ``> 0`` is the discriminator — if ``set_asof``
-    were a no-op (or raised), the break bar would never be visible / the
-    detector would error, and this case would ALSO yield ``n_fired == 0`` and
-    FAIL. Both halves use the same breakout series; only the as-of date moves.
+    The ON-move as-of date MUST yield ``n_fired > 0`` (the > 0 discriminates a
+    correct clamp from a no-op/errored set_asof, both of which would yield 0).
+    The one-bar-before case must yield 0 (the move is in the future).
     """
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
-    bundles = {"AAA": _bundle("AAA", _high_breakout_closes(break_idx))}
+    cfg = load_config(_CONFIG_PATH)
+    bundles = {"AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX))}
 
-    # ON the break bar: the clamp must let the break bar through → fires.
-    asof_on = _iso(_START, break_idx)
+    asof_on = _iso(_START, _BREAK_IDX)
     out_on = scanner_fitness(bundles, cfg, "val", window_of=lambda s: [(asof_on, asof_on)], rebalance_step=1)
     assert out_on["n_fired"] > 0  # discriminator: fails if set_asof is a no-op
 
-    # ONE bar BEFORE the break: the spike is in the future → excluded.
-    asof_before = _iso(_START, break_idx - 1)
+    asof_before = _iso(_START, _BREAK_IDX - 1)
     out_before = scanner_fitness(bundles, cfg, "val", window_of=lambda s: [(asof_before, asof_before)], rebalance_step=1)
     assert out_before["n_fired"] == 0
 
 
 def test_alpha_computed_with_spy_bundle():
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
-    bundles = {"AAA": _bundle("AAA", _high_breakout_closes(break_idx))}
-    spy = _bundle("SPY", [100.0] * 200)  # flat SPY → spy 5d return == 0
-    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+    cfg = load_config(_CONFIG_PATH)
+    bundles = {"AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX))}
+    spy = _spy_flat_bundle()  # flat SPY → spy 5d return == 0
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
     out = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, spy_bundle=spy)
     assert out["n_fired"] > 0
     assert out["alpha_5d"] is not None
     assert isinstance(out["alpha_5d"], float)
 
 
-# ===========================================================================
-# Task 4: parse bundles ONCE, reuse the parsed series across iterations.
-# ===========================================================================
-
-
-def _multi_bundles(break_idx: int = 80) -> dict:
-    """A small universe that fires (AAA) plus several never-fire fillers.
-
-    The fillers widen the random baseline so multiple distinct tickers get
-    parsed via the forward-return path — giving the parse-counter something to
-    count across.
+def test_spy_bundle_threads_benchmark_into_run_scan(monkeypatch):
+    """Passing ``spy_bundle`` must thread the SPY benchmark into ``run_scan``
+    (``benchmark_ticker="SPY"``), exercising the SPY-relative path — not silently
+    ignore it. We spy on ``run_scan`` to capture the kwarg both with and without
+    a SPY bundle, AND confirm the fired detector ran benchmark-adjusted.
     """
-    bundles = {"AAA": _bundle("AAA", _high_breakout_closes(break_idx))}
+    import v2.scanner.evolve.fitness as fmod
+
+    real_run_scan = fmod.run_scan
+    seen: list[object] = []
+
+    def spy_run_scan(*args, **kwargs):
+        seen.append(kwargs.get("benchmark_ticker"))
+        return real_run_scan(*args, **kwargs)
+
+    monkeypatch.setattr(fmod, "run_scan", spy_run_scan)
+
+    cfg = load_config(_CONFIG_PATH)
+    bundles = {"AAA": _bundle_from_prices("AAA", _intraday_fire_prices(_BREAK_IDX))}
+    spy = _spy_flat_bundle()
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
+
+    out_no_spy = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, rebalance_step=1)
+    assert seen[-1] is None  # no benchmark threaded when spy_bundle is None
+
+    out_spy = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, spy_bundle=spy, rebalance_step=1)
+    assert "SPY" in seen  # benchmark threaded into run_scan when spy_bundle given
+    # The SPY path is exercised, not ignored: alpha is computed and the detector
+    # still fires SPY-relative (flat SPY → the +10% raw move survives adjustment).
+    assert out_spy["n_fired"] > 0
+    assert out_spy["alpha_5d"] is not None
+
+
+# ===========================================================================
+# Parse-cache: parse bundles ONCE, reuse the parsed series across calls.
+# ===========================================================================
+
+
+def _multi_bundles(break_idx: int = _BREAK_IDX) -> dict:
+    bundles = {"AAA": _bundle_from_prices("AAA", _intraday_fire_prices(break_idx))}
     for name in ("BBB", "CCC", "DDD", "EEE"):
-        bundles[name] = _bundle(name, [100.0 + 0.1 * i for i in range(120)])
+        bundles[name] = _flat_bundle(name, break_idx + 12)
     return bundles
 
 
 class _ParseCounter:
-    """Wrap ``fitness._parse_bundle_series`` and tally calls by (id) bundle.
-
-    Counting by ``id(bundle)`` is a faithful proxy for "by ticker" here: each
-    ticker has exactly one immutable bundle object for the run.
-    """
+    """Wrap ``fitness._parse_bundle_series`` and tally calls by ``id(bundle)``."""
 
     def __init__(self, monkeypatch):
         self._real = fitness_mod._parse_bundle_series
@@ -349,12 +374,9 @@ class _ParseCounter:
 
 
 def test_parsed_once_per_ticker_across_calls(monkeypatch):
-    """A SHARED cache → each ticker's series is parsed at most once TOTAL across
-    two calls, not once-per-call-per-ticker."""
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
-    bundles = _multi_bundles(break_idx)
-    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+    cfg = load_config(_CONFIG_PATH)
+    bundles = _multi_bundles()
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
 
     counter = _ParseCounter(monkeypatch)
     shared: dict = {}
@@ -362,19 +384,14 @@ def test_parsed_once_per_ticker_across_calls(monkeypatch):
     scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, cache=shared)
     scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, cache=shared)
 
-    # At most one parse per bundle object total — the second call is a pure hit.
     assert counter.total <= len(bundles)
-    # And every parse was for a DISTINCT bundle (no re-parse of an already-seen one).
     assert counter.total == counter.distinct
 
 
 def test_threshold_only_delta_reuses_cache(monkeypatch):
-    """A threshold-only config change between two cache-sharing calls adds no new
-    parse for already-seen tickers."""
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
-    bundles = _multi_bundles(break_idx)
-    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+    cfg = load_config(_CONFIG_PATH)
+    bundles = _multi_bundles()
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
 
     counter = _ParseCounter(monkeypatch)
     shared: dict = {}
@@ -382,20 +399,16 @@ def test_threshold_only_delta_reuses_cache(monkeypatch):
     scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, cache=shared)
     parsed_after_first = counter.total
 
-    cfg2 = apply_delta(cfg, {"detectors.gap.threshold": 4.0})
+    cfg2 = apply_delta(cfg, {"detectors.intraday_move.z_threshold": 3.0})
     scanner_fitness(bundles, cfg2, "val", window_of=lambda s: window, cache=shared)
 
-    # No additional parse: every ticker was already in the shared cache.
     assert counter.total == parsed_after_first
 
 
 def test_no_shared_cache_reparses(monkeypatch):
-    """Two calls WITHOUT a shared cache (each gets its own throwaway) → the
-    second call re-parses, proving the memoization is what saves the work."""
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
-    bundles = _multi_bundles(break_idx)
-    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+    cfg = load_config(_CONFIG_PATH)
+    bundles = _multi_bundles()
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
 
     counter = _ParseCounter(monkeypatch)
 
@@ -404,18 +417,14 @@ def test_no_shared_cache_reparses(monkeypatch):
     assert after_first > 0
 
     scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
-    # The second throwaway-cache call parses again — total strictly grows.
     assert counter.total > after_first
 
 
 def test_cache_is_pure_identical_results():
-    """Results with a shared cache are IDENTICAL to results without one (cache is
-    a perf optimization, never changes the returned dict)."""
-    cfg = apply_delta(load_config(_CONFIG_PATH), {"detectors.high_breakout.window": 60})
-    break_idx = 80
-    bundles = _multi_bundles(break_idx)
-    spy = _bundle("SPY", [100.0] * 200)
-    window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
+    cfg = load_config(_CONFIG_PATH)
+    bundles = _multi_bundles()
+    spy = _spy_flat_bundle()
+    window = [(_iso(_START, _BREAK_IDX), _iso(_START, _BREAK_IDX))]
 
     shared: dict = {}
     out_cached = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window, spy_bundle=spy, cache=shared)

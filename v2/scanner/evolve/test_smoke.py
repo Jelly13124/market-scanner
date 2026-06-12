@@ -46,8 +46,8 @@ from v2.scanner.evolve.samples import RegimeSpan
 _SPAN_START = "2021-10-01"  # covers the detector's lookback before the earliest engineered break
 _SPAN_END = "2026-06-05"
 
-# One breakout date inside EACH sample window, chosen well clear of the edges so
-# the high_breakout(window=60) trailing-max + dip + jump pattern fits.
+# One intraday-move date inside EACH sample window, chosen well clear of the
+# edges so the intraday_move(z_window=60) trailing window + the +10% move bar fit.
 _BREAK_DATES = {
     "train": "2022-06-01",  # inside bear_2022 (2022-01-03..2022-10-14)
     "val": "2025-05-01",  # inside choppy_2025 (2025-02-18..2025-08-01)
@@ -61,51 +61,55 @@ def _daterange(start: str, end: str) -> list[str]:
     return [(d0 + timedelta(days=i)).isoformat() for i in range((d1 - d0).days + 1)]
 
 
-def _firing_closes(dates: list[str]) -> list[float]:
-    """A long flat series with a breakout ramp engineered ON each break date.
+def _price(time_iso: str, *, open_: float, close: float) -> Price:
+    hi = max(open_, close)
+    lo = min(open_, close)
+    return Price(open=open_, close=close, high=hi, low=lo, volume=1_000_000, time=time_iso)
 
-    Flat warmup at 100 everywhere, then for each break date: a 3-bar dip just
-    before it (so yesterday sits below the trailing max → first-day gate), a jump
-    on the break bar, and a small continued rise after (so a 5d forward return
-    exists). The breakouts are far apart, so each window's max is the flat 100.
+
+def _flat_price(time_iso: str, level: float = 100.0) -> Price:
+    return _price(time_iso, open_=level, close=level)
+
+
+def _firing_prices(dates: list[str]) -> list[Price]:
+    """A long flat series with a big-intraday-move bar engineered ON each break date.
+
+    Flat bars (open==close==100, cvo=0) everywhere build the trailing z-window
+    baseline, then for each break date a +10% intraday move (open=100,
+    close=110) crosses the 4% close_vs_open gate → fires, followed by a small
+    rising tail (so a 5d forward return exists). Break dates are far apart.
     """
     idx = {d: i for i, d in enumerate(dates)}
-    closes = [100.0] * len(dates)
+    prices = [_flat_price(d) for d in dates]
     for bdate in _BREAK_DATES.values():
         bi = idx.get(bdate)
-        if bi is None or bi < 4 or bi + 11 >= len(closes):
+        if bi is None or bi < 4 or bi + 11 >= len(prices):
             continue
-        closes[bi - 3] = 95.0
-        closes[bi - 2] = 95.0
-        closes[bi - 1] = 95.0
-        closes[bi] = 130.0  # the break bar
+        prices[bi] = _price(dates[bi], open_=100.0, close=110.0)  # +10% intraday move
         for k in range(1, 11):
-            closes[bi + k] = 130.0 + 1.0 * k
-    return closes
+            lvl = 110.0 + 1.0 * k
+            prices[bi + k] = _flat_price(dates[bi + k], lvl)
+    return prices
 
 
-def _price(time_iso: str, close: float) -> Price:
-    return Price(open=close, close=close, high=close, low=close, volume=1_000_000, time=time_iso)
-
-
-def _bundle(ticker: str, dates: list[str], closes: list[float]) -> TickerBundle:
-    return TickerBundle(ticker=ticker, prices=[_price(d, c) for d, c in zip(dates, closes)])
+def _bundle(ticker: str, prices: list[Price]) -> TickerBundle:
+    return TickerBundle(ticker=ticker, prices=prices)
 
 
 def _make_bundles() -> dict[str, TickerBundle]:
     dates = _daterange(_SPAN_START, _SPAN_END)
-    firing = _firing_closes(dates)
-    bundles = {"AAA": _bundle("AAA", dates, firing)}
+    firing = _firing_prices(dates)
+    bundles = {"AAA": _bundle("AAA", firing)}
     # A handful of never-fire fillers to widen the random baseline.
     for j, name in enumerate(("BBB", "CCC", "DDD", "EEE")):
-        flat = [100.0 + 0.01 * j * i for i in range(len(dates))]
-        bundles[name] = _bundle(name, dates, flat)
+        flat = [_flat_price(d, 100.0 + 0.01 * j * i) for i, d in enumerate(dates)]
+        bundles[name] = _bundle(name, flat)
     return bundles
 
 
 def _spy_bundle() -> TickerBundle:
     dates = _daterange(_SPAN_START, _SPAN_END)
-    return _bundle("SPY", dates, [100.0] * len(dates))
+    return _bundle("SPY", [_flat_price(d) for d in dates])
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +182,7 @@ def test_cli_end_to_end_offline_writes_report_and_holds_out_test(tmp_path, monke
     # ``run.main``'s prefetch-span helper both resolve the module global
     # ``samples.SAMPLES`` at call time, so patching it here shrinks BOTH the
     # prefetch span and the replay windows. The synthetic series is still long
-    # enough that high_breakout(window=60) fires inside each tiny window.
+    # enough that intraday_move(z_window=60) fires inside each tiny window.
     tiny_samples = MappingProxyType(
         {
             "train": (RegimeSpan("train_tiny", *_tiny_window(_BREAK_DATES["train"])),),
@@ -200,8 +204,8 @@ def test_cli_end_to_end_offline_writes_report_and_holds_out_test(tmp_path, monke
     # In-range scanner deltas (no LLM). Each round nudges a different adjustable.
     propose_fn = _scripted_propose(
         [
-            {"path": "detectors.high_breakout.window", "value": 60, "hypothesis": "shorter breakout window"},
-            {"path": "detectors.gap.threshold", "value": 4.0, "hypothesis": "wider gap"},
+            {"path": "detectors.intraday_move.z_threshold", "value": 3.0, "hypothesis": "stricter z gate"},
+            {"path": "detectors.intraday_move.gap_pct", "value": 0.05, "hypothesis": "wider gap gate"},
             {"path": "top_n", "value": 30, "hypothesis": "more breadth"},
         ]
     )

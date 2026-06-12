@@ -16,8 +16,8 @@ Pieces:
 * :class:`ScannerEvolveConfig` — a plain dataclass mirroring
   ``scanner_skill_config.yaml``.
 * :data:`SCANNER_ADJUSTABLE` — the allow-list. Maps a dotted path (e.g.
-  ``"detectors.gap.threshold"``, ``"top_n"``) to its ``(min, max)`` bound. Any
-  path NOT in this dict is fixed-kernel and off-limits.
+  ``"detectors.intraday_move.z_threshold"``, ``"top_n"``) to its ``(min, max)``
+  bound. Any path NOT in this dict is fixed-kernel and off-limits.
 * :func:`load_config` — parse yaml → build → validate.
 * :func:`validate` — raise :class:`ConfigError` on any out-of-range / malformed
   field.
@@ -51,25 +51,22 @@ class ConfigError(ValueError):
 # The expected structure (locked to the real detector constructors).
 # ---------------------------------------------------------------------------
 #
-# The 4 tunable detectors and their adjustable param key(s). Detector names and
-# baseline defaults mirror v2/scanner/detectors/{high_breakout,ma_cross,gap,
-# rsi_divergence}.py exactly.
+# The SINGLE tunable detector and its adjustable param keys. The evolve set was
+# re-scoped (2026-06-12) to ``intraday_move`` ONLY — the one detector with strong
+# positive interestingness-vs-random (t=8). The old price detectors (high_breakout,
+# ma_cross, gap, rsi_divergence) had negative/weak interestingness and left the
+# evolve adjustable set. Names + baseline defaults mirror
+# v2/scanner/detectors/intraday_move.py exactly.
 _DETECTOR_PARAMS: dict[str, tuple[str, ...]] = {
-    "high_breakout": ("window",),
-    "ma_cross": ("fast", "slow"),
-    "gap": ("threshold",),
-    "rsi_divergence": ("div_window",),
+    "intraday_move": ("z_window", "close_vs_open_pct", "gap_pct", "range_pct", "z_threshold"),
 }
 _DETECTOR_NAMES: tuple[str, ...] = tuple(_DETECTOR_PARAMS)
 
-# Integer-valued adjustable paths (everything except gap.threshold + the
-# severity multipliers). Used by :func:`validate` to enforce int-ness.
+# Integer-valued adjustable paths (z_window + top_n; the rest are floats). Used
+# by :func:`validate` to enforce int-ness.
 _INT_PATHS: frozenset[str] = frozenset(
     {
-        "detectors.high_breakout.window",
-        "detectors.ma_cross.fast",
-        "detectors.ma_cross.slow",
-        "detectors.rsi_divergence.div_window",
+        "detectors.intraday_move.z_window",
         "top_n",
     }
 )
@@ -84,17 +81,14 @@ _INT_PATHS: frozenset[str] = frozenset(
 # kernel (``event_weight``, ``quant_weight``) and are rejected by
 # ``apply_delta``. Each baseline default lies inside its range.
 SCANNER_ADJUSTABLE: dict[str, tuple[float, float]] = {
-    # Detector thresholds.
-    "detectors.high_breakout.window": (60, 300),
-    "detectors.ma_cross.fast": (10, 100),
-    "detectors.ma_cross.slow": (120, 300),
-    "detectors.gap.threshold": (2.0, 5.0),
-    "detectors.rsi_divergence.div_window": (20, 80),
-    # Per-detector severity multipliers.
-    "severity_mult.high_breakout": (0.5, 2.0),
-    "severity_mult.ma_cross": (0.5, 2.0),
-    "severity_mult.gap": (0.5, 2.0),
-    "severity_mult.rsi_divergence": (0.5, 2.0),
+    # intraday_move detector thresholds.
+    "detectors.intraday_move.z_window": (20, 120),
+    "detectors.intraday_move.close_vs_open_pct": (0.02, 0.10),
+    "detectors.intraday_move.gap_pct": (0.015, 0.08),
+    "detectors.intraday_move.range_pct": (0.03, 0.12),
+    "detectors.intraday_move.z_threshold": (1.5, 4.0),
+    # Per-detector severity multiplier.
+    "severity_mult.intraday_move": (0.5, 2.0),
     # Result count.
     "top_n": (10, 50),
 }
@@ -186,14 +180,13 @@ def validate(config: ScannerEvolveConfig) -> None:
 
     Enforces:
 
-    * ``detectors`` keys == the 4 expected names, each with exactly its
-      expected param key(s); ``severity_mult`` keys == those same 4 names.
+    * ``detectors`` keys == ``{"intraday_move"}`` with exactly its expected
+      param keys; ``severity_mult`` keys == ``{"intraday_move"}``.
     * Every :data:`SCANNER_ADJUSTABLE` path within its ``[min, max]`` bound, and
       the integer-valued paths are integer-valued.
-    * Cross-field: ``ma_cross.fast < ma_cross.slow``.
     * Fixed kernel: ``event_weight == 1.0`` and ``quant_weight == 0.0``.
     """
-    # Structural: detector key set + per-detector param key set.
+    # Structural: detector key set ({"intraday_move"}) + per-detector param key set.
     if set(config.detectors) != set(_DETECTOR_NAMES):
         raise ConfigError(f"detectors keys must be {sorted(_DETECTOR_NAMES)}, got {sorted(config.detectors)}")
     for name, expected_params in _DETECTOR_PARAMS.items():
@@ -219,12 +212,6 @@ def validate(config: ScannerEvolveConfig) -> None:
             raise ConfigError(f"{path} must be an integer, got {value!r}")
         if not (lo <= value <= hi):
             raise ConfigError(f"{path}={value} out of range [{lo}, {hi}]")
-
-    # Cross-field: fast < slow (both-in-range is not enough).
-    fast = config.detectors["ma_cross"]["fast"]
-    slow = config.detectors["ma_cross"]["slow"]
-    if not (fast < slow):
-        raise ConfigError(f"ma_cross.fast ({fast}) must be < ma_cross.slow ({slow})")
 
     # Fixed kernel — invariant #2: never re-enable the known-bad fundamentals.
     if config.event_weight != 1.0:

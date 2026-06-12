@@ -21,10 +21,7 @@ import random
 
 from v2.scanner.detectors import (
     EventDetector,
-    GapDetector,
-    HighBreakoutDetector,
-    MaCrossDetector,
-    RsiDivergenceDetector,
+    IntradayMoveDetector,
 )
 from v2.scanner.detectors.base import close_of
 from v2.scanner.eval.cached_asof_client import CachedAsOfClient, TickerBundle
@@ -37,30 +34,31 @@ from v2.scanner.runner import run_scan
 def _detectors_from_config(config: ScannerEvolveConfig) -> list[EventDetector]:
     """Construct one detector per key in ``config.detectors``, tuned to its params.
 
-    The ``high_breakout`` and ``ma_cross`` lookback windows are *derived* from
-    the tuned param rather than left at the detector default: high_breakout
-    needs ``window + 2`` trading bars and ma_cross needs ``slow + 2``. At the
-    top of their adjustable ranges (window=300, slow=300) the detectors' default
-    400-calendar-day fetch yields too few bars and the detector would silently
-    return ``None``. ``max(400, param * 2 + 100)`` calendar days guarantees
-    enough bars across the whole range.
+    The ``intraday_move`` lookback window is *derived* from the tuned
+    ``z_window`` rather than left at the detector default: the detector needs
+    ``z_window + 2`` trading bars. At the top of the adjustable range
+    (``z_window=120``) the detector's default 90-calendar-day fetch yields too
+    few bars and the detector would silently return ``None``.
+    ``max(90, int(z_window * 2.5) + 40)`` calendar days guarantees enough bars
+    across the whole range (a trading-day density of ~5/7 over the span).
 
     An unrecognized detector name raises :class:`ValueError` (the config layer
-    already guarantees the 4 names, but fail loud).
+    already guarantees the single ``intraday_move`` name, but fail loud).
     """
     detectors: list[EventDetector] = []
     for name, params in config.detectors.items():
-        if name == "high_breakout":
-            window = params["window"]
-            detectors.append(HighBreakoutDetector(window=window, lookback_days=max(400, window * 2 + 100)))
-        elif name == "ma_cross":
-            fast = params["fast"]
-            slow = params["slow"]
-            detectors.append(MaCrossDetector(fast=fast, slow=slow, lookback_days=max(400, slow * 2 + 100)))
-        elif name == "gap":
-            detectors.append(GapDetector(threshold=params["threshold"]))
-        elif name == "rsi_divergence":
-            detectors.append(RsiDivergenceDetector(div_window=params["div_window"]))
+        if name == "intraday_move":
+            z_window = params["z_window"]
+            detectors.append(
+                IntradayMoveDetector(
+                    z_window=z_window,
+                    close_vs_open_pct=params["close_vs_open_pct"],
+                    gap_pct=params["gap_pct"],
+                    range_pct=params["range_pct"],
+                    z_threshold=params["z_threshold"],
+                    lookback_days=max(90, int(z_window * 2.5) + 40),
+                )
+            )
         else:
             raise ValueError(f"unknown detector name in config.detectors: {name!r}")
     return detectors
@@ -76,9 +74,9 @@ class _UniverseAsOfClient:
 
     A :class:`CachedAsOfClient` wraps a SINGLE ticker's bundle and ignores the
     ``ticker`` arg. ``run_scan`` scans the whole universe, so we hold one
-    per-ticker client and route :meth:`get_prices` to the right one. The 4
-    evolve detectors only ever call ``get_prices``; we delegate that plus
-    :meth:`set_asof` / :meth:`close`.
+    per-ticker client and route :meth:`get_prices` to the right one. The
+    intraday_move detector (and the runner's SPY benchmark prefetch) only ever
+    call ``get_prices``; we delegate that plus :meth:`set_asof` / :meth:`close`.
 
     The same instance is shared (read-only) across all worker threads in a
     single scan; ``set_asof`` is always called BEFORE the scan, never during,
@@ -275,7 +273,15 @@ def scanner_fitness(
         detector_severity_mult=dict(config.severity_mult),
     )
 
-    client = _UniverseAsOfClient(bundles)
+    # The per-ticker client map. When a SPY benchmark is supplied, add it under
+    # "SPY" so ``run_scan(benchmark_ticker="SPY")`` — which prefetches via
+    # ``clients[0].get_prices("SPY", ...)`` — routes to it, and ``set_asof``
+    # clamps it like every other ticker (no-lookahead preserved: SPY reads are
+    # <= asof inputs, NOT lookahead). Built in sorted-key order for determinism.
+    client_bundles: dict[str, TickerBundle] = dict(sorted(bundles.items()))
+    if spy_bundle is not None:
+        client_bundles["SPY"] = spy_bundle
+    client = _UniverseAsOfClient(client_bundles)
     universe = sorted(bundles)
 
     fire_returns: list[float] = []
@@ -297,6 +303,10 @@ def scanner_fitness(
                 quant_signals=None,
                 max_workers=max_workers,
                 provider_factory=lambda: client,
+                # SPY threads into the runner ONLY when a benchmark bundle was
+                # supplied; intraday_move then runs SPY-relative (as in
+                # production). Without it the detector falls back to RAW.
+                benchmark_ticker="SPY" if spy_bundle is not None else None,
             )
 
             spy_ret = None

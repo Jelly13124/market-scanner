@@ -1,25 +1,21 @@
-# Baseline scanner-evolve config — mirrors the real detector constructor
-# defaults (see v2/scanner/detectors/{high_breakout,ma_cross,gap,rsi_divergence}.py).
-# The LLM may tune only the paths in config.SCANNER_ADJUSTABLE, within bounds.
+# Baseline scanner-evolve config — mirrors the real intraday_move detector
+# constructor defaults (see v2/scanner/detectors/intraday_move.py).
+# The evolve set was re-scoped (2026-06-12) to intraday_move ONLY — the one
+# detector with strong positive interestingness-vs-random (t=8). The LLM may
+# tune only the paths in config.SCANNER_ADJUSTABLE, within bounds.
 # quant_weight is fixed at 0.0 (invariant #2: never re-enable the known-bad
 # fundamental signals); event_weight is fixed at 1.0.
 
 detectors:
-  high_breakout:
-    window: 252        # trading bars for the 52-week high
-  ma_cross:
-    fast: 50           # SMA(fast)
-    slow: 200          # SMA(slow)
-  gap:
-    threshold: 3.0     # |gap_z| must exceed this to fire
-  rsi_divergence:
-    div_window: 40     # divergence lookback window (bars)
+  intraday_move:
+    z_window: 60              # trailing bars for the z-score distribution
+    close_vs_open_pct: 0.04   # absolute intraday-return gate
+    gap_pct: 0.03             # absolute overnight-gap gate
+    range_pct: 0.06           # absolute intraday-range gate
+    z_threshold: 2.5          # z-score gate for each sub-signal
 
 severity_mult:
-  high_breakout: 1.0
-  ma_cross: 1.0
-  gap: 1.0
-  rsi_divergence: 1.0
+  intraday_move: 1.0
 
 top_n: 20
 

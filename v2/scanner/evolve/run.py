@@ -64,10 +64,22 @@ directional or SPY-adjusted alpha.
 - `event_weight = 1.0`, `quant_weight = 0.0`. The fundamental signals are PROVEN
   to hurt; they can never be re-enabled. The proposer cannot touch these.
 
+## The tuned detector — `intraday_move`
+You tune ONE detector: `intraday_move`. It flags a stock when TODAY's bar shows
+an outsized intraday return (open→close), an outsized overnight gap
+(prev_close→open), or an outsized intraday range (high−low), measured
+SPY-relative (the stock's move net of the market's same-day move). Each
+sub-signal fires when EITHER its absolute magnitude crosses a hard threshold OR
+its z-score against a trailing-window distribution crosses one. It is the single
+detector with strong positive interestingness-vs-random; the other price
+detectors were dropped from the evolve set.
+
 ## What you MAY tune (within declared ranges)
-- Detector thresholds: high_breakout `window`, ma_cross `fast`/`slow`,
-  gap `threshold`, rsi_divergence `div_window`.
-- Per-detector `severity_mult` (one multiplier per detector).
+- `intraday_move` thresholds: `z_window` (trailing-window length for the
+  z-scores), `close_vs_open_pct` (absolute intraday-return gate), `gap_pct`
+  (absolute overnight-gap gate), `range_pct` (absolute intraday-range gate),
+  `z_threshold` (z-score gate shared by all three sub-signals).
+- `severity_mult.intraday_move` (the detector's severity multiplier).
 - `top_n` (the size of the fired watchlist).
 
 ## The objective

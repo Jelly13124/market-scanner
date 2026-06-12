@@ -82,11 +82,12 @@ def _fit(*, diff, t_stat=2.0, n_fired=100, alpha_5d=None):
 
 
 def _keyed_fitness(table, *, default=None, record=None):
-    """A stub ``scanner_fitness`` keyed by ``(gap.threshold, sample)``.
+    """A stub ``scanner_fitness`` keyed by ``(intraday_move.z_threshold, sample)``.
 
-    Each scripted delta moves ``detectors.gap.threshold`` to a distinct value, so
-    the candidate's gap threshold identifies which round we're scoring. ``record``
-    (if given) collects every ``sample`` arg — used by the isolation test.
+    Each scripted delta moves ``detectors.intraday_move.z_threshold`` to a
+    distinct value, so the candidate's z_threshold identifies which round we're
+    scoring. ``record`` (if given) collects every ``sample`` arg — used by the
+    isolation test.
 
     Signature mirrors the real ``scanner_fitness`` (the loop calls it positionally
     as ``fitness(bundles, config, sample, ...)`` via ``evolve_scanner``'s closure;
@@ -96,7 +97,7 @@ def _keyed_fitness(table, *, default=None, record=None):
     def fitness_fn(bundles, config, sample, **kwargs):
         if record is not None:
             record.append(sample)
-        key = (config.detectors["gap"]["threshold"], sample)
+        key = (config.detectors["intraday_move"]["z_threshold"], sample)
         if key in table:
             return table[key]
         if default is not None:
@@ -160,12 +161,12 @@ def test_scanner_keep_none_interestingness_rolled_back():
 
 def test_evolve_scanner_writes_v0_and_round_versions(tmp_path, monkeypatch):
     base = _base_config()
-    propose_fn = _scripted_propose([{"path": "detectors.gap.threshold", "value": 4.0, "hypothesis": "wider gap"}])
+    propose_fn = _scripted_propose([{"path": "detectors.intraday_move.z_threshold", "value": 3.0, "hypothesis": "stricter z"}])
     table = {
-        (3.0, "train"): _fit(diff=0.01),
-        (3.0, "val"): _fit(diff=0.01, n_fired=100),
-        (4.0, "train"): _fit(diff=0.02),
-        (4.0, "val"): _fit(diff=0.02, n_fired=90),  # higher diff, fine n_fired: KEEP
+        (2.5, "train"): _fit(diff=0.01),
+        (2.5, "val"): _fit(diff=0.01, n_fired=100),
+        (3.0, "train"): _fit(diff=0.02),
+        (3.0, "val"): _fit(diff=0.02, n_fired=90),  # higher diff, fine n_fired: KEEP
     }
     monkeypatch.setattr(run_mod, "scanner_fitness", _keyed_fitness(table))
 
@@ -182,7 +183,7 @@ def test_evolve_scanner_writes_v0_and_round_versions(tmp_path, monkeypatch):
     assert "v0.0.1" in by_id
     assert by_id["v0.0.1"]["kept"] is True
     v1 = read_version(tmp_path, "v0.0.1")
-    assert v1["config"]["detectors"]["gap"]["threshold"] == 4.0
+    assert v1["config"]["detectors"]["intraday_move"]["z_threshold"] == 3.0
     assert "v0.0.1" in list_versions(tmp_path)
 
 
@@ -193,25 +194,25 @@ def test_evolve_scanner_writes_v0_and_round_versions(tmp_path, monkeypatch):
 
 def test_loop_keeps_higher_diff_rolls_back_lower_and_collapsed(tmp_path, monkeypatch):
     base = _base_config()
-    # Round 1: threshold 4.0, higher diff + fine n_fired → KEEP.
-    # Round 2: threshold 4.5, LOWER diff → ROLLBACK.
-    # Round 3: threshold 2.5, higher diff but COLLAPSED n_fired → ROLLBACK.
+    # Round 1: z_threshold 3.0, higher diff + fine n_fired → KEEP.
+    # Round 2: z_threshold 3.5, LOWER diff → ROLLBACK.
+    # Round 3: z_threshold 2.0, higher diff but COLLAPSED n_fired → ROLLBACK.
     propose_fn = _scripted_propose(
         [
-            {"path": "detectors.gap.threshold", "value": 4.0, "hypothesis": "a"},
-            {"path": "detectors.gap.threshold", "value": 4.5, "hypothesis": "b"},
-            {"path": "detectors.gap.threshold", "value": 2.5, "hypothesis": "c"},
+            {"path": "detectors.intraday_move.z_threshold", "value": 3.0, "hypothesis": "a"},
+            {"path": "detectors.intraday_move.z_threshold", "value": 3.5, "hypothesis": "b"},
+            {"path": "detectors.intraday_move.z_threshold", "value": 2.0, "hypothesis": "c"},
         ]
     )
     table = {
-        (3.0, "train"): _fit(diff=0.01),
-        (3.0, "val"): _fit(diff=0.01, n_fired=100),
-        (4.0, "train"): _fit(diff=0.02),
-        (4.0, "val"): _fit(diff=0.02, t_stat=2.0, n_fired=90),  # KEEP
-        (4.5, "train"): _fit(diff=0.005),
-        (4.5, "val"): _fit(diff=0.005, n_fired=80),  # lower diff than 0.02 → ROLLBACK
-        (2.5, "train"): _fit(diff=0.09),
-        (2.5, "val"): _fit(diff=0.09, n_fired=5),  # collapsed (< 0.5*100=50) → ROLLBACK
+        (2.5, "train"): _fit(diff=0.01),
+        (2.5, "val"): _fit(diff=0.01, n_fired=100),
+        (3.0, "train"): _fit(diff=0.02),
+        (3.0, "val"): _fit(diff=0.02, t_stat=2.0, n_fired=90),  # KEEP
+        (3.5, "train"): _fit(diff=0.005),
+        (3.5, "val"): _fit(diff=0.005, n_fired=80),  # lower diff than 0.02 → ROLLBACK
+        (2.0, "train"): _fit(diff=0.09),
+        (2.0, "val"): _fit(diff=0.09, n_fired=5),  # collapsed (< 0.5*100=50) → ROLLBACK
     }
     monkeypatch.setattr(run_mod, "scanner_fitness", _keyed_fitness(table))
 
@@ -226,8 +227,8 @@ def test_loop_keeps_higher_diff_rolls_back_lower_and_collapsed(tmp_path, monkeyp
     assert by_id["v0.0.1"]["kept"] is True
     assert by_id["v0.0.2"]["kept"] is False
     assert by_id["v0.0.3"]["kept"] is False
-    # The kept round-1 candidate (threshold 4.0) stayed the running-best.
-    assert read_version(tmp_path, "v0.0.1")["config"]["detectors"]["gap"]["threshold"] == 4.0
+    # The kept round-1 candidate (z_threshold 3.0) stayed the running-best.
+    assert read_version(tmp_path, "v0.0.1")["config"]["detectors"]["intraday_move"]["z_threshold"] == 3.0
 
 
 # ---------------------------------------------------------------------------
@@ -239,21 +240,21 @@ def test_test_sample_never_scored_in_loop(tmp_path, monkeypatch):
     base = _base_config()
     propose_fn = _scripted_propose(
         [
-            {"path": "detectors.gap.threshold", "value": 4.0, "hypothesis": "a"},
-            {"path": "detectors.gap.threshold", "value": 4.5, "hypothesis": "b"},
+            {"path": "detectors.intraday_move.z_threshold", "value": 3.0, "hypothesis": "a"},
+            {"path": "detectors.intraday_move.z_threshold", "value": 3.5, "hypothesis": "b"},
             None,  # a declined round, for good measure
-            {"path": "detectors.gap.threshold", "value": 2.5, "hypothesis": "c"},
+            {"path": "detectors.intraday_move.z_threshold", "value": 2.0, "hypothesis": "c"},
         ]
     )
     table = {
-        (3.0, "train"): _fit(diff=0.01),
-        (3.0, "val"): _fit(diff=0.01, n_fired=100),
-        (4.0, "train"): _fit(diff=0.02),
-        (4.0, "val"): _fit(diff=0.02, n_fired=90),
-        (4.5, "train"): _fit(diff=0.03),
-        (4.5, "val"): _fit(diff=0.03, n_fired=85),
-        (2.5, "train"): _fit(diff=0.04),
-        (2.5, "val"): _fit(diff=0.04, n_fired=80),
+        (2.5, "train"): _fit(diff=0.01),
+        (2.5, "val"): _fit(diff=0.01, n_fired=100),
+        (3.0, "train"): _fit(diff=0.02),
+        (3.0, "val"): _fit(diff=0.02, n_fired=90),
+        (3.5, "train"): _fit(diff=0.03),
+        (3.5, "val"): _fit(diff=0.03, n_fired=85),
+        (2.0, "train"): _fit(diff=0.04),
+        (2.0, "val"): _fit(diff=0.04, n_fired=80),
     }
     seen: list[str] = []
     monkeypatch.setattr(run_mod, "scanner_fitness", _keyed_fitness(table, record=seen))
@@ -281,16 +282,16 @@ def test_test_sample_never_scored_in_loop(tmp_path, monkeypatch):
 def test_resume_continues_counter_and_running_best(tmp_path, monkeypatch):
     base = _base_config()
 
-    # --- First run: one improving round (threshold -> 4.0, kept).
-    propose_a = _scripted_propose([{"path": "detectors.gap.threshold", "value": 4.0, "hypothesis": "run1 keep"}])
+    # --- First run: one improving round (z_threshold -> 3.0, kept).
+    propose_a = _scripted_propose([{"path": "detectors.intraday_move.z_threshold", "value": 3.0, "hypothesis": "run1 keep"}])
     table = {
-        (3.0, "train"): _fit(diff=0.01),
-        (3.0, "val"): _fit(diff=0.01, n_fired=100),
-        (4.0, "train"): _fit(diff=0.02),
-        (4.0, "val"): _fit(diff=0.02, t_stat=2.0, n_fired=90),
-        # second run proposes threshold -> 4.5
-        (4.5, "train"): _fit(diff=0.03),
-        (4.5, "val"): _fit(diff=0.03, t_stat=2.0, n_fired=85),
+        (2.5, "train"): _fit(diff=0.01),
+        (2.5, "val"): _fit(diff=0.01, n_fired=100),
+        (3.0, "train"): _fit(diff=0.02),
+        (3.0, "val"): _fit(diff=0.02, t_stat=2.0, n_fired=90),
+        # second run proposes z_threshold -> 3.5
+        (3.5, "train"): _fit(diff=0.03),
+        (3.5, "val"): _fit(diff=0.03, t_stat=2.0, n_fired=85),
     }
     monkeypatch.setattr(run_mod, "scanner_fitness", _keyed_fitness(table))
 
@@ -304,13 +305,13 @@ def test_resume_continues_counter_and_running_best(tmp_path, monkeypatch):
     assert {e["v_id"] for e in log1} == {"v0", "v0.0.1"}
 
     # --- Second run on the SAME base_dir: must RESUME.
-    # The running-best is the kept v0.0.1 (threshold 4.0), so the proposer must SEE
-    # threshold == 4.0, and the new version must be v0.0.2 (counter continued).
+    # The running-best is the kept v0.0.1 (z_threshold 3.0), so the proposer must
+    # SEE z_threshold == 3.0, and the new version must be v0.0.2 (counter continued).
     seen_thresh = []
-    inner = _scripted_propose([{"path": "detectors.gap.threshold", "value": 4.5, "hypothesis": "run2 keep"}])
+    inner = _scripted_propose([{"path": "detectors.intraday_move.z_threshold", "value": 3.5, "hypothesis": "run2 keep"}])
 
     def spy_propose(skill, config, val_history, *, llm_fn=None):
-        seen_thresh.append(config.detectors["gap"]["threshold"])
+        seen_thresh.append(config.detectors["intraday_move"]["z_threshold"])
         return inner(skill, config, val_history, llm_fn=llm_fn)
 
     log2 = evolve_scanner(
@@ -321,7 +322,7 @@ def test_resume_continues_counter_and_running_best(tmp_path, monkeypatch):
         propose_fn=spy_propose,
     )
 
-    assert seen_thresh == [4.0]  # resumed running-best, NOT base 3.0
+    assert seen_thresh == [3.0]  # resumed running-best, NOT base 2.5
     ids2 = {e["v_id"] for e in log2}
     assert "v0.0.2" in ids2
     assert sum(1 for e in log2 if e["v_id"] == "v0") <= 1  # no second baseline

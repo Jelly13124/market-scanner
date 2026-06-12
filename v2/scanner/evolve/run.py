@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 #: keep-rule guardrail constants (documented at each use in ``_scanner_keep``).
 _MIN_FIRED_ABS = 5  # absolute floor on n_fired (a config that fires almost nothing is noise)
-_T_TOL = 0.5  # how much worse the candidate t_stat may be before we reject (significance guard)
+_T_TOL = 0.5  # how much worse the candidate interestingness_t may be before we reject (significance guard)
 
 #: Prefetch padding (mirrors run_eval._LOOKBACK_DAYS / _FORWARD_DAYS). Detector
 #: lookbacks reach ~252 bars (≈ a year) → ~400d before; forward returns reach
@@ -71,17 +71,20 @@ directional or SPY-adjusted alpha.
 - `top_n` (the size of the fired watchlist).
 
 ## The objective
-Improve the A/B-vs-random forward-return `diff` on VALIDATION: the mean
-forward return of the fired Top-N MINUS a seeded random same-universe baseline.
-A bigger `diff` means the screen concentrates the universe better than chance.
+Improve the A/B-vs-random `interestingness` on VALIDATION: the mean MAGNITUDE
+(|forward return|) of the fired Top-N MINUS a seeded random same-universe
+baseline. A bigger interestingness means the screen flags BIGGER MOVERS than
+chance — which is exactly what a pre-filter should do. DIRECTION is the agent's
+job, NOT the scanner's; do not optimize the signed/directional diff (it is kept
+only as secondary colour).
 
 ## Discipline
-- A config that fires almost nothing has a meaningless `diff`; keep enough
-  tickers firing (an n_fired guardrail enforces this).
-- Don't chase a marginally higher `diff` at the cost of a collapsing t_stat —
-  the edge must stay at least roughly as significant.
-- Validation `diff` is NOT the live edge. The honest judge is the live scanner
-  forward-test; treat val as a search signal, not a verdict.
+- A config that fires almost nothing has a meaningless `interestingness`; keep
+  enough tickers firing (an n_fired guardrail enforces this).
+- Don't chase a marginally higher `interestingness` at the cost of a collapsing
+  `interestingness_t` — the edge must stay at least roughly as significant.
+- Validation `interestingness` is NOT the live edge. The honest judge is the live
+  scanner forward-test; treat val as a search signal, not a verdict.
 """
 
 
@@ -97,35 +100,39 @@ def _rebuild_scanner_config(config_dict: dict) -> ScannerEvolveConfig:
 
 
 def _scanner_keep(candidate_val: dict, best_val: dict, base_val: dict) -> bool:
-    """The scanner KEEP rule (A/B-vs-random). ``True`` → keep, else roll back.
+    """The scanner KEEP rule (A/B-vs-random, on INTERESTINGNESS). ``True`` → keep.
 
-    Reads the fitness dicts (``{fitness, diff, t_stat, n_fired, alpha_5d}``)
-    rather than the factor sharpe/turnover/drawdown. Keep iff ALL hold:
+    Keeps on the PRE-FILTER metric — ``interestingness_diff`` (magnitude vs
+    random), NOT the signed directional diff. WHY: the scanner flags movers for
+    the agent; direction is the agent's job. Reads the fitness dicts
+    (``{fitness, interestingness_diff, interestingness_t, n_fired, signed_diff,
+    signed_t, alpha_5d}``). Keep iff ALL hold:
     """
-    cand_diff = candidate_val.get("diff")
-    if cand_diff is None:
-        # No measurable edge → nothing to keep.
+    cand_int = candidate_val.get("interestingness_diff")
+    if cand_int is None:
+        # No measurable magnitude edge → nothing to keep.
         return False
 
     # n_fired guardrail: the screen must not COLLAPSE. Require at least the
     # absolute floor AND half the baseline's fired count, so a config that stops
-    # firing (and thus has a meaningless diff) is rejected.
+    # firing (and thus has a meaningless interestingness_diff) is rejected.
     base_n_fired = base_val.get("n_fired", 0)
     floor = max(_MIN_FIRED_ABS, 0.5 * base_n_fired)
     if candidate_val.get("n_fired", 0) < floor:
         return False
 
-    # fitness improves: the candidate's diff must strictly beat the running-best
-    # (a None best diff degrades to -inf so any real diff clears it).
-    best_diff = best_val.get("diff")
-    best_diff = float("-inf") if best_diff is None else best_diff
-    if not (cand_diff > best_diff):
+    # fitness improves: the candidate's interestingness_diff must strictly beat
+    # the running-best (a None best degrades to -inf so any real value clears it).
+    best_int = best_val.get("interestingness_diff")
+    best_int = float("-inf") if best_int is None else best_int
+    if not (cand_int > best_int):
         return False
 
-    # t_stat guardrail: the edge may not become MEANINGFULLY less significant.
-    # Reject if the candidate t_stat is worse than the running-best's by > _T_TOL.
-    best_t = best_val.get("t_stat", float("-inf"))
-    if candidate_val.get("t_stat", 0) < best_t - _T_TOL:
+    # significance guardrail: the magnitude edge may not become MEANINGFULLY less
+    # significant. Reject if the candidate interestingness_t is worse than the
+    # running-best's by > _T_TOL.
+    best_t = best_val.get("interestingness_t", float("-inf"))
+    if candidate_val.get("interestingness_t", 0) < best_t - _T_TOL:
         return False
 
     return True
@@ -344,7 +351,12 @@ def main(argv=None, *, prefetch_fn=None, spy_fetch_fn=None, propose_fn=None, llm
         test_metrics=test_metrics,
         generated_at=generated_at,
     )
-    logger.info("report written: %s + %s | test diff=%s", md_path, html_path, test_metrics.get("diff"))
+    logger.info(
+        "report written: %s + %s | test interestingness_diff=%s",
+        md_path,
+        html_path,
+        test_metrics.get("interestingness_diff"),
+    )
     print(str(md_path))
     return 0
 

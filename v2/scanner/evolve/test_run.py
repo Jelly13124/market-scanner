@@ -64,7 +64,21 @@ def _scripted_propose(deltas):
 
 
 def _fit(*, diff, t_stat=2.0, n_fired=100, alpha_5d=None):
-    return {"fitness": diff, "diff": diff, "t_stat": t_stat, "n_fired": n_fired, "alpha_5d": alpha_5d}
+    """A scanner_fitness dict keyed by the INTERESTINGNESS metric.
+
+    ``diff`` here is the PRIMARY interestingness_diff (the keep rule's driver),
+    and ``t_stat`` is interestingness_t. A signed-diff colour pair is carried
+    along too so the dict mirrors the real shape.
+    """
+    return {
+        "fitness": diff,
+        "interestingness_diff": diff,
+        "interestingness_t": t_stat,
+        "n_fired": n_fired,
+        "signed_diff": diff,
+        "signed_t": t_stat,
+        "alpha_5d": alpha_5d,
+    }
 
 
 def _keyed_fitness(table, *, default=None, record=None):
@@ -135,8 +149,8 @@ def test_scanner_keep_worse_t_stat_rolled_back():
     assert _scanner_keep(cand, best, base) is False
 
 
-def test_scanner_keep_none_diff_rolled_back():
-    assert _scanner_keep({"diff": None, "n_fired": 100}, _fit(diff=0.0), _fit(diff=0.0)) is False
+def test_scanner_keep_none_interestingness_rolled_back():
+    assert _scanner_keep({"interestingness_diff": None, "n_fired": 100}, _fit(diff=0.0), _fit(diff=0.0)) is False
 
 
 # ---------------------------------------------------------------------------

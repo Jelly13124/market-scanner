@@ -8,20 +8,24 @@ user reads this to understand what the loop did and whether to believe it.
 
 THE FRAMING (load-bearing)
 --------------------------
-A higher VALIDATION ``diff`` is a SEARCH SIGNAL, not proven edge. Self-evolution
+The PRIMARY metric is INTERESTINGNESS (magnitude vs random): the scanner is an
+LLM-cost PRE-FILTER, so it is graded on flagging stocks that MOVE more than
+chance — direction is the agent's job. A higher VALIDATION
+``interestingness_diff`` is a SEARCH SIGNAL, not proven edge. Self-evolution
 optimizes within the bounded detector-threshold space — it can find a config that
 screens the universe better than chance on the regimes it saw, but it does NOT
 create edge that wasn't reachable in that space. The held-out ``test`` sample is a
 SINGLE read, and even that is not the verdict: the LIVE scanner forward-test is.
-The honest-caveat block states this plainly and is REQUIRED.
+The signed/directional ``signed_diff`` is rendered only as secondary colour. The
+honest-caveat block states this plainly and is REQUIRED.
 
 A NOTE ON val metrics (load-bearing)
 ------------------------------------
 The loop's ``path_log`` hardcodes ``val_sharpe = val_m.get("sharpe")``, which is
-``None`` for scanner metrics. So the per-round val numbers (``diff`` / ``n_fired``
-/ ``t_stat``) are read from each round's ``read_version(...)["val_metrics"]`` —
-NOT from the path log. The path log is used only for the ``v_id`` order + the
-``kept`` flags.
+``None`` for scanner metrics. So the per-round val numbers
+(``interestingness_diff`` / ``n_fired`` / ``interestingness_t`` / ``signed_diff``)
+are read from each round's ``read_version(...)["val_metrics"]`` — NOT from the
+path log. The path log is used only for the ``v_id`` order + the ``kept`` flags.
 
 Pure rendering: deterministic, ``generated_at`` is an argument (this module never
 calls ``datetime.now()``), and it never raises on a partially-populated store
@@ -132,24 +136,25 @@ def _render_path_table(base_dir, path_log: list[dict]) -> list[str]:
     whose ``val_sharpe`` is ``None`` for scanner metrics).
     """
     lines = ["## Optimization path", ""]
-    lines.append("Per round: validation A/B-vs-random `diff` (vs a seeded random " "same-universe baseline), `n_fired`, `t_stat`, kept/rolled-back, and the " "hypothesis. Validation `diff` is a SEARCH signal, not proven edge.")
+    lines.append("Per round: validation A/B-vs-random `interestingness` (mean |forward " "return| of the fired Top-N MINUS a seeded random same-universe baseline — " "the PRE-FILTER metric), `n_fired`, `interestingness_t`, then `signed_diff` " "as secondary directional colour, kept/rolled-back, and the hypothesis. " "Validation `interestingness` is a SEARCH signal, not proven edge.")
     lines.append("")
-    lines.append("| Version | val diff | n_fired | t_stat | Outcome | Hypothesis |")
-    lines.append("|---|---|---|---|---|---|")
+    lines.append("| Version | val interestingness | n_fired | int_t | signed_diff | Outcome | Hypothesis |")
+    lines.append("|---|---|---|---|---|---|---|")
     for entry in path_log:
         v_id = entry.get("v_id", "?")
         val = _val_of(base_dir, v_id)
         cells = [
             str(v_id),
-            _fmt_diff(val.get("diff")),
+            _fmt_diff(val.get("interestingness_diff")),
             _fmt_int(val.get("n_fired")),
-            _fmt_t(val.get("t_stat")),
+            _fmt_t(val.get("interestingness_t")),
+            _fmt_diff(val.get("signed_diff")),
             _kept_mark(entry.get("kept")),
             str(entry.get("hypothesis", "") or "—"),
         ]
         lines.append("| " + " | ".join(cells) + " |")
     if not path_log:
-        lines.append("| _no versions recorded_ | — | — | — | — | — |")
+        lines.append("| _no versions recorded_ | — | — | — | — | — | — |")
     lines.append("")
     return lines
 
@@ -197,9 +202,9 @@ def _render_retained_config(base_dir, path_log: list[dict]) -> list[str]:
 
 
 def _render_test_verdict(test_metrics: dict | None) -> list[str]:
-    """The single post-loop held-out TEST read (``diff`` / ``t_stat`` / ``n_fired`` / ``alpha_5d``)."""
+    """The single post-loop held-out TEST read (interestingness primary; signed colour)."""
     lines = ["## Held-out TEST verdict", ""]
-    lines.append("The retained-best config scored ONCE on the held-out `test` sample " "(read exactly once, post-loop — never inside the search loop).")
+    lines.append("The retained-best config scored ONCE on the held-out `test` sample " "(read exactly once, post-loop — never inside the search loop). The PRIMARY " "metric is interestingness (magnitude vs random — the pre-filter metric); " "signed/directional alpha is secondary colour.")
     lines.append("")
     if not test_metrics:
         lines.append("_n/a — no test metrics supplied_")
@@ -207,9 +212,10 @@ def _render_test_verdict(test_metrics: dict | None) -> list[str]:
         return lines
     lines.append("| Metric | Value |")
     lines.append("|---|---|")
-    lines.append(f"| diff (A/B vs random) | {_fmt_diff(test_metrics.get('diff'))} |")
-    lines.append(f"| t_stat | {_fmt_t(test_metrics.get('t_stat'))} |")
+    lines.append(f"| interestingness (A/B vs random, magnitude) | {_fmt_diff(test_metrics.get('interestingness_diff'))} |")
+    lines.append(f"| interestingness_t | {_fmt_t(test_metrics.get('interestingness_t'))} |")
     lines.append(f"| n_fired | {_fmt_int(test_metrics.get('n_fired'))} |")
+    lines.append(f"| signed_diff (directional colour) | {_fmt_diff(test_metrics.get('signed_diff'))} |")
     lines.append(f"| alpha_5d (vs SPY) | {_fmt_pct(test_metrics.get('alpha_5d'))} |")
     lines.append("")
     return lines
@@ -220,7 +226,7 @@ def _render_caveats() -> list[str]:
     return [
         "## Honest caveats",
         "",
-        "- **Validation improvement is NOT proven edge.** A higher val `diff` means " "the search found a config that screened the regimes it SAW better than " "random — that is a search signal, not a verdict.",
+        "- **Validation improvement is NOT proven edge.** A higher val " "`interestingness` means the search found a config that flagged bigger " "movers in the regimes it SAW than random — that is a search signal, not a " "verdict. (The scanner is a pre-filter; direction is the agent's job, so the " "signed diff is only secondary colour.)",
         "- **The held-out TEST is a single read.** One number on one held-out span " "is weak evidence; it can be lucky. It bounds, but does not confirm, the edge.",
         "- **Three regimes is thin.** train+val span only bear/bull/choppy windows; " "a config tuned across three regimes can still fail to generalize.",
         "- **Self-evolution does not create edge.** It optimizes WITHIN the bounded " "threshold space; if no threshold setting screens better than chance, the " "loop cannot manufacture one.",
@@ -246,7 +252,7 @@ def render_report(base_dir, *, test_metrics: dict | None, generated_at: str | No
     lines: list[str] = []
     lines.append("# Scanner self-evolve — run report")
     lines.append("")
-    lines.append("Self-evolve tuned the price-only scanner's detector thresholds against " "an A/B-vs-random forward-return `diff` on **train+val**, then read the " "held-out **test** sample exactly once. The fixed kernel " "(`event_weight=1.0`, `quant_weight=0.0`) is never touched. " f"Generated at: {generated_at or '(pending)'}.")
+    lines.append("Self-evolve tuned the price-only scanner's detector thresholds against " "an A/B-vs-random `interestingness` (magnitude vs random — the PRE-FILTER " "metric, since direction is the agent's job) on **train+val**, then read the " "held-out **test** sample exactly once. The fixed kernel " "(`event_weight=1.0`, `quant_weight=0.0`) is never touched. " f"Generated at: {generated_at or '(pending)'}.")
     lines.append("")
 
     lines.extend(_render_path_table(base_dir, path_log))

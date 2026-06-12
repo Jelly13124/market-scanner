@@ -16,7 +16,7 @@ What this proves end-to-end:
 1. **Report exists** — both the ``.md`` AND the ``.html`` run-report files are
    written.
 2. **Test verdict renders** — the post-loop ``scanner_fitness("test")`` numbers
-   (the ``diff`` / ``n_fired``) appear in BOTH rendered outputs.
+   (the ``interestingness`` / ``n_fired``) appear in BOTH rendered outputs.
 3. **Optimization path / retained config present** — the report carries the
    path table + a retained config block.
 4. **Sample isolation (invariant #1) end-to-end** — across the loop's fitness

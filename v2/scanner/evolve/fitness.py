@@ -234,12 +234,20 @@ def scanner_fitness(
     date inside ``window_of(sample)``, no-lookahead (detectors see only
     ``<= asof``). For every fired ticker it accumulates the ``horizon``-bar
     forward return; a seeded random same-universe baseline is accumulated in
-    parallel. Fitness is the A-minus-baseline diff from
-    :func:`~v2.scanner.eval.detector_ab.evaluate_detector`.
+    parallel.
 
-    Returns ``{"fitness", "diff", "t_stat", "n_fired", "alpha_5d"}``. Never
-    raises on bad data: a config that fires nothing → graceful zero edge; a
-    bundle with too few bars simply contributes no fired return.
+    The PRIMARY metric is INTERESTINGNESS (magnitude vs random): the mean
+    |forward return| of the fired Top-N MINUS the random baseline's. WHY: the
+    scanner is an LLM-cost PRE-FILTER — its job is to flag stocks that will MOVE
+    more than chance so the agent spends its budget on them; DIRECTION is the
+    agent's job, not the scanner's. The SIGNED diff (mean signed return vs
+    baseline) is retained only as secondary directional colour.
+
+    Returns ``{"fitness", "interestingness_diff", "interestingness_t",
+    "n_fired", "signed_diff", "signed_t", "alpha_5d"}`` where ``fitness ==
+    interestingness_diff``. Never raises on bad data: a config that fires nothing
+    → graceful zero edge; a bundle with too few bars simply contributes no fired
+    return.
 
     ``cache`` is an OPTIONAL ``{ticker: parsed_series}`` dict for the
     forward-return path: each bundle's ascending closes + time→idx map is parsed
@@ -324,16 +332,26 @@ def scanner_fitness(
     )
 
     if metrics["n_fired"] == 0:
-        return {"fitness": 0.0, "diff": 0.0, "t_stat": 0.0, "n_fired": 0, "alpha_5d": None}
+        return {
+            "fitness": 0.0,
+            "interestingness_diff": 0.0,
+            "interestingness_t": 0.0,
+            "n_fired": 0,
+            "signed_diff": 0.0,
+            "signed_t": 0.0,
+            "alpha_5d": None,
+        }
 
     alpha_5d = None
     if spy_bundle is not None:
         alpha_5d = sum(alpha_accum) / len(alpha_accum) if alpha_accum else None
 
     return {
-        "fitness": metrics["diff"],
-        "diff": metrics["diff"],
-        "t_stat": metrics["t_stat"],
+        "fitness": metrics["interestingness_diff"],  # PRIMARY = the pre-filter metric
+        "interestingness_diff": metrics["interestingness_diff"],
+        "interestingness_t": metrics["interestingness_t"],
         "n_fired": metrics["n_fired"],
+        "signed_diff": metrics["diff"],  # SECONDARY (directional colour, retained)
+        "signed_t": metrics["t_stat"],
         "alpha_5d": alpha_5d,
     }

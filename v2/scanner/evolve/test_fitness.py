@@ -143,11 +143,23 @@ def test_contract_keys_and_types():
     window = [(_iso(_START, break_idx), _iso(_START, break_idx))]
     out = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
 
-    assert set(out) == {"fitness", "diff", "t_stat", "n_fired", "alpha_5d"}
+    assert set(out) == {
+        "fitness",
+        "interestingness_diff",
+        "interestingness_t",
+        "n_fired",
+        "signed_diff",
+        "signed_t",
+        "alpha_5d",
+    }
     assert isinstance(out["fitness"], float)
-    assert isinstance(out["diff"], float)
-    assert isinstance(out["t_stat"], float)
+    assert isinstance(out["interestingness_diff"], float)
+    assert isinstance(out["interestingness_t"], float)
+    assert isinstance(out["signed_diff"], float)
+    assert isinstance(out["signed_t"], float)
     assert isinstance(out["n_fired"], int)
+    # PRIMARY fitness IS the interestingness (magnitude vs random) metric.
+    assert out["fitness"] == out["interestingness_diff"]
     assert out["alpha_5d"] is None  # no spy_bundle
 
 
@@ -174,8 +186,10 @@ def test_nothing_fires_is_graceful():
     out = scanner_fitness(bundles, cfg, "val", window_of=lambda s: window)
     assert out["n_fired"] == 0
     assert out["fitness"] == 0.0
-    assert out["diff"] == 0.0
-    assert out["t_stat"] == 0.0
+    assert out["interestingness_diff"] == 0.0
+    assert out["interestingness_t"] == 0.0
+    assert out["signed_diff"] == 0.0
+    assert out["signed_t"] == 0.0
     assert out["alpha_5d"] is None
 
 

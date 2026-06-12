@@ -1,5 +1,9 @@
 """Fire-threshold sweep measurement — the fire-rate vs interestingness trade-off.
 
+NOTE (2026-06-12): the ``gap`` arm is INOPERATIVE — ``GapDetector`` was deleted,
+so importing/running it here raises ``ImportError`` (expected). This script is
+retained for provenance of the findings_scanner_round2.md gap-sweep result.
+
 MEASUREMENT ONLY — this changes NO production code (no detector change). The
 scene: ``gap`` fires on ~55% of ticker-days and ``rsi_divergence`` on ~24%. At
 those rates a detector's "fired" set is essentially the whole population, so its

@@ -81,7 +81,14 @@ DETECTOR_METADATA: dict[str, dict] = {
     "earnings_event": {
         "label": "Earnings Event",
         "default_mult": 1.20,
-        "description": ("Unified earnings catalyst window: fires 5 business days BEFORE a " "scheduled report (severity ramps 1→5 by proximity, direction " "neutral) OR up to 5 business days AFTER a filing (severity z-scored " "vs trailing 4 quarters' surprises, direction bullish on BEAT / " "bearish on MISS). Components include signed biz_days_to_event " "(negative = future, positive = past) and a phase flag."),
+        "description": (
+            "Unified earnings catalyst window: fires 5 business days BEFORE a "
+            "scheduled report (severity ramps 1→5 by proximity, direction "
+            "neutral) OR up to 5 business days AFTER a filing (severity z-scored "
+            "vs trailing 4 quarters' surprises, direction bullish on BEAT / "
+            "bearish on MISS). Components include signed biz_days_to_event "
+            "(negative = future, positive = past) and a phase flag."
+        ),
     },
     "insider_cluster": {
         "label": "Insider Cluster",
@@ -111,12 +118,22 @@ DETECTOR_METADATA: dict[str, dict] = {
     "rsi_divergence": {
         "label": "RSI Divergence",
         "default_mult": 1.00,
-        "description": ("Classic price-vs-RSI(14) divergence over a 40-bar window split into " "two 20-bar halves. Bearish: recent price high > older price high BUT " "RSI at that high is lower. Bullish: recent price low < older price low " "BUT RSI at that low is higher. Severity = RSI gap / 10, capped at 8."),
+        "description": (
+            "Classic price-vs-RSI(14) divergence over a 40-bar window split into "
+            "two 20-bar halves. Bearish: recent price high > older price high BUT "
+            "RSI at that high is lower. Bullish: recent price low < older price low "
+            "BUT RSI at that low is higher. Severity = RSI gap / 10, capped at 8."
+        ),
     },
     "ma_cross": {
         "label": "Golden/Death Cross",
         "default_mult": 1.00,
-        "description": ("Fires on the day SMA(50) crosses SMA(200). Golden cross (SMA50 crosses " "above SMA200) → bullish; death cross (SMA50 crosses below SMA200) → bearish. " "Requires ≥202 bars. Severity is fixed at 2.0 — a cross is a binary regime " "event, not a z-scored quantity; no std divisor is used."),
+        "description": (
+            "Fires on the day SMA(50) crosses SMA(200). Golden cross (SMA50 crosses "
+            "above SMA200) → bullish; death cross (SMA50 crosses below SMA200) → bearish. "
+            "Requires ≥202 bars. Severity is fixed at 2.0 — a cross is a binary regime "
+            "event, not a z-scored quantity; no std divisor is used."
+        ),
     },
 }
 

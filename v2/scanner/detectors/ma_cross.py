@@ -31,9 +31,9 @@ from v2.scanner.models import ScanContext
 
 _FAST = 50
 _SLOW = 200
-_MIN_BARS = _SLOW + 2   # 202: 200 for SMA200 + today + yesterday
-_LOOKBACK_DAYS = 400    # calendar-day buffer; yields ≥ 202 trading bars
-_SEVERITY = 2.0         # fixed categorical magnitude — no z-divisor
+_MIN_BARS = _SLOW + 2  # 202: 200 for SMA200 + today + yesterday
+_LOOKBACK_DAYS = 400  # calendar-day buffer; yields ≥ 202 trading bars
+_SEVERITY = 2.0  # fixed categorical magnitude — no z-divisor
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,18 @@ class MaCrossDetector(EventDetector):
     """Trigger on the day SMA50 crosses above (golden) or below (death) SMA200."""
 
     name = "ma_cross"
+
+    def __init__(
+        self,
+        *,
+        fast: int = _FAST,
+        slow: int = _SLOW,
+        lookback_days: int = _LOOKBACK_DAYS,
+    ) -> None:
+        self._fast = fast
+        self._slow = slow
+        self._lookback = lookback_days
+        self._min_bars = slow + 2
 
     def detect(
         self,
@@ -55,14 +67,14 @@ class MaCrossDetector(EventDetector):
         if today_date is None:
             return None
 
-        start = (today_date - timedelta(days=_LOOKBACK_DAYS)).isoformat()
+        start = (today_date - timedelta(days=self._lookback)).isoformat()
         try:
             prices = fd.get_prices(ticker, start, end_date)
         except Exception as e:
             logger.debug("ma_cross: get_prices(%s) failed: %s", ticker, e)
             return None
 
-        if not prices or len(prices) < _MIN_BARS:
+        if not prices or len(prices) < self._min_bars:
             return None
 
         prices_sorted = sorted(prices, key=lambda p: p.time[:10])
@@ -74,10 +86,10 @@ class MaCrossDetector(EventDetector):
         # SMA windows:
         #   Today:     closes[-FAST:]   and closes[-SLOW:]
         #   Yesterday: closes[-FAST-1:-1] and closes[-SLOW-1:-1]
-        sma_fast_today = float(closes[-_FAST:].mean())
-        sma_slow_today = float(closes[-_SLOW:].mean())
-        sma_fast_yest = float(closes[-_FAST - 1 : -1].mean())
-        sma_slow_yest = float(closes[-_SLOW - 1 : -1].mean())
+        sma_fast_today = float(closes[-self._fast :].mean())
+        sma_slow_today = float(closes[-self._slow :].mean())
+        sma_fast_yest = float(closes[-self._fast - 1 : -1].mean())
+        sma_slow_yest = float(closes[-self._slow - 1 : -1].mean())
 
         components: dict[str, float] = {
             "sma_fast_today": sma_fast_today,
@@ -90,10 +102,7 @@ class MaCrossDetector(EventDetector):
         death = sma_fast_yest >= sma_slow_yest and sma_fast_today < sma_slow_today
 
         if golden:
-            reason = (
-                f"golden cross: SMA{_FAST} {sma_fast_today:.4f} > SMA{_SLOW} {sma_slow_today:.4f} "
-                f"(yesterday SMA{_FAST} {sma_fast_yest:.4f} <= SMA{_SLOW} {sma_slow_yest:.4f})"
-            )
+            reason = f"golden cross: SMA{self._fast} {sma_fast_today:.4f} > SMA{self._slow} {sma_slow_today:.4f} " f"(yesterday SMA{self._fast} {sma_fast_yest:.4f} <= SMA{self._slow} {sma_slow_yest:.4f})"
             return EventTrigger(
                 detector=self.name,
                 triggered=True,
@@ -105,10 +114,7 @@ class MaCrossDetector(EventDetector):
             )
 
         if death:
-            reason = (
-                f"death cross: SMA{_FAST} {sma_fast_today:.4f} < SMA{_SLOW} {sma_slow_today:.4f} "
-                f"(yesterday SMA{_FAST} {sma_fast_yest:.4f} >= SMA{_SLOW} {sma_slow_yest:.4f})"
-            )
+            reason = f"death cross: SMA{self._fast} {sma_fast_today:.4f} < SMA{self._slow} {sma_slow_today:.4f} " f"(yesterday SMA{self._fast} {sma_fast_yest:.4f} >= SMA{self._slow} {sma_slow_yest:.4f})"
             return EventTrigger(
                 detector=self.name,
                 triggered=True,
@@ -119,10 +125,7 @@ class MaCrossDetector(EventDetector):
                 asof_date=end_date,
             )
 
-        reason = (
-            f"no cross: SMA{_FAST} {sma_fast_today:.4f} vs SMA{_SLOW} {sma_slow_today:.4f} "
-            f"(yesterday {sma_fast_yest:.4f} vs {sma_slow_yest:.4f})"
-        )
+        reason = f"no cross: SMA{self._fast} {sma_fast_today:.4f} vs SMA{self._slow} {sma_slow_today:.4f} " f"(yesterday {sma_fast_yest:.4f} vs {sma_slow_yest:.4f})"
         return EventTrigger(
             detector=self.name,
             triggered=False,

@@ -24,9 +24,17 @@ Ran the re-scoped baseline `intraday_move` config over 30 nasdaq100/sp500 ticker
 | val (choppy) | **+2.73pp** | **+3.73** | 73 |
 (raw/no-SPY nearly identical: +1.40pp t=4.85 / +2.95pp t=4.35.) So the scanner pre-filter backtest is **positive + significant** — intraday_move flags stocks that move ~1.4–2.7pp MORE than random over 5d. signed_diff is weak/mixed (it's a mover-flagger, not a direction predictor — direction is the agent's job). Re-scope validated.
 
-### Cleanup + open
-- ③ done: removed the inoperative gap arm (`main()`) from `scripts/eval_threshold_sweep.py` (commit `98d5493`); kept the generic offline-tested sweep harness.
-- Still no full *evolve* run executed; with effectively ONE strong tunable detector (intraday_move, ~7 knobs) the self-evolve ROI is modest — a manual threshold sweep may be competitive. The LIVE scanner forward-test remains the real judge.
+### Real evolve run + OOS comparison (CONFIRMED evolution helped)
+Ran the bounded evolve CLI (`--max-tickers 40 --iterations 12`, commit `2e24376` added the flag; DeepSeek-via-SiliconFlow proposer). 5 of 12 single-field deltas kept → retained **v0.0.9**: `close_vs_open_pct=0.05, gap_pct=0.04, z_threshold=3.5, z_window=90` (range_pct/top_n/severity unchanged). val interestingness +2.81pp → **+4.67pp** (t 4.29→5.70). The LLM consistently tightened thresholds + lengthened z_window (keep only more extreme movers) — sensible.
+
+Then `scripts/compare_evolved_vs_baseline_test.py` (commit `98748ad`) scored BOTH baseline v0 and evolved v0.0.9 on the held-out **test** (legitimate — selection was on val only):
+| config | val | test |
+|---|---|---|
+| baseline v0 | +2.81pp (t=4.29) | **+1.31pp (t=3.16)** |
+| evolved v0.0.9 | +4.67pp (t=5.70) | **+2.37pp (t=4.11)** |
+**OOS net delta = +1.06pp** (test 1.31→2.37, ~+80% relative, t 3.16→4.11). Determinism self-check passed (evolved-test reproduced +2.37pp, baseline-val +2.81pp). The val→test shrinkage hits BOTH configs (period difference, not pure overfit); the evolved config's relative edge survives OOS. Caveat: n=1 held-out window / 40-ticker universe / 3 thin regimes — the LIVE forward-test is still the real judge, but evidence now points to evolution helping, not just baseline positivity.
+
+Run artifacts in `scanner_evolve_run/` (version store + md/html report), untracked. `③` done earlier (commit `98d5493`: removed the inoperative gap arm from `scripts/eval_threshold_sweep.py`, kept the generic offline-tested harness).
 
 ## Session — 2026-06-11/12 (Scanner Self-Evolve — detector-threshold auto-tuning)
 

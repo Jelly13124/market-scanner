@@ -32,7 +32,17 @@ Then `scripts/compare_evolved_vs_baseline_test.py` (commit `98748ad`) scored BOT
 |---|---|---|
 | baseline v0 | +2.81pp (t=4.29) | **+1.31pp (t=3.16)** |
 | evolved v0.0.9 | +4.67pp (t=5.70) | **+2.37pp (t=4.11)** |
-**OOS net delta = +1.06pp** (test 1.31→2.37, ~+80% relative, t 3.16→4.11). Determinism self-check passed (evolved-test reproduced +2.37pp, baseline-val +2.81pp). The val→test shrinkage hits BOTH configs (period difference, not pure overfit); the evolved config's relative edge survives OOS. Caveat: n=1 held-out window / 40-ticker universe / 3 thin regimes — the LIVE forward-test is still the real judge, but evidence now points to evolution helping, not just baseline positivity.
+**OOS net delta = +1.06pp** (test 1.31→2.37, ~+80% relative, t 3.16→4.11). Determinism self-check passed (evolved-test reproduced +2.37pp, baseline-val +2.81pp).
+
+**Multi-window robustness** (`scripts/multi_window_oos.py`, commit `947a5c8`): scored both configs on 4 disjoint held-out windows (none used in train/val or selection):
+| window | baseline | evolved | delta |
+|---|---|---|---|
+| 2021_bull | +1.66pp (t=4.79) | +2.18pp (t=4.63) | +0.52 |
+| 2023_h1 | +2.17pp (t=4.10) | +3.07pp (t=4.25) | +0.90 |
+| 2024h2_25h1 | +1.53pp (t=1.66) | +1.07pp (t=1.31) | −0.47 |
+| heldout_test | +1.31pp (t=3.16) | +2.37pp (t=4.11) | +1.06 |
+
+**Two findings:** (1) the baseline scanner pre-filter is positive in ALL 4 held-out windows (robust across regimes) — the original "is the backtest positive?" is firmly YES. (2) Evolution helps 3/4 windows, mean **+0.50pp** (the single +1.06pp test was the favorable end); the one loss (2024h2_25h1, −0.47pp) is a low-signal window where BOTH configs are insignificant (t<1.7). Net: threshold-evolution gives a small, mostly-positive OOS bump — modest, not transformative (matches the small-search-space expectation). LIVE forward-test is still the real judge.
 
 Run artifacts in `scanner_evolve_run/` (version store + md/html report), untracked. `③` done earlier (commit `98d5493`: removed the inoperative gap arm from `scripts/eval_threshold_sweep.py`, kept the generic offline-tested harness).
 

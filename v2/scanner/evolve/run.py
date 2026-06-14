@@ -289,6 +289,7 @@ def main(argv=None, *, prefetch_fn=None, spy_fetch_fn=None, propose_fn=None, llm
     parser = argparse.ArgumentParser(description="Self-evolve the price-only scanner (detector thresholds), then read the held-out test sample once.")
     parser.add_argument("--iterations", type=int, default=10, help="Number of propose->evaluate rounds.")
     parser.add_argument("--universe", default="nasdaq100_sp500", help="Universe kind to evolve over.")
+    parser.add_argument("--max-tickers", type=int, default=None, help="Cap the universe to the first N tickers (bounded runs).")
     parser.add_argument("--out-dir", default="scanner_evolve_run", help="Version store + summary directory.")
     args = parser.parse_args(argv)
 
@@ -316,6 +317,8 @@ def main(argv=None, *, prefetch_fn=None, spy_fetch_fn=None, propose_fn=None, llm
 
             def prefetch_fn(start, end):
                 tickers = load_universe(args.universe)
+                if args.max_tickers is not None:
+                    tickers = tickers[: args.max_tickers]
                 return run_eval.prefetch_price_bundles(tickers, provider_factory, start, end)
 
         if spy_fetch_fn is None:

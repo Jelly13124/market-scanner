@@ -8,6 +8,9 @@ sleeve answers a single question: "which tickers should we hold this week?"
 - ``spy_benchmark``: ignore the scan and hold ``SPY``.
 - ``factor_evolved``: ignore the scanner; hold the best self-evolved factor
   config's book (the injected ``factor_fn`` returns its ticker list).
+- ``scanner_evolved``: like ``scanner_only`` (picks taken straight, long all)
+  but driven by the injected ``run_scan_evolved_fn`` — the full scanner basket
+  with the evolved intraday_move thresholds swapped in.
 
 This module is intentionally decoupled from the real scanner and agent: both
 are passed in as injected seam functions so the logic is unit-testable offline
@@ -24,6 +27,9 @@ Seam contracts (injected by the caller):
 - ``factor_fn(scan_date: str) -> list[str]``
       The ticker book of the best self-evolved factor config (see
       :mod:`v2.self_evolve.graduate`). Used only by ``factor_evolved``.
+- ``run_scan_evolved_fn(scan_date: str, top_n: int) -> list[str]``
+      Same shape as ``run_scan_fn`` but driven by the evolved scanner basket
+      (see :mod:`v2.scanner.evolve.graduate`). Used only by ``scanner_evolved``.
 
 Invariant: ``compute_targets`` NEVER raises. Any missing data or seam failure
 collapses to "no conviction this week" (``[]``); ``spy_benchmark`` always
@@ -46,7 +52,7 @@ logger = logging.getLogger(__name__)
 # ``factor_evolved`` is the graduation sleeve: it ignores the scanner/agent and
 # instead holds the book of the best self-evolved factor config (via the injected
 # ``factor_fn``), forward-testing the self-evolve loop's output against the rest.
-SLEEVE_NAMES: tuple[str, ...] = ("scanner_agent", "scanner_only", "spy_benchmark", "scanner_agent_flow", "factor_evolved")
+SLEEVE_NAMES: tuple[str, ...] = ("scanner_agent", "scanner_only", "spy_benchmark", "scanner_agent_flow", "factor_evolved", "scanner_evolved")
 
 
 def active_sleeves() -> tuple[str, ...]:
@@ -113,6 +119,7 @@ def compute_targets(
     run_scan_fn: RunScanFn,
     agent_fn: AgentFn | None = None,
     factor_fn: FactorFn | None = None,
+    run_scan_evolved_fn: RunScanFn | None = None,
     top_n: int = 5,
 ) -> list[str]:
     """Return the long target tickers for ``sleeve_name`` on ``scan_date``.
@@ -125,6 +132,8 @@ def compute_targets(
             by the other sleeves.
         factor_fn: Injected self-evolved factor seam. Required for
             ``factor_evolved``; ignored by the other sleeves.
+        run_scan_evolved_fn: Injected evolved-scanner seam. Required for
+            ``scanner_evolved``; ignored by the other sleeves.
         top_n: Max number of ranked picks to request from the scan.
 
     Returns:
@@ -154,6 +163,18 @@ def compute_targets(
 
     if sleeve_name == "scanner_only":
         return _safe_scan(run_scan_fn, scan_date, top_n)
+
+    if sleeve_name == "scanner_evolved":
+        # Like scanner_only (picks taken straight, long all) but driven by the
+        # evolved scanner basket — the full ALL_DETECTORS set with the tuned
+        # intraday_move thresholds swapped in (see v2.scanner.evolve.graduate).
+        if run_scan_evolved_fn is None:
+            logger.warning(
+                "scanner_evolved sleeve called without run_scan_evolved_fn for scan_date=%s; treating as no conviction",
+                scan_date,
+            )
+            return []
+        return _safe_scan(run_scan_evolved_fn, scan_date, top_n)
 
     if sleeve_name in ("scanner_agent", "scanner_agent_flow"):
         # Identical logic for both: the flow difference is the runner toggling

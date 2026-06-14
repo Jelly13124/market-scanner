@@ -65,14 +65,16 @@ def week_key_for(scan_date: str) -> str:
 
 
 def _live_seams(*, universe: str, model: str, provider: str):
-    """Bind the scan / agent / factor / price seams to the LIVE (paid) functions.
+    """Bind the scan / agent / factor / evolved-scan / price seams to the LIVE functions.
 
-    Returns ``(run_scan_fn, agent_fn, factor_fn, price_fn, universe_tickers)``.
-    Imports are deferred to here so importing this module (and running
-    ``--report``) never drags in the scanner/agent/data/self-evolve stack.
+    Returns ``(run_scan_fn, agent_fn, factor_fn, run_scan_evolved_fn, price_fn,
+    universe_tickers)``. Imports are deferred to here so importing this module
+    (and running ``--report``) never drags in the scanner/agent/data/self-evolve
+    stack.
     """
     from v2.data.factory import get_provider_factory
     from v2.pipeline.orchestrator import run_agents_only
+    from v2.scanner.evolve.graduate import build_scanner_evolved_fn
     from v2.scanner.runner import run_scan
     from v2.scanner.universes.loader import load_universe
     from v2.self_evolve.graduate import build_factor_fn
@@ -104,11 +106,16 @@ def _live_seams(*, universe: str, model: str, provider: str):
     # over the SAME universe/provider as the scanner so the A/B is apples-to-apples.
     factor_fn = build_factor_fn(provider_factory, universe_tickers)
 
+    # scanner_evolved sleeve: the FULL scanner basket with the evolved
+    # intraday_move thresholds swapped in. Same universe/provider as scanner_only
+    # so the A/B isolates the tuned thresholds.
+    run_scan_evolved_fn = build_scanner_evolved_fn(provider_factory, universe_tickers)
+
     def price_fn(ticker: str) -> float | None:
         """Latest close via the data layer (best-effort, None on failure)."""
         return _latest_close(ticker, provider_factory)
 
-    return run_scan_fn, agent_fn, factor_fn, price_fn, universe_tickers
+    return run_scan_fn, agent_fn, factor_fn, run_scan_evolved_fn, price_fn, universe_tickers
 
 
 def _latest_close(ticker: str, provider_factory, *, asof: str | None = None) -> float | None:
@@ -152,6 +159,7 @@ def run_once(
     agent_fn,
     price_fn,
     factor_fn=None,
+    run_scan_evolved_fn=None,
     scan_date: str,
     week_key: str,
     top_n: int = DEFAULT_TOP_N,
@@ -204,6 +212,7 @@ def run_once(
                     run_scan_fn=run_scan_fn,
                     agent_fn=agent_fn,
                     factor_fn=factor_fn,
+                    run_scan_evolved_fn=run_scan_evolved_fn,
                     top_n=top_n,
                 )
                 # 2. Held tickers (open positions) from the DB.
@@ -237,6 +246,7 @@ def run_once(
                     run_scan_fn=run_scan_fn,
                     agent_fn=agent_fn,
                     factor_fn=factor_fn,
+                    run_scan_evolved_fn=run_scan_evolved_fn,
                     top_n=top_n,
                     hold_days=sleeve_hold_days,
                     targets=targets,  # reuse step-1 targets — don't run scan/agent twice
@@ -274,7 +284,7 @@ def paper_weekly_job() -> None:
     """
     scan_date = date.today().isoformat()
     week_key = week_key_for(scan_date)
-    run_scan_fn, agent_fn, factor_fn, price_fn, _ = _live_seams(universe=DEFAULT_UNIVERSE, model=DEFAULT_MODEL, provider=DEFAULT_PROVIDER)
+    run_scan_fn, agent_fn, factor_fn, run_scan_evolved_fn, price_fn, _ = _live_seams(universe=DEFAULT_UNIVERSE, model=DEFAULT_MODEL, provider=DEFAULT_PROVIDER)
     session = SessionLocal()
     try:
         summaries = run_once(
@@ -283,6 +293,7 @@ def paper_weekly_job() -> None:
             agent_fn=agent_fn,
             price_fn=price_fn,
             factor_fn=factor_fn,
+            run_scan_evolved_fn=run_scan_evolved_fn,
             scan_date=scan_date,
             week_key=week_key,
         )
@@ -353,7 +364,7 @@ def main(argv=None) -> int:
     try:
         # --once: weekly rebalance for all sleeves at live marks.
         if args.once:
-            run_scan_fn, agent_fn, factor_fn, price_fn, universe_tickers = _live_seams(
+            run_scan_fn, agent_fn, factor_fn, run_scan_evolved_fn, price_fn, universe_tickers = _live_seams(
                 universe=args.universe,
                 model=args.model,
                 provider=args.provider,
@@ -365,6 +376,7 @@ def main(argv=None) -> int:
                 agent_fn=agent_fn,
                 price_fn=price_fn,
                 factor_fn=factor_fn,
+                run_scan_evolved_fn=run_scan_evolved_fn,
                 scan_date=scan_date,
                 week_key=week_key,
                 top_n=args.top_n,

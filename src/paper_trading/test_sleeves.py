@@ -185,7 +185,56 @@ def test_unknown_sleeve_returns_empty() -> None:
 
 
 def test_sleeve_names_constant() -> None:
-    assert SLEEVE_NAMES == ("scanner_agent", "scanner_only", "spy_benchmark", "scanner_agent_flow", "factor_evolved")
+    assert SLEEVE_NAMES == (
+        "scanner_agent",
+        "scanner_only",
+        "spy_benchmark",
+        "scanner_agent_flow",
+        "factor_evolved",
+        "scanner_evolved",
+    )
+
+
+# -- scanner_evolved ----------------------------------------------------------
+
+
+def test_scanner_evolved_returns_evolved_scan_picks_straight() -> None:
+    """scanner_evolved takes the injected evolved-scan seam's picks straight.
+
+    Mirrors scanner_only: long all picks, capped at top_n, deduped — but driven
+    by run_scan_evolved_fn rather than run_scan_fn.
+    """
+    targets = compute_targets(
+        "scanner_evolved",
+        "2026-06-01",
+        run_scan_fn=_scan(["XXX", "YYY"]),  # must be IGNORED by this sleeve
+        run_scan_evolved_fn=_scan(["AAA", "BBB", "CCC", "DDD"]),
+        top_n=3,
+    )
+    assert targets == ["AAA", "BBB", "CCC"]
+
+
+def test_scanner_evolved_missing_seam_returns_empty() -> None:
+    targets = compute_targets(
+        "scanner_evolved",
+        "2026-06-01",
+        run_scan_fn=_scan(["AAA", "BBB"]),
+        run_scan_evolved_fn=None,
+    )
+    assert targets == []
+
+
+def test_scanner_evolved_seam_raising_returns_empty() -> None:
+    def boom(scan_date: str, top_n: int) -> list[str]:
+        raise RuntimeError("evolved scan exploded")
+
+    targets = compute_targets(
+        "scanner_evolved",
+        "2026-06-01",
+        run_scan_fn=_scan(["AAA"]),
+        run_scan_evolved_fn=boom,
+    )
+    assert targets == []
 
 
 # -- scanner_agent_flow -------------------------------------------------------

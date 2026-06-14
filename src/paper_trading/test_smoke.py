@@ -73,6 +73,11 @@ def _factor_fn(scan_date: str) -> list[str]:
     return ["AAA", "BBB"]
 
 
+def _run_scan_evolved_fn(scan_date: str, top_n: int) -> list[str]:
+    """Stub evolved scanner: same priced basket so scanner_evolved has conviction."""
+    return ["AAA", "BBB"][:top_n]
+
+
 def _price_fn(ticker: str) -> float | None:
     """Stub price feed: look up the static book; None for unknowns."""
     return _PRICES.get(ticker)
@@ -98,6 +103,7 @@ def _drive_week(session) -> dict[str, dict]:
             run_scan_fn=_run_scan_fn,
             agent_fn=_agent_fn,
             factor_fn=_factor_fn,
+            run_scan_evolved_fn=_run_scan_evolved_fn,
             top_n=5,
             hold_days=hold_days,
         )
@@ -115,6 +121,7 @@ def test_offline_end_to_end_smoke(session, tmp_path) -> None:
     # scanner_agent + scanner_only buy AAA/BBB; spy_benchmark buys SPY.
     assert set(summaries["scanner_agent"]["entered"]) == {"AAA", "BBB"}
     assert set(summaries["scanner_only"]["entered"]) == {"AAA", "BBB"}
+    assert set(summaries["scanner_evolved"]["entered"]) == {"AAA", "BBB"}
     assert summaries["spy_benchmark"]["entered"] == ["SPY"]
     assert all(not s["already_ran"] for s in summaries.values())
 

@@ -1,5 +1,14 @@
 # Progress Log
 
+## Session — 2026-06-14 (Scanner-evolve GRADUATION — scanner_evolved paper sleeve)
+
+Promoted the evolved config (v0.0.9) to a paper-trading forward-test, mirroring the `factor_evolved` graduation precedent (subagent-driven, reviewed). Commit `4d51104`.
+- **`v2/scanner/evolve/graduated_config.yaml`** — committed v0.0.9 snapshot (intraday_move z_window=90, close_vs_open_pct=0.05, gap_pct=0.04, range_pct=0.06, z_threshold=3.5; top_n=20; quant_weight=0). The deploy-safe source of truth (the `scanner_evolve_run/` store is untracked); re-promote = overwrite this yaml.
+- **`v2/scanner/evolve/graduate.py`** (mirrors `v2/self_evolve/graduate.py`) — `load_graduated_config` (degrades to baseline yaml on missing file), `build_scanner_evolved_detectors` (FULL `ALL_DETECTORS` basket with ONLY intraday_move swapped for the tuned one), `build_scanner_evolved_fn` (the `(scan_date, top_n)->[tickers]` seam).
+- **`src/paper_trading/` `scanner_evolved` sleeve** — added to `SLEEVE_NAMES`; `compute_targets` branch mirrors `scanner_only` (picks straight, long all) but via a new optional `run_scan_evolved_fn` seam threaded through `engine.run_week` + `run.py` `_live_seams`/`run_once`. This is a clean threshold A/B vs `scanner_only` (same 8-detector basket, default vs tuned intraday). `intraday_move.py` defaults UNCHANGED (scanner_only stays the control).
+- Tests: `src/paper_trading/` 89 passed; `v2/scanner/evolve/` 57 passed. Spec ✅ + code review approved.
+- **Opt-in:** `scanner_evolved` runs via `active_sleeves()` when `PAPER_SLEEVES` is unset/includes it; NOT added to any prod env — the user enables it. Forward-test then accrues live via `python -m src.paper_trading.run --once`/the weekly scheduler. **The live forward-test is the real judge of whether the tuned thresholds help.**
+
 ## Session — 2026-06-12 (Scanner-Evolve RE-SCOPE — interestingness + intraday_move)
 
 Re-scoped the scanner-evolve feature after an evidence review (subagent-driven, all Opus, per-task review + commit). Trigger: the scanner is an **LLM-cost PRE-FILTER** (flag stocks that will MOVE for the agent), NOT a direction predictor — so (a) the fitness metric was wrong, and (b) the original evolve set tuned dead detectors.

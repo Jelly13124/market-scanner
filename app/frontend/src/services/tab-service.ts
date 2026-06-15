@@ -170,6 +170,9 @@ export class TabService {
       case 'sectors':
         return TabService.createSectorsTab();
 
+      case 'flow':
+        return TabService.createInstitutionalFlowTab();
+
       default:
         throw new Error(`Cannot restore unsupported tab type: ${(savedTab as any).type}`);
     }

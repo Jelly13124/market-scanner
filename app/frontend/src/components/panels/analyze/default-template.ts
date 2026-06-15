@@ -33,8 +33,11 @@ const PARALLEL_SECTIONS: string[] = [
   'sector',
   'company_fundamentals',
   'financial_statements',
+  'capital_structure',
+  'ownership_structure',
   'valuation',
   'technical',
+  'institutional_flow',
   'risk_position',
   'scenarios',
   'conviction',
@@ -60,7 +63,7 @@ const COL_OUTPUT_X = 2560;
 
 const PARALLEL_ROW_TOP = 40;
 const PARALLEL_ROW_H = 200;
-const PARALLEL_ROWS_PER_COL = 6;   // up to 6 rows × 2 cols = 12 slots (11 sections)
+const PARALLEL_ROWS_PER_COL = 7;   // up to 7 rows × 2 cols = 14 slots (14 sections)
 
 /** Y position for the single-row nodes (Input / Data Health / Debate / Output)
  * so they line up with the vertical middle of the 5-row parallel block. */

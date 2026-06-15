@@ -89,7 +89,8 @@ export interface AnalyzeReportDetail {
 export const SECTION_ORDER: string[] = [
   'data_health', 'executive_summary', 'evidence_ledger',
   'macro', 'sector', 'company_fundamentals', 'financial_statements',
-  'valuation', 'technical', 'risk_position', 'scenarios',
+  'capital_structure', 'ownership_structure',
+  'valuation', 'technical', 'institutional_flow', 'risk_position', 'scenarios',
   'conviction', 'event_risk', 'catalyst', 'debate', 'final_strategy',
   'missing_data',
 ];
@@ -103,8 +104,11 @@ export const SECTION_LABELS: Record<string, string> = {
   sector:               'Sector & Peer',
   company_fundamentals: 'Company Fundamentals',
   financial_statements: 'Financial Statements',
+  capital_structure:    'Capital Structure',
+  ownership_structure:  'Ownership Structure',
   valuation:            'Valuation',
   technical:            'Technical Analysis (含 Backtest)',
+  institutional_flow:   'Institutional Positioning',
   risk_position:        'Risk & Position',
   scenarios:            'Bear/Base/Bull Scenarios',
   conviction:           'Conviction Score',

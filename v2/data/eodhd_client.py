@@ -36,6 +36,7 @@ from v2.data.models import (
     CompanyFacts,
     CompanyNews,
     Earnings,
+    EarningsCalendarEntry,
     EarningsRecord,
     FinancialMetrics,
     InsiderTrade,
@@ -106,27 +107,32 @@ class EODHDClient:
         **kwargs,
     ) -> list[Price]:
         path = f"/eod/{self._fmt_ticker(ticker)}"
-        data = self._get(path, {
-            "from": start_date,
-            "to": end_date,
-            "order": "a",
-            "period": "d",
-        })
+        data = self._get(
+            path,
+            {
+                "from": start_date,
+                "to": end_date,
+                "order": "a",
+                "period": "d",
+            },
+        )
         if not isinstance(data, list):
             return []
         out: list[Price] = []
         for row in data:
             try:
                 adj = row.get("adjusted_close")
-                out.append(Price(
-                    open=float(row["open"]),
-                    high=float(row["high"]),
-                    low=float(row["low"]),
-                    close=float(row["close"]),
-                    volume=int(row["volume"]),
-                    time=row["date"],
-                    adjusted_close=float(adj) if adj is not None else None,
-                ))
+                out.append(
+                    Price(
+                        open=float(row["open"]),
+                        high=float(row["high"]),
+                        low=float(row["low"]),
+                        close=float(row["close"]),
+                        volume=int(row["volume"]),
+                        time=row["date"],
+                        adjusted_close=float(adj) if adj is not None else None,
+                    )
+                )
             except (KeyError, TypeError, ValueError) as e:
                 logger.debug("Skipping malformed EOD row for %s: %s", ticker, e)
         return out
@@ -166,15 +172,17 @@ class EODHDClient:
                 url = art.get("link") or art.get("url")
                 # EODHD news rows don't always have a 'source'; derive from URL host.
                 source = art.get("source") or _host_from_url(url) or "EODHD"
-                out.append(CompanyNews(
-                    ticker=ticker,
-                    title=art.get("title", "") or "",
-                    source=source,
-                    date=date_only,
-                    url=url,
-                    sentiment=label,
-                    sentiment_score=score,
-                ))
+                out.append(
+                    CompanyNews(
+                        ticker=ticker,
+                        title=art.get("title", "") or "",
+                        source=source,
+                        date=date_only,
+                        url=url,
+                        sentiment=label,
+                        sentiment_score=score,
+                    )
+                )
             except Exception as e:
                 logger.debug("Skipping malformed news row for %s: %s", ticker, e)
 
@@ -187,14 +195,16 @@ class EODHDClient:
         for day, score in daily_scores.items():
             if day in days_with_articles:
                 continue
-            out.append(CompanyNews(
-                ticker=ticker,
-                title="(daily sentiment aggregate)",
-                source="EODHD",
-                date=day,
-                sentiment=_classify_sentiment(score),
-                sentiment_score=score,
-            ))
+            out.append(
+                CompanyNews(
+                    ticker=ticker,
+                    title="(daily sentiment aggregate)",
+                    source="EODHD",
+                    date=day,
+                    sentiment=_classify_sentiment(score),
+                    sentiment_score=score,
+                )
+            )
         return out
 
     # ------------------------------------------------------------------
@@ -236,6 +246,15 @@ class EODHDClient:
         limit: int = 12,
     ) -> list[EarningsRecord]:
         # See get_earnings — same 403 path.
+        return []
+
+    def get_earnings_calendar(
+        self,
+        *,
+        start_date: str,
+        end_date: str,
+    ) -> list[EarningsCalendarEntry]:
+        # /calendar/earnings is 403 on the basic plan; no forward calendar feed.
         return []
 
     def get_market_cap(self, ticker: str, end_date: str) -> float | None:
@@ -291,7 +310,10 @@ class EODHDClient:
             if resp.status_code == 429 and delay is not None:
                 logger.info(
                     "EODHD 429 on %s, retrying in %ds (attempt %d/%d)",
-                    path, delay, attempt + 1, len(self._RETRY_DELAYS),
+                    path,
+                    delay,
+                    attempt + 1,
+                    len(self._RETRY_DELAYS),
                 )
                 time.sleep(delay)
                 continue
@@ -301,7 +323,9 @@ class EODHDClient:
             if resp.status_code >= 400:
                 logger.warning(
                     "EODHD %s returned %d: %s",
-                    path, resp.status_code, resp.text[:200],
+                    path,
+                    resp.status_code,
+                    resp.text[:200],
                 )
                 return None
             try:

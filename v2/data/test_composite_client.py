@@ -10,6 +10,7 @@ from v2.data.composite_client import CompositeClient, make_hybrid_client
 from v2.data.eodhd_client import EODHDClient
 from v2.data.finnhub_client import FinnhubClient
 from v2.data.protocol import DataClient
+from v2.data.yfinance_client import YFinanceClient
 
 
 def _stub(name: str) -> MagicMock:
@@ -103,10 +104,14 @@ class TestQuotesBackend:
 
     def test_delegates_to_quotes_backend_when_present(self, stubs):
         from v2.data.models import Quote
+
         quote_stub = _stub("quotes")
         quote_stub.get_quote.return_value = Quote(
-            ticker="AAPL", current_price=180.0, prev_close=178.0,
-            percent_change=1.12, asof_timestamp=1778869464,
+            ticker="AAPL",
+            current_price=180.0,
+            prev_close=178.0,
+            percent_change=1.12,
+            asof_timestamp=1778869464,
         )
         composite = CompositeClient(
             prices_backend=stubs["prices"],
@@ -157,7 +162,7 @@ class TestCloseIdempotent:
         # Build composite where prices/news share one, the rest share another.
         comp = CompositeClient(
             prices_backend=stubs["prices"],
-            news_backend=stubs["prices"],     # same as prices
+            news_backend=stubs["prices"],  # same as prices
             insider_backend=stubs["insider"],
             earnings_backend=stubs["insider"],
             facts_backend=stubs["insider"],
@@ -180,7 +185,9 @@ class TestMakeHybridClient:
         assert isinstance(client._prices, EODHDClient)
         assert isinstance(client._news, EODHDClient)
         assert isinstance(client._insider, FinnhubClient)
-        assert isinstance(client._earnings, FinnhubClient)
+        # Earnings history was re-routed to yfinance (trailing quarters); the
+        # forward-looking calendar stays on Finnhub.
+        assert isinstance(client._earnings, YFinanceClient)
         assert isinstance(client._facts, FinnhubClient)
         assert isinstance(client._metrics, FinnhubClient)
 
@@ -189,9 +196,12 @@ class TestMakeHybridClient:
         # Same EODHD client object backs both prices and news (saves a session).
         assert client._prices is client._news
 
-    def test_insider_earnings_facts_metrics_share_finnhub_instance(self):
+    def test_insider_facts_metrics_share_finnhub_instance(self):
         client = make_hybrid_client()
         finnhub = client._insider
-        assert client._earnings is finnhub
+        # Earnings history routes to yfinance now, so it does NOT share the
+        # finnhub instance; the forward calendar still does.
+        assert client._earnings is not finnhub
         assert client._facts is finnhub
         assert client._metrics is finnhub
+        assert client._calendar is finnhub

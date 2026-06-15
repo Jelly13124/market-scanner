@@ -16,21 +16,24 @@ from v2.data.yfinance_client import YFinanceClient, _normalize_action
 
 
 class TestNormalizeAction:
-    @pytest.mark.parametrize("raw,expected", [
-        ("up", "up"),
-        ("UP", "up"),
-        ("upgrade", "up"),
-        ("down", "down"),
-        ("Downgrade", "down"),
-        ("main", "main"),
-        ("maintain", "main"),
-        ("Reiterated", "reit"),
-        ("reit", "reit"),
-        ("init", "init"),
-        ("Initiated", "init"),
-        (None, "main"),
-        ("something weird", "main"),
-    ])
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("up", "up"),
+            ("UP", "up"),
+            ("upgrade", "up"),
+            ("down", "down"),
+            ("Downgrade", "down"),
+            ("main", "main"),
+            ("maintain", "main"),
+            ("Reiterated", "reit"),
+            ("reit", "reit"),
+            ("init", "init"),
+            ("Initiated", "init"),
+            (None, "main"),
+            ("something weird", "main"),
+        ],
+    )
     def test_maps_known_variants(self, raw, expected):
         assert _normalize_action(raw) == expected
 
@@ -70,9 +73,7 @@ class TestGetAnalystTargets:
 
     def test_returns_none_on_yfinance_exception(self):
         mock_ticker = MagicMock()
-        type(mock_ticker).analyst_price_targets = property(
-            lambda self: (_ for _ in ()).throw(RuntimeError("scraper broke"))
-        )
+        type(mock_ticker).analyst_price_targets = property(lambda self: (_ for _ in ()).throw(RuntimeError("scraper broke")))
         with patch("yfinance.Ticker", return_value=mock_ticker):
             assert YFinanceClient().get_analyst_targets("AAPL") is None
 
@@ -94,15 +95,12 @@ class TestGetAnalystTargets:
 def _mock_upgrades_df():
     """Build a 4-row mock DataFrame mimicking yfinance.Ticker.upgrades_downgrades."""
     import pandas as pd
+
     rows = [
-        {"GradeDate": "2026-05-10", "Firm": "Morgan Stanley",
-         "ToGrade": "Overweight", "FromGrade": "Equal-Weight", "Action": "up"},
-        {"GradeDate": "2026-05-05", "Firm": "Goldman",
-         "ToGrade": "Buy", "FromGrade": "Hold", "Action": "up"},
-        {"GradeDate": "2026-04-20", "Firm": "JPM",
-         "ToGrade": "Underweight", "FromGrade": "Neutral", "Action": "down"},
-        {"GradeDate": "2026-01-15", "Firm": "Wells",
-         "ToGrade": "Equal-Weight", "FromGrade": "Equal-Weight", "Action": "main"},
+        {"GradeDate": "2026-05-10", "Firm": "Morgan Stanley", "ToGrade": "Overweight", "FromGrade": "Equal-Weight", "Action": "up"},
+        {"GradeDate": "2026-05-05", "Firm": "Goldman", "ToGrade": "Buy", "FromGrade": "Hold", "Action": "up"},
+        {"GradeDate": "2026-04-20", "Firm": "JPM", "ToGrade": "Underweight", "FromGrade": "Neutral", "Action": "down"},
+        {"GradeDate": "2026-01-15", "Firm": "Wells", "ToGrade": "Equal-Weight", "FromGrade": "Equal-Weight", "Action": "main"},
     ]
     df = pd.DataFrame(rows)
     df.set_index(pd.to_datetime(df["GradeDate"]), inplace=True)
@@ -116,7 +114,9 @@ class TestGetAnalystActions:
         mock_ticker.upgrades_downgrades = _mock_upgrades_df()
         with patch("yfinance.Ticker", return_value=mock_ticker):
             actions = YFinanceClient().get_analyst_actions(
-                "AAPL", end_date="2026-05-15", start_date="2026-05-01",
+                "AAPL",
+                end_date="2026-05-15",
+                start_date="2026-05-01",
             )
         # Only 2 rows in the May 1-15 window.
         assert len(actions) == 2
@@ -130,7 +130,9 @@ class TestGetAnalystActions:
         mock_ticker.upgrades_downgrades = _mock_upgrades_df()
         with patch("yfinance.Ticker", return_value=mock_ticker):
             actions = YFinanceClient().get_analyst_actions(
-                "AAPL", end_date="2026-05-15", start_date="2026-01-01",
+                "AAPL",
+                end_date="2026-05-15",
+                start_date="2026-01-01",
             )
         actions_by_date = {a.action_date: a.action for a in actions}
         assert actions_by_date["2026-05-10"] == "up"
@@ -139,29 +141,41 @@ class TestGetAnalystActions:
 
     def test_empty_when_no_data(self):
         import pandas as pd
+
         mock_ticker = MagicMock()
         mock_ticker.upgrades_downgrades = pd.DataFrame()
         with patch("yfinance.Ticker", return_value=mock_ticker):
-            assert YFinanceClient().get_analyst_actions(
-                "AAPL", end_date="2026-05-15", start_date="2026-01-01",
-            ) == []
+            assert (
+                YFinanceClient().get_analyst_actions(
+                    "AAPL",
+                    end_date="2026-05-15",
+                    start_date="2026-01-01",
+                )
+                == []
+            )
 
     def test_empty_on_yfinance_exception(self):
         mock_ticker = MagicMock()
-        type(mock_ticker).upgrades_downgrades = property(
-            lambda self: (_ for _ in ()).throw(RuntimeError("scraper broke"))
-        )
+        type(mock_ticker).upgrades_downgrades = property(lambda self: (_ for _ in ()).throw(RuntimeError("scraper broke")))
         with patch("yfinance.Ticker", return_value=mock_ticker):
-            assert YFinanceClient().get_analyst_actions(
-                "AAPL", end_date="2026-05-15", start_date="2026-01-01",
-            ) == []
+            assert (
+                YFinanceClient().get_analyst_actions(
+                    "AAPL",
+                    end_date="2026-05-15",
+                    start_date="2026-01-01",
+                )
+                == []
+            )
 
     def test_respects_limit(self):
         mock_ticker = MagicMock()
         mock_ticker.upgrades_downgrades = _mock_upgrades_df()
         with patch("yfinance.Ticker", return_value=mock_ticker):
             actions = YFinanceClient().get_analyst_actions(
-                "AAPL", end_date="2026-05-15", start_date="2026-01-01", limit=2,
+                "AAPL",
+                end_date="2026-05-15",
+                start_date="2026-01-01",
+                limit=2,
             )
         assert len(actions) == 2
 
@@ -172,16 +186,19 @@ class TestGetAnalystActions:
 
 
 class TestUnimplementedMethods:
-    @pytest.mark.parametrize("method,args", [
-        ("get_prices", ("AAPL", "2026-01-01", "2026-05-15")),
-        ("get_financial_metrics", ("AAPL", "2026-05-15")),
-        ("get_news", ("AAPL", "2026-05-15")),
-        ("get_insider_trades", ("AAPL", "2026-05-15")),
-        ("get_company_facts", ("AAPL",)),
-        ("get_earnings", ("AAPL",)),
-        ("get_earnings_history", ("AAPL",)),
-        ("get_market_cap", ("AAPL", "2026-05-15")),
-    ])
+    @pytest.mark.parametrize(
+        "method,args",
+        [
+            ("get_prices", ("AAPL", "2026-01-01", "2026-05-15")),
+            ("get_financial_metrics", ("AAPL", "2026-05-15")),
+            ("get_news", ("AAPL", "2026-05-15")),
+            ("get_insider_trades", ("AAPL", "2026-05-15")),
+            ("get_company_facts", ("AAPL",)),
+            ("get_earnings", ("AAPL",)),
+            # get_earnings_history is now implemented (earnings route to yfinance).
+            ("get_market_cap", ("AAPL", "2026-05-15")),
+        ],
+    )
     def test_raises_not_implemented(self, method, args):
         client = YFinanceClient()
         with pytest.raises(NotImplementedError, match="analyst data only"):
@@ -193,9 +210,7 @@ class TestUnimplementedMethods:
 # ---------------------------------------------------------------------------
 
 
-def _make_eps_revisions_df(*, periods=("0q", "+1q", "0y", "+1y"),
-                           up7=None, down7=None, up30=None, down30=None,
-                           down7_camel=False):
+def _make_eps_revisions_df(*, periods=("0q", "+1q", "0y", "+1y"), up7=None, down7=None, up30=None, down30=None, down7_camel=False):
     """Build a fake yfinance eps_revisions DataFrame.
 
     yfinance's column casing is inconsistent: observed live as
@@ -203,23 +218,25 @@ def _make_eps_revisions_df(*, periods=("0q", "+1q", "0y", "+1y"),
     ``down7_camel=True`` mimics that real-world casing; ``False`` uses
     all-lowercase. Detector must handle both."""
     import pandas as pd
+
     down7_col = "downLast7Days" if down7_camel else "downLast7days"
     rows = []
     for p in periods:
-        rows.append({
-            "upLast7days": (up7 if p == "0q" else 0),
-            "upLast30days": (up30 if p == "0q" else 0),
-            "downLast30days": (down30 if p == "0q" else 0),
-            down7_col: (down7 if p == "0q" else 0),
-        })
+        rows.append(
+            {
+                "upLast7days": (up7 if p == "0q" else 0),
+                "upLast30days": (up30 if p == "0q" else 0),
+                "downLast30days": (down30 if p == "0q" else 0),
+                down7_col: (down7 if p == "0q" else 0),
+            }
+        )
     return pd.DataFrame(rows, index=list(periods))
 
 
 class TestGetEstimateRevisions:
     def test_reads_lowercase_columns(self):
         """Baseline: all-lowercase column names work (legacy yfinance casing)."""
-        df = _make_eps_revisions_df(up7=10, down7=2, up30=15, down30=5,
-                                    down7_camel=False)
+        df = _make_eps_revisions_df(up7=10, down7=2, up30=15, down30=5, down7_camel=False)
         with patch("yfinance.Ticker") as MockTicker:
             MockTicker.return_value.eps_revisions = df
             client = YFinanceClient()
@@ -235,20 +252,18 @@ class TestGetEstimateRevisions:
         which previously was silently dropped → down_7d=0 → every covered
         ticker triggered as 100% bullish consensus. Lookup must be
         case-insensitive."""
-        df = _make_eps_revisions_df(up7=10, down7=8, up30=15, down30=12,
-                                    down7_camel=True)
+        df = _make_eps_revisions_df(up7=10, down7=8, up30=15, down30=12, down7_camel=True)
         with patch("yfinance.Ticker") as MockTicker:
             MockTicker.return_value.eps_revisions = df
             client = YFinanceClient()
             r = client.get_estimate_revisions("AAPL")
         assert r is not None
         assert r.up_last_7d == 10
-        assert r.down_last_7d == 8, (
-            "downLast7Days column was not read — case-sensitive lookup bug"
-        )
+        assert r.down_last_7d == 8, "downLast7Days column was not read — case-sensitive lookup bug"
 
     def test_returns_none_on_empty_dataframe(self):
         import pandas as pd
+
         with patch("yfinance.Ticker") as MockTicker:
             MockTicker.return_value.eps_revisions = pd.DataFrame()
             client = YFinanceClient()
@@ -268,8 +283,8 @@ class TestGetEstimateRevisions:
         # between row dicts isn't realistic for yfinance — they apply uniform
         # cols — but pandas will tolerate it for the test).
         import pandas as pd
-        df.loc["+1q"] = {"upLast7days": 3, "upLast30days": 4,
-                          "downLast30days": 0, "downLast7Days": 1}
+
+        df.loc["+1q"] = {"upLast7days": 3, "upLast30days": 4, "downLast30days": 0, "downLast7Days": 1}
         with patch("yfinance.Ticker") as MockTicker:
             MockTicker.return_value.eps_revisions = df
             client = YFinanceClient()

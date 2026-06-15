@@ -39,16 +39,25 @@ def _price_series(*, n: int = 260, start_close: float = 100.0, daily_drift: floa
         cur -= timedelta(days=1)
     series.reverse()
     for time_iso, c in series:
-        bars.append(Price(
-            open=c, close=c, high=c, low=c, volume=1_000_000,
-            time=time_iso, adjusted_close=c,
-        ))
+        bars.append(
+            Price(
+                open=c,
+                close=c,
+                high=c,
+                low=c,
+                volume=1_000_000,
+                time=time_iso,
+                adjusted_close=c,
+            )
+        )
     return bars
 
 
 def _metrics(**overrides) -> FinancialMetrics:
     defaults = {
-        "ticker": "AAPL", "report_period": "2026-03-31", "period": "ttm",
+        "ticker": "AAPL",
+        "report_period": "2026-03-31",
+        "period": "ttm",
     }
     defaults.update(overrides)
     return FinancialMetrics(**defaults)
@@ -108,23 +117,27 @@ class TestMomentumSignal:
 class TestValueSignal:
     def test_cheap_stock_is_bullish(self):
         fd = MagicMock()
-        fd.get_financial_metrics.return_value = [_metrics(
-            price_to_earnings_ratio=8.0,   # cheap
-            price_to_book_ratio=0.9,
-            price_to_sales_ratio=0.8,
-            free_cash_flow_yield=0.10,     # high yield
-        )]
+        fd.get_financial_metrics.return_value = [
+            _metrics(
+                price_to_earnings_ratio=8.0,  # cheap
+                price_to_book_ratio=0.9,
+                price_to_sales_ratio=0.8,
+                free_cash_flow_yield=0.10,  # high yield
+            )
+        ]
         r = ValueSignal().compute("AAPL", END_DATE, fd)
         assert r.value > 0.5
 
     def test_expensive_stock_is_bearish(self):
         fd = MagicMock()
-        fd.get_financial_metrics.return_value = [_metrics(
-            price_to_earnings_ratio=40.0,
-            price_to_book_ratio=10.0,
-            price_to_sales_ratio=12.0,
-            free_cash_flow_yield=-0.02,
-        )]
+        fd.get_financial_metrics.return_value = [
+            _metrics(
+                price_to_earnings_ratio=40.0,
+                price_to_book_ratio=10.0,
+                price_to_sales_ratio=12.0,
+                free_cash_flow_yield=-0.02,
+            )
+        ]
         r = ValueSignal().compute("AAPL", END_DATE, fd)
         assert r.value < -0.5
 
@@ -138,10 +151,12 @@ class TestValueSignal:
     def test_negative_pe_is_ignored(self):
         """A negative-earnings P/E is uninformative — defer to other factors."""
         fd = MagicMock()
-        fd.get_financial_metrics.return_value = [_metrics(
-            price_to_earnings_ratio=-15.0,
-            price_to_book_ratio=2.0,
-        )]
+        fd.get_financial_metrics.return_value = [
+            _metrics(
+                price_to_earnings_ratio=-15.0,
+                price_to_book_ratio=2.0,
+            )
+        ]
         r = ValueSignal().compute("AAPL", END_DATE, fd)
         # PE was skipped; PB=2 is mildly cheap → small positive.
         assert "pe" not in r.components
@@ -162,31 +177,37 @@ class TestValueSignal:
 class TestQualitySignal:
     def test_high_roic_is_bullish(self):
         fd = MagicMock()
-        fd.get_financial_metrics.return_value = [_metrics(
-            return_on_invested_capital=0.25,
-            return_on_equity=0.30,
-            operating_margin=0.30,
-            gross_margin=0.60,
-        )]
+        fd.get_financial_metrics.return_value = [
+            _metrics(
+                return_on_invested_capital=0.25,
+                return_on_equity=0.30,
+                operating_margin=0.30,
+                gross_margin=0.60,
+            )
+        ]
         r = QualitySignal().compute("AAPL", END_DATE, fd)
         assert r.value > 0.8
 
     def test_unprofitable_is_bearish(self):
         fd = MagicMock()
-        fd.get_financial_metrics.return_value = [_metrics(
-            return_on_invested_capital=-0.05,
-            return_on_equity=-0.10,
-            operating_margin=-0.05,
-            gross_margin=0.10,
-        )]
+        fd.get_financial_metrics.return_value = [
+            _metrics(
+                return_on_invested_capital=-0.05,
+                return_on_equity=-0.10,
+                operating_margin=-0.05,
+                gross_margin=0.10,
+            )
+        ]
         r = QualitySignal().compute("AAPL", END_DATE, fd)
         assert r.value < -0.8
 
     def test_partial_data_uses_present_factors(self):
         fd = MagicMock()
-        fd.get_financial_metrics.return_value = [_metrics(
-            return_on_invested_capital=0.25,
-        )]
+        fd.get_financial_metrics.return_value = [
+            _metrics(
+                return_on_invested_capital=0.25,
+            )
+        ]
         r = QualitySignal().compute("AAPL", END_DATE, fd)
         assert r.value > 0
         assert set(r.components) == {"roic"}
@@ -200,19 +221,27 @@ class TestQualitySignal:
 class TestEarningsQualitySignal:
     def test_strong_growth_is_bullish(self):
         fd = MagicMock()
-        fd.get_financial_metrics.return_value = [_metrics(
-            revenue_growth=0.30, earnings_growth=0.50,
-            free_cash_flow_growth=0.45, earnings_per_share_growth=0.40,
-        )]
+        fd.get_financial_metrics.return_value = [
+            _metrics(
+                revenue_growth=0.30,
+                earnings_growth=0.50,
+                free_cash_flow_growth=0.45,
+                earnings_per_share_growth=0.40,
+            )
+        ]
         r = EarningsQualitySignal().compute("AAPL", END_DATE, fd)
         assert r.value > 0.8
 
     def test_shrinking_is_bearish(self):
         fd = MagicMock()
-        fd.get_financial_metrics.return_value = [_metrics(
-            revenue_growth=-0.10, earnings_growth=-0.30,
-            free_cash_flow_growth=-0.40, earnings_per_share_growth=-0.20,
-        )]
+        fd.get_financial_metrics.return_value = [
+            _metrics(
+                revenue_growth=-0.10,
+                earnings_growth=-0.30,
+                free_cash_flow_growth=-0.40,
+                earnings_per_share_growth=-0.20,
+            )
+        ]
         r = EarningsQualitySignal().compute("AAPL", END_DATE, fd)
         assert r.value < -0.8
 
@@ -280,10 +309,14 @@ class TestRunnerIntegration:
 
         class _StubDetector(EventDetector):
             name = "stub"
+
             def detect(self, ticker, end_date, fd, *, ctx=None):
                 return EventTrigger(
-                    detector="stub", triggered=True, severity_z=2.0,
-                    direction="bullish", reason="stub",
+                    detector="stub",
+                    triggered=True,
+                    severity_z=2.0,
+                    direction="bullish",
+                    reason="stub",
                 )
 
         # Stub signal classes that don't need real data.
@@ -292,13 +325,19 @@ class TestRunnerIntegration:
 
         class _StubSignal(BaseSignal):
             name = "momentum"  # match a factor_weights key
+
             def compute(self, ticker, end_date, fd):
                 return SignalResult(signal_name=self.name, value=0.8)
+
+        # Quant overlay is OFF by default (quant_weight=0.0); opt into a mix
+        # so the composite genuinely blends quant_score in.
+        from v2.scanner.models import ScannerWeights
 
         results = run_scan(
             tickers=["AAA"],
             end_date=END_DATE,
             top_n=10,
+            weights=ScannerWeights(event_weight=0.5, quant_weight=0.5),
             detectors=[_StubDetector()],
             quant_signals=[_StubSignal()],
             provider_factory=MagicMock,
@@ -317,14 +356,19 @@ class TestRunnerIntegration:
 
         class _StubDetector(EventDetector):
             name = "stub"
+
             def detect(self, ticker, end_date, fd, *, ctx=None):
                 return EventTrigger(
-                    detector="stub", triggered=True, severity_z=2.0,
-                    direction="bullish", reason="stub",
+                    detector="stub",
+                    triggered=True,
+                    severity_z=2.0,
+                    direction="bullish",
+                    reason="stub",
                 )
 
         class _BoomSignal(BaseSignal):
             name = "momentum"
+
             def compute(self, ticker, end_date, fd):
                 raise RuntimeError("boom")
 

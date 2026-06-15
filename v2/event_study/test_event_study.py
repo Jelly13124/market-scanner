@@ -110,11 +110,15 @@ class TestRetrospectiveFilter:
         from v2.event_study.engine import _filter_retrospective
 
         good = EarningsRecord(
-            ticker="GS", report_period="2026-03-31", source_type="8-K",
+            ticker="GS",
+            report_period="2026-03-31",
+            source_type="8-K",
             filing_date="2026-04-13",
         )
         stale = EarningsRecord(
-            ticker="GS", report_period="2025-12-31", source_type="8-K",
+            ticker="GS",
+            report_period="2025-12-31",
+            source_type="8-K",
             filing_date="2026-04-13",
         )
         result = _filter_retrospective([good, stale])
@@ -132,17 +136,19 @@ class TestPlots:
     def synthetic_result(self):
         events = []
         for i in range(10):
-            events.append(EventCAR(
-                ticker="TEST",
-                event_date=f"2025-01-{10 + i:02d}",
-                source_type="8-K" if i < 6 else "10-Q",
-                report_period=f"2024-12-{10 + i:02d}",
-                market_model=MarketModelFit(alpha=0.001, beta=1.1, r_squared=0.5, n_obs=240),
-                daily_ar=[0.005 * ((-1) ** j) for j in range(21)],
-                car_0_1=0.01 + i * 0.001,
-                car_0_5=0.02 + i * 0.002,
-                car_0_20=0.03 + i * 0.003,
-            ))
+            events.append(
+                EventCAR(
+                    ticker="TEST",
+                    event_date=f"2025-01-{10 + i:02d}",
+                    source_type="8-K" if i < 6 else "10-Q",
+                    report_period=f"2024-12-{10 + i:02d}",
+                    market_model=MarketModelFit(alpha=0.001, beta=1.1, r_squared=0.5, n_obs=240),
+                    daily_ar=[0.005 * ((-1) ** j) for j in range(21)],
+                    car_0_1=0.01 + i * 0.001,
+                    car_0_5=0.02 + i * 0.002,
+                    car_0_20=0.03 + i * 0.003,
+                )
+            )
         return EventStudyResult(events=events, aggregates=[], skipped_tickers=[])
 
     def test_plot_car_by_source(self, synthetic_result):
@@ -177,14 +183,15 @@ class TestPlots:
 # ---------------------------------------------------------------------------
 
 pytestmark_live = pytest.mark.skipif(
-    not os.environ.get("FINANCIAL_DATASETS_API_KEY"),
-    reason="live tests require FINANCIAL_DATASETS_API_KEY",
+    os.environ.get("DATA_LIVE_TEST") != "1",
+    reason="live FD API; set DATA_LIVE_TEST=1 to run",
 )
 
 
 @pytest.fixture(scope="module")
 def fd():
     from v2.data import FDClient
+
     with FDClient() as client:
         yield client
 

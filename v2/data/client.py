@@ -12,6 +12,7 @@ from v2.data.models import (
     CompanyFacts,
     CompanyNews,
     Earnings,
+    EarningsCalendarEntry,
     EarningsRecord,
     FinancialMetrics,
     InsiderTrade,
@@ -70,13 +71,17 @@ class FDClient:
         interval_multiplier: int = 1,
     ) -> list[Price]:
         """Fetch OHLC price bars."""
-        data = self._get("/prices/", {
-            "ticker": ticker,
-            "interval": interval,
-            "interval_multiplier": interval_multiplier,
-            "start_date": start_date,
-            "end_date": end_date,
-        }, response_key="prices")
+        data = self._get(
+            "/prices/",
+            {
+                "ticker": ticker,
+                "interval": interval,
+                "interval_multiplier": interval_multiplier,
+                "start_date": start_date,
+                "end_date": end_date,
+            },
+            response_key="prices",
+        )
         return [Price(**row) for row in data] if data else []
 
     # ------------------------------------------------------------------
@@ -91,12 +96,16 @@ class FDClient:
         limit: int = 10,
     ) -> list[FinancialMetrics]:
         """Fetch financial metrics up to *end_date*."""
-        data = self._get("/financial-metrics/", {
-            "ticker": ticker,
-            "report_period_lte": end_date,
-            "period": period,
-            "limit": limit,
-        }, response_key="financial_metrics")
+        data = self._get(
+            "/financial-metrics/",
+            {
+                "ticker": ticker,
+                "report_period_lte": end_date,
+                "period": period,
+                "limit": limit,
+            },
+            response_key="financial_metrics",
+        )
         return [FinancialMetrics(**row) for row in data] if data else []
 
     # ------------------------------------------------------------------
@@ -177,11 +186,25 @@ class FDClient:
         The same ``report_period`` may appear multiple times with
         different ``source_type`` values.
         """
-        data = self._get("/earnings/", {
-            "ticker": ticker,
-            "limit": limit,
-        }, response_key="earnings")
+        data = self._get(
+            "/earnings/",
+            {
+                "ticker": ticker,
+                "limit": limit,
+            },
+            response_key="earnings",
+        )
         return [EarningsRecord(**row) for row in data] if data else []
+
+    def get_earnings_calendar(
+        self,
+        *,
+        start_date: str,
+        end_date: str,
+    ) -> list[EarningsCalendarEntry]:
+        # FD has no universe-wide forward calendar feed; the runner falls back
+        # to "no upcoming earnings info available" (see DataClient protocol).
+        return []
 
     # ------------------------------------------------------------------
     # Convenience
@@ -224,7 +247,10 @@ class FDClient:
         for attempt, delay in enumerate((*self._RETRY_DELAYS, None)):
             try:
                 resp = self._session.request(
-                    method, url, timeout=self._timeout, **kwargs,
+                    method,
+                    url,
+                    timeout=self._timeout,
+                    **kwargs,
                 )
             except requests.RequestException as exc:
                 logger.warning("Request error on %s %s: %s", method, path, exc)
@@ -233,7 +259,9 @@ class FDClient:
             if resp.status_code == 429 and delay is not None:
                 logger.info(
                     "Rate limited (429), retrying in %ds (attempt %d/%d)",
-                    delay, attempt + 1, len(self._RETRY_DELAYS),
+                    delay,
+                    attempt + 1,
+                    len(self._RETRY_DELAYS),
                 )
                 time.sleep(delay)
                 continue
@@ -246,6 +274,8 @@ class FDClient:
 
         logger.warning(
             "Rate limit exhausted after %d retries on %s %s",
-            len(self._RETRY_DELAYS), method, path,
+            len(self._RETRY_DELAYS),
+            method,
+            path,
         )
         return None

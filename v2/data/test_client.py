@@ -10,8 +10,8 @@ PRICE_START = "2024-01-01"
 PRICE_END = "2026-04-15"
 
 pytestmark = pytest.mark.skipif(
-    not os.environ.get("FINANCIAL_DATASETS_API_KEY"),
-    reason="live Financial Datasets smoke tests require FINANCIAL_DATASETS_API_KEY",
+    os.environ.get("DATA_LIVE_TEST") != "1",
+    reason="live FD API; set DATA_LIVE_TEST=1 to run",
 )
 
 
@@ -34,11 +34,7 @@ def test_financial_metrics(fd: FDClient, ticker: str) -> None:
     metrics = fd.get_financial_metrics(ticker, PRICE_END, period="ttm", limit=4)
     assert len(metrics) > 0, f"No metrics for {ticker}"
     m = metrics[0]
-    populated = [
-        f for f in ["market_cap", "price_to_earnings_ratio", "return_on_equity",
-                     "gross_margin", "debt_to_equity", "revenue_growth"]
-        if getattr(m, f) is not None
-    ]
+    populated = [f for f in ["market_cap", "price_to_earnings_ratio", "return_on_equity", "gross_margin", "debt_to_equity", "revenue_growth"] if getattr(m, f) is not None]
     periods = [m.report_period for m in metrics]
     print(f"  {ticker} metrics: {len(metrics)} periods  [{periods[-1]} → {periods[0]}]")
     print(f"    Key fields: {', '.join(populated)}")
@@ -87,9 +83,7 @@ def test_earnings_history(fd: FDClient, ticker: str) -> None:
     for r in records:
         assert r.source_type in valid_source_types, f"Bad source_type: {r.source_type}"
         if r.filing_datetime is not None:
-            assert r.filing_date == r.filing_datetime[:10], (
-                f"filing_date/datetime mismatch: {r.filing_date} vs {r.filing_datetime}"
-            )
+            assert r.filing_date == r.filing_datetime[:10], f"filing_date/datetime mismatch: {r.filing_date} vs {r.filing_datetime}"
 
     print(f"  {ticker} earnings history: {len(records)} records")
     for r in records:

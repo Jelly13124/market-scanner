@@ -25,7 +25,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from src.paper_trading.sleeves import SLEEVE_NAMES, compute_targets
-from v2.self_evolve.config import StrategyConfig, load_config
+from v2.self_evolve.config import FACTOR_KEYS, StrategyConfig, load_config
 from v2.self_evolve.graduate import load_best_config
 from v2.self_evolve.strategy_gen import generate_holdings
 from v2.self_evolve.versioning import append_path_log, write_version
@@ -132,7 +132,9 @@ def test_load_best_config_real_strategy_skill_dir_loads() -> None:
     # config whether or not the loop has run (kept version or baseline fallback).
     cfg = load_best_config()
     assert isinstance(cfg, StrategyConfig)
-    assert set(cfg.factor_weights) == {"momentum", "low_vol", "reversal", "value", "quality"}
+    # Assert against the canonical key set (not a frozen list) so adding a factor
+    # to FACTOR_KEYS doesn't make this real-dir test go stale.
+    assert set(cfg.factor_weights) == set(FACTOR_KEYS)
 
 
 # ---------------------------------------------------------------------------

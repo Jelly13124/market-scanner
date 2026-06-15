@@ -81,3 +81,10 @@ app/backend/alembic/versions/__pycache__/
 workflow_backtest/cell_*.json
 workflow_backtest_run.log
 workflow_backtest_preflight/
+
+# Run logs + evolve run-output dirs (local artifacts, not source).
+*.log
+/scanner_evolve_run/
+/self_evolve_run/
+/self_evolve_run_*/
+/strategy_skill/versions_archive_*/

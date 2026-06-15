@@ -1,0 +1,36 @@
+name: tests
+
+# Regression guard. Runs the OFFLINE, deterministic test suites on every push/PR.
+# Scoped to the three dirs verified green with NO API keys present (520 passed /
+# 2 skipped) — the live-API tests under v2/data/, v2/event_study/, etc. need
+# real keys and are run manually/locally, not in CI (they skipif on missing keys
+# but pulling them in would add network flakiness for no regression-guard value).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies (poetry, system env)
+        run: |
+          pip install "poetry==1.8.5"
+          poetry config virtualenvs.create false
+          poetry lock --no-update
+          poetry install --no-interaction --no-ansi --no-root
+
+      - name: Run offline test suite
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONPATH: ${{ github.workspace }}
+        run: pytest v2/scanner v2/self_evolve src/paper_trading -q

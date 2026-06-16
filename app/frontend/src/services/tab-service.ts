@@ -1,6 +1,7 @@
 import { AnalyzePanel } from '@/components/panels/analyze/analyze-panel';
 import { LabPanel } from '@/components/panels/lab/lab-panel';
 import { ReportsPanel } from '@/components/panels/reports/reports-panel';
+import { PaperPanel } from '@/components/panels/paper/paper-panel';
 import { ScannerPanel } from '@/components/panels/scanner/scanner-panel';
 import { InstitutionalFlowPanel } from '@/components/panels/flow/institutional-flow-panel';
 import { ScreenerTab } from '@/components/panels/screener/screener-tab';
@@ -10,7 +11,7 @@ import { Settings } from '@/components/settings/settings';
 import { ReactNode, createElement } from 'react';
 
 export interface TabData {
-  type: 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist' | 'sectors' | 'flow';
+  type: 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist' | 'sectors' | 'flow' | 'paper';
   title: string;
   metadata?: Record<string, any>;
 }
@@ -46,6 +47,9 @@ export class TabService {
 
       case 'flow':
         return createElement(InstitutionalFlowPanel, {});
+
+      case 'paper':
+        return createElement(PaperPanel, {});
 
       default:
         throw new Error(`Unsupported tab type: ${(tabData as any).type}`);
@@ -120,6 +124,15 @@ export class TabService {
     };
   }
 
+  /** Open / focus the single Paper (forward-test) tab. */
+  static createPaperTab(): TabData & { content: ReactNode } {
+    return {
+      type: 'paper',
+      title: 'Paper',
+      content: TabService.createTabContent({ type: 'paper', title: 'Paper' }),
+    };
+  }
+
   /** Open / focus the single Watchlist tab. */
   static createWatchlistTab(): TabData & { content: ReactNode } {
     return {
@@ -172,6 +185,9 @@ export class TabService {
 
       case 'flow':
         return TabService.createInstitutionalFlowTab();
+
+      case 'paper':
+        return TabService.createPaperTab();
 
       default:
         throw new Error(`Cannot restore unsupported tab type: ${(savedTab as any).type}`);

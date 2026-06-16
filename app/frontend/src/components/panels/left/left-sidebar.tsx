@@ -5,6 +5,7 @@ import { AnalyzeAction } from './analyze-action';
 import { FlowAction } from './flow-action';
 import { HomeAction } from './home-action';
 import { LabAction } from './lab-action';
+import { PaperAction } from './paper-action';
 import { ReportsAction } from './reports-action';
 import { ScannerAction } from './scanner-action';
 import { ScreenerAction } from './screener-action';
@@ -62,6 +63,8 @@ export function LeftSidebar({
       <FlowAction />
 
       <ReportsAction />
+
+      <PaperAction />
 
       <LabAction />
 

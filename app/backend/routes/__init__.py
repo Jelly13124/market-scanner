@@ -18,6 +18,7 @@ from app.backend.routes.analyze_flows import router as analyze_flows_router
 from app.backend.routes.lab import router as lab_router
 from app.backend.routes.screener import router as screener_phase1_router
 from app.backend.routes.institutional_flow import router as institutional_flow_router
+from app.backend.routes.paper import router as paper_router
 
 # Main API router
 api_router = APIRouter()
@@ -41,3 +42,4 @@ api_router.include_router(analyze_flows_router, tags=["analyze-flows"])
 api_router.include_router(lab_router, tags=["lab"])
 api_router.include_router(screener_phase1_router, tags=["screener"])
 api_router.include_router(institutional_flow_router, tags=["institutional-flow"])
+api_router.include_router(paper_router, tags=["paper"])

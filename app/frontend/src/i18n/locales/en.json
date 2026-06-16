@@ -679,6 +679,28 @@
       "tooltip": "Re-fetch sector performance"
     }
   },
+  "paper": {
+    "tab": {
+      "title": "Paper"
+    },
+    "title": "Paper Trading",
+    "openTooltip": "Open paper-trading panel",
+    "empty": "No paper-trading data yet.",
+    "baseline": "baseline",
+    "graduation": "Graduation verdict",
+    "pass": "PASS",
+    "fail": "FAIL",
+    "noClauses": "No clauses evaluated.",
+    "equityCurve": "Equity curve",
+    "equityCurveAlt": "Paper sleeves equity curve",
+    "colSleeve": "Sleeve",
+    "colFinalEquity": "Final equity",
+    "colTotalReturn": "Total return",
+    "colSharpe": "Sharpe",
+    "colMaxDrawdown": "Max drawdown",
+    "colNTrades": "# Trades",
+    "colNMarks": "# Marks"
+  },
   "flow": {
     "title": "Institutional Positioning",
     "subtitle": "Dealer gamma (options-implied snapshot) + off-exchange short volume (FINRA proxy, NOT true dark-pool). Context, not a trade signal.",

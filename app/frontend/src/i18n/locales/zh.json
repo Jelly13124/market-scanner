@@ -679,6 +679,28 @@
       "tooltip": "重新拉取板块表现"
     }
   },
+  "paper": {
+    "tab": {
+      "title": "纸面交易"
+    },
+    "title": "纸面交易",
+    "openTooltip": "打开纸面交易面板",
+    "empty": "暂无纸面交易数据。",
+    "baseline": "基准",
+    "graduation": "毕业评定",
+    "pass": "通过",
+    "fail": "未通过",
+    "noClauses": "未评估任何条件。",
+    "equityCurve": "净值曲线",
+    "equityCurveAlt": "各 sleeve 净值曲线",
+    "colSleeve": "组合",
+    "colFinalEquity": "最终净值",
+    "colTotalReturn": "总收益",
+    "colSharpe": "夏普",
+    "colMaxDrawdown": "最大回撤",
+    "colNTrades": "交易数",
+    "colNMarks": "标记数"
+  },
   "flow": {
     "title": "机构持仓",
     "subtitle": "做市商 gamma(期权隐含快照)+ 场外做空量(FINRA 代理,非真暗池)。是背景参考,不是交易信号。",

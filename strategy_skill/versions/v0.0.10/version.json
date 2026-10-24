@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.05829596412556054,
+      "reversal": 0.13452914798206275,
+      "low_vol": 0.13452914798206275,
+      "resid_mom": 0.11210762331838565,
+      "high_52w": 0.08968609865470852,
+      "max_lottery": 0.08968609865470852,
+      "turnover": 0.06726457399103138,
+      "value": 0.11210762331838565,
+      "gross_prof": 0.06726457399103138,
+      "asset_growth": 0.06726457399103138,
+      "quality": 0.06726457399103138
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.7573377791166472,
+    "ann_return": 0.16972291663688366,
+    "ann_vol": 0.16911103597949753,
+    "max_drawdown": -22.134838241125117,
+    "turnover": 0.32183542472751664,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.056587273018467374,
+    "ann_return": 0.02032148998672545,
+    "ann_vol": 0.16585382080527689,
+    "max_drawdown": -16.221018449592492,
+    "turnover": 0.28219461022993547,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Further reducing momentum weight to 0.05 decreases reliance on a factor that has performed poorly in the validation period, thereby improving portfolio stability and validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.momentum",
+    "value": 0.05
+  }
+}

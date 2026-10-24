@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.20408163265306123,
+      "reversal": 0.12244897959183672,
+      "low_vol": 0.12244897959183672,
+      "resid_mom": 0.10204081632653061,
+      "high_52w": 0.08163265306122448,
+      "max_lottery": 0.08163265306122448,
+      "turnover": 0.06122448979591836,
+      "value": 0.10204081632653061,
+      "gross_prof": 0.06122448979591836,
+      "asset_growth": 0.0,
+      "quality": 0.06122448979591836
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.896198071954185,
+    "ann_return": 0.20146657260372303,
+    "ann_vol": 0.17385798343021291,
+    "max_drawdown": -21.647280324539338,
+    "turnover": 0.3263341694402856,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.0028272348385027226,
+    "ann_return": 0.030074812959277164,
+    "ann_vol": 0.1634454226285268,
+    "max_drawdown": -15.272537028654726,
+    "turnover": 0.2634268533002173,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Eliminating the asset_growth factor (weight zero) removes a noisy fundamental signal that may have been hurting performance, simplifying the composite and improving validation Sharpe.",
+  "kept": true,
+  "attribution": {
+    "path": "factor_weights.asset_growth",
+    "value": 0.0
+  }
+}

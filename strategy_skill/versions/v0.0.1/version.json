@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.10638297872340427,
+      "reversal": 0.1276595744680851,
+      "low_vol": 0.1276595744680851,
+      "resid_mom": 0.10638297872340427,
+      "high_52w": 0.08510638297872342,
+      "max_lottery": 0.08510638297872342,
+      "turnover": 0.06382978723404255,
+      "value": 0.10638297872340427,
+      "gross_prof": 0.06382978723404255,
+      "asset_growth": 0.06382978723404255,
+      "quality": 0.06382978723404255
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.8534807180160091,
+    "ann_return": 0.18923775986096025,
+    "ann_vol": 0.16963868852241837,
+    "max_drawdown": -21.433558029901377,
+    "turnover": 0.3320871419689876,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.10511094176288023,
+    "ann_return": 0.012801581760690572,
+    "ann_vol": 0.16271177153085448,
+    "max_drawdown": -17.149590975955505,
+    "turnover": 0.28096656519986346,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Reducing momentum weight shifts relative emphasis to defensive factors like low vol and quality, which may improve Sharpe if recent market conditions penalized trend-following",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.momentum",
+    "value": 0.1
+  }
+}

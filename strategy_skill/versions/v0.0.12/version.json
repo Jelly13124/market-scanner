@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.21739130434782614,
+      "reversal": 0.13043478260869565,
+      "low_vol": 0.13043478260869565,
+      "resid_mom": 0.10869565217391307,
+      "high_52w": 0.08695652173913045,
+      "max_lottery": 0.08695652173913045,
+      "turnover": 0.06521739130434782,
+      "value": 0.10869565217391307,
+      "gross_prof": 0.0,
+      "asset_growth": 0.0,
+      "quality": 0.06521739130434782
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.896198071954185,
+    "ann_return": 0.20146657260372303,
+    "ann_vol": 0.17385798343021291,
+    "max_drawdown": -21.647280324539338,
+    "turnover": 0.3263341694402856,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.08534276494619494,
+    "ann_return": 0.016804447206203443,
+    "ann_vol": 0.16020617302019452,
+    "max_drawdown": -15.272537028654726,
+    "turnover": 0.29977903600049893,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Eliminating gross_prof weight, analogous to the successful removal of asset_growth, removes a noisy fundamental signal, further simplifying the composite and improving validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.gross_prof",
+    "value": 0.0
+  }
+}

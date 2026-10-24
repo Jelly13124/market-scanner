@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.20408163265306128,
+      "reversal": 0.12244897959183675,
+      "low_vol": 0.12244897959183675,
+      "resid_mom": 0.10204081632653064,
+      "high_52w": 0.0816326530612245,
+      "max_lottery": 0.0816326530612245,
+      "turnover": 0.06122448979591837,
+      "value": 0.10204081632653064,
+      "gross_prof": 0.06122448979591837,
+      "asset_growth": 0.0,
+      "quality": 0.06122448979591837
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.03,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.3
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.948690559365738,
+    "ann_return": 0.2057592090360525,
+    "ann_vol": 0.16663278126932435,
+    "max_drawdown": -19.62383593117216,
+    "turnover": 0.25499999999999995,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": 0.03158200789294009,
+    "ann_return": 0.03485614128810943,
+    "ann_vol": 0.17179728446589315,
+    "max_drawdown": -17.3652727442732,
+    "turnover": 0.20590909090909093,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Tightening the dollar-volume liquidity filter removes more illiquid names, reducing implicit trading costs and improving validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "liquidity_pct.advol_pct",
+    "value": 0.3
+  }
+}

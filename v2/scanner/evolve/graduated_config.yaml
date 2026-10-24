@@ -1,0 +1,29 @@
+# Graduated scanner-evolve config (v0.0.9) — the deliberately PROMOTED snapshot.
+#
+# The scanner self-evolve loop tuned the intraday_move detector thresholds; this
+# is the retained-best config it graduated. The run store (scanner_evolve_run/)
+# is an untracked LOCAL artifact, so this committed yaml is the deploy-safe
+# source of truth the scanner_evolved paper sleeve forward-tests against the
+# baseline scanner_only sleeve.
+#
+# Same schema as scanner_skill_config.yaml — loads via evolve/config.load_config.
+# Differs from baseline ONLY in intraday_move's thresholds (the A/B variable):
+#   baseline: z_window=60, close_vs_open_pct=0.04, gap_pct=0.03, z_threshold=2.5
+#   tuned:    z_window=90, close_vs_open_pct=0.05, gap_pct=0.04, z_threshold=3.5
+
+detectors:
+  intraday_move:
+    z_window: 90              # trailing bars for the z-score distribution
+    close_vs_open_pct: 0.05   # absolute intraday-return gate
+    gap_pct: 0.04             # absolute overnight-gap gate
+    range_pct: 0.06           # absolute intraday-range gate
+    z_threshold: 3.5          # z-score gate for each sub-signal
+
+severity_mult:
+  intraday_move: 1.0
+
+top_n: 20
+
+# Fixed kernel — NOT adjustable.
+event_weight: 1.0
+quant_weight: 0.0

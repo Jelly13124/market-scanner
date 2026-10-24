@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.18587360594795538,
+      "reversal": 0.11152416356877322,
+      "low_vol": 0.11152416356877322,
+      "resid_mom": 0.1821561338289963,
+      "high_52w": 0.07434944237918215,
+      "max_lottery": 0.07434944237918215,
+      "turnover": 0.05576208178438661,
+      "value": 0.09293680297397769,
+      "gross_prof": 0.05576208178438661,
+      "asset_growth": 0.0,
+      "quality": 0.05576208178438661
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.8618714063497137,
+    "ann_return": 0.1941335972464857,
+    "ann_vol": 0.17358227181949304,
+    "max_drawdown": -21.61890322068299,
+    "turnover": 0.2988488108444318,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.14301013828305342,
+    "ann_return": 0.005787849166068781,
+    "ann_vol": 0.16479851406485033,
+    "max_drawdown": -18.613847849032172,
+    "turnover": 0.24699549971083837,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Increasing residual momentum weight to 0.2 captures more idiosyncratic momentum signal uncorrelated with common factors, improving diversification and Sharpe ratio.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.resid_mom",
+    "value": 0.2
+  }
+}

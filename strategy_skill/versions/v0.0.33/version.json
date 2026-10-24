@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.20408163265306128,
+      "reversal": 0.12244897959183675,
+      "low_vol": 0.12244897959183675,
+      "resid_mom": 0.10204081632653064,
+      "high_52w": 0.0816326530612245,
+      "max_lottery": 0.0816326530612245,
+      "turnover": 0.06122448979591837,
+      "value": 0.10204081632653064,
+      "gross_prof": 0.06122448979591837,
+      "asset_growth": 0.0,
+      "quality": 0.06122448979591837
+    },
+    "lookback": {
+      "momentum_days": 126.0,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.03,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.86770418601316,
+    "ann_return": 0.18393192900439748,
+    "ann_vol": 0.15954042225428566,
+    "max_drawdown": -18.196587159307548,
+    "turnover": 0.31585714285714284,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": 0.016186889119622964,
+    "ann_return": 0.03373719986740675,
+    "ann_vol": 0.16075829351492657,
+    "max_drawdown": -15.318703306269265,
+    "turnover": 0.2959090909090909,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Shortening the momentum formation window to 126 days captures faster trend signals, improving the momentum factor's risk-adjusted performance and raising validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "lookback.momentum_days",
+    "value": 126
+  }
+}

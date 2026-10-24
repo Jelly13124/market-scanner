@@ -1,0 +1,125 @@
+[tool.poetry]
+name = "ai-hedge-fund"
+version = "2026.5.9"
+description = "An AI-powered hedge fund that uses multiple agents to make trading decisions"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [
+    { include = "src", from = "." },
+    { include = "v2", from = "." },
+    { include = "app", from = "." }
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+langchain = "^0.3.7"
+langchain-anthropic = "0.3.5"
+langchain-groq = "0.2.3"
+langchain-openai = "^0.3.5"
+langchain-deepseek = "^0.1.2"
+langchain-ollama = "0.3.6"
+langgraph = "0.2.56"
+pandas = "^2.1.0"
+numpy = "^1.24.0"
+python-dotenv = "1.0.0"
+matplotlib = "^3.9.2"
+tabulate = "^0.9.0"
+colorama = "^0.4.6"
+questionary = "^2.1.0"
+rich = "^13.9.4"
+langchain-google-genai = "^2.0.11"
+# Backend dependencies
+# Pinned to ^0.116 to match the known-good local env (fastapi 0.116.2 +
+# pydantic 2.12). The old ^0.104 floor forced FastAPI 0.104 in the prod image,
+# which crashes against the modern pydantic that langchain 0.3 pulls in
+# ("'FieldInfo' object has no attribute 'in_'"). fastapi[standard] also supplies
+# jinja2 / uvicorn here. fastapi-cli is unused at runtime (we exec uvicorn
+# directly) and comes via [standard]; keep the floor but drop the cap so it can
+# match whatever fastapi[standard] wants.
+fastapi = {extras = ["standard"], version = "^0.116.0"}
+fastapi-cli = ">=0.0.7"
+pydantic = "^2.4.2"
+httpx = "^0.27.0"
+sqlalchemy = "^2.0.22"
+alembic = "^1.12.0"
+langchain-gigachat = "^0.3.12"
+langchain-xai = "^0.2.5"
+scipy = "^1.11.0"
+# Scanner cron scheduling (M4)
+apscheduler = "^3.10"
+# Multi-tenant auth
+passlib = {extras = ["bcrypt"], version = "^1.7.4"}
+# passlib 1.7.4 (2020) predates bcrypt 4.1+: it reads bcrypt.__about__ which 4.1
+# removed (a harmless trapped warning on 4.x) and breaks outright on bcrypt 5.x.
+# The [bcrypt] extra is uncapped, so the prod image pulled bcrypt 5.x and register
+# 500'd at hash_password. Cap bcrypt to the 4.x line (local runs 4.3.0 fine).
+bcrypt = "^4.0.0"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+# Fernet at-rest encryption for user API keys (APP_ENCRYPTION_KEY)
+cryptography = ">=42.0.0"
+authlib = "^1.3.0"
+email-validator = "^2.1.0"
+psycopg2-binary = "^2.9.9"
+# IP-keyed rate limiting for the public deploy surface (auth + heavy endpoints)
+slowapi = "^0.1.9"
+# Analyst data backend for the scanner (M8)
+yfinance = "^0.2.66"
+# Report rendering deps imported directly on the app startup path: jinja2 (HTML
+# templates in src/research/html_render.py) and mplfinance (kline/equity charts
+# in src/research/charts/render.py). They were satisfied locally (conda) but the
+# slim prod image needs them declared — uvicorn crashed on import without them.
+# mplfinance ships only prerelease (bN) versions, so pin the exact known-good one.
+jinja2 = "^3.1.0"
+mplfinance = "0.12.10b0"
+# Phase 8 — A-share data integration (optional [ashare] extra).
+# TEMPORARILY REMOVED from the Poetry dependency graph for the Fly deploy:
+# mootdx 0.11.7 hard-pins httpx (>=0.25,<0.26), irreconcilable with the app's
+# httpx ^0.27.0 (used by langchain/fastapi). Even as an *optional* extra, Poetry
+# must resolve it into the single lock, so its presence breaks `poetry lock`
+# outright. The A-share code paths import mootdx lazily/guarded
+# (v2/data/ashare/mootdx_prices.py wraps it in try/except → Quotes=None;
+# src/screener/ashare_metrics.py imports inside the function), so the app runs
+# fine without it and A-share is not part of the public deploy. For local A-share
+# use, install into the conda env directly: `pip install mootdx stockstats`.
+# Re-enable here once mootdx ships an httpx>=0.27-compatible release.
+# mootdx = { version = "^0.11.7", optional = true }
+# stockstats = { version = "^0.6.2", optional = true }
+#
+# [tool.poetry.extras]
+# ashare = ["mootdx", "stockstats"]
+#
+# Paper-trading live execution (optional [alpaca] extra). The DEFAULT live
+# harness reconstructs FakeBroker ledgers from the DB and marks at real prices —
+# it needs NO broker key and NO alpaca-py. AlpacaBroker (src/paper_trading/broker.py)
+# is an optional real-fills adapter that lazy-imports alpaca INSIDE __init__, so
+# the offline test suite never imports it and the slim prod image never needs it.
+# alpaca-py 0.42.x deps (requests<3,>=2.30 / pydantic<3,>=2.0.3 / pandas>=1.5.3 /
+# msgpack / websockets / sseclient-py) are all compatible with the app's pins, so
+# unlike mootdx this resolves cleanly in `poetry lock`. Install locally for live
+# fills via: `pip install alpaca-py` (or `poetry install --extras alpaca`).
+alpaca-py = { version = "^0.42.0", optional = true }
+
+[tool.poetry.extras]
+alpaca = ["alpaca-py"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+black = "^23.7.0"
+isort = "^5.12.0"
+flake8 = "^6.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 420
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+force_alphabetical_sort_within_sections = true
+
+[tool.poetry.scripts]
+backtester = "src.backtesting.cli:main"

@@ -1,0 +1,45 @@
+from fastapi import APIRouter
+
+from app.backend.routes.auth import router as auth_router
+from app.backend.routes.health import router as health_router
+from app.backend.routes.storage import router as storage_router
+from app.backend.routes.ollama import router as ollama_router
+from app.backend.routes.language_models import router as language_models_router
+from app.backend.routes.api_keys import router as api_keys_router
+from app.backend.routes.report_recipients import router as report_recipients_router
+from app.backend.routes.report_schedules import router as report_schedules_router
+from app.backend.routes.scanner import router as scanner_router
+from app.backend.routes.pipeline import router as pipeline_router
+from app.backend.routes.notifications import router as notifications_router
+from app.backend.routes.research import router as research_router
+from app.backend.routes.watchlists import router as watchlists_router
+from app.backend.routes.tickers import router as tickers_router
+from app.backend.routes.analyze_flows import router as analyze_flows_router
+from app.backend.routes.lab import router as lab_router
+from app.backend.routes.screener import router as screener_phase1_router
+from app.backend.routes.institutional_flow import router as institutional_flow_router
+from app.backend.routes.paper import router as paper_router
+
+# Main API router
+api_router = APIRouter()
+
+# Include sub-routers
+api_router.include_router(auth_router, tags=["auth"])
+api_router.include_router(health_router, tags=["health"])
+api_router.include_router(storage_router, tags=["storage"])
+api_router.include_router(ollama_router, tags=["ollama"])
+api_router.include_router(language_models_router, tags=["language-models"])
+api_router.include_router(api_keys_router, tags=["api-keys"])
+api_router.include_router(report_recipients_router, tags=["report-recipients"])
+api_router.include_router(report_schedules_router, tags=["report-schedules"])
+api_router.include_router(scanner_router, tags=["scanner"])
+api_router.include_router(pipeline_router, tags=["pipeline"])
+api_router.include_router(notifications_router, tags=["notifications"])
+api_router.include_router(research_router, tags=["research"])
+api_router.include_router(watchlists_router, tags=["watchlists"])
+api_router.include_router(tickers_router, tags=["tickers"])
+api_router.include_router(analyze_flows_router, tags=["analyze-flows"])
+api_router.include_router(lab_router, tags=["lab"])
+api_router.include_router(screener_phase1_router, tags=["screener"])
+api_router.include_router(institutional_flow_router, tags=["institutional-flow"])
+api_router.include_router(paper_router, tags=["paper"])

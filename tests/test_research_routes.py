@@ -1,0 +1,196 @@
+"""HTTP route tests using FastAPI TestClient with an in-memory SQLite
+DB and mocked run_research (no real LLM)."""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from app.backend.auth.dependencies import get_current_user
+from app.backend.database.connection import Base, get_db
+from app.backend.database.models import ResearchReport, ResearchTradePlan, User
+from app.backend.main import app
+from src.research.models import (
+    BacktestSummary, ResearchRequest, ResearchState, TradePlan,
+)
+
+
+@pytest.fixture
+def client():
+    from sqlalchemy.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+
+    def _override_get_db():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    # Superuser: the legacy /research/run route is now superuser-only (regular
+    # users get 403). These pre-existing route tests exercise the run path, so
+    # the acting user must be a superuser to reach run_research.
+    _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=True)
+
+    app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = lambda: _fake_user
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+    engine.dispose()
+
+
+@pytest.fixture
+def client_non_superuser():
+    """Same harness as `client` but the acting user is a NON-superuser, used
+    to assert the legacy /research/run gate (403)."""
+    from sqlalchemy.pool import StaticPool
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+
+    def _override_get_db():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    _fake_user = User(id=2, email="user@test.com", is_active=True, is_superuser=False)
+
+    app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[get_current_user] = lambda: _fake_user
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+    engine.dispose()
+
+
+def _fake_state(ticker="NVDA"):
+    return ResearchState(
+        request=ResearchRequest(
+            ticker=ticker, holding_status="watching",
+            target_position_pct=0.05, risk_tolerance="moderate",
+            report_goal="new_entry", use_personas=False,
+            scanner_context=None,
+        ),
+        persona_assignments=None,
+        module_results={},
+        report_markdown="# Report",
+        strategy=TradePlan(
+            direction="long", entry_price=145.0, target_price=165.0,
+            stop_price=138.0, horizon_days=30, sizing_pct=0.05,
+            confidence=72, rationale="r",
+        ),
+        backtest_summary=BacktestSummary(
+            matches_found=5, win_rate=0.6, avg_pnl_pct=0.08,
+            max_drawdown_pct=-0.10, avg_holding_days=20.0,
+            sample_quality="moderate", caveat=None,
+        ),
+        rendered_html="<html><body>NVDA</body></html>",
+    )
+
+
+class TestPostRun:
+    @patch("app.backend.routes.research.run_research")
+    @patch("app.backend.routes.research.render_html")
+    def test_happy_path_returns_detail(self, mock_render, mock_run, client):
+        mock_run.return_value = _fake_state("NVDA")
+        mock_render.return_value = "<html><body>NVDA</body></html>"
+        resp = client.post("/research/run", json={"ticker": "NVDA"})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["ticker"] == "NVDA"
+        assert body["plan"]["direction"] == "long"
+        assert body["backtest"]["sample_quality"] == "moderate"
+        assert "id" in body
+
+    @patch("app.backend.routes.research.run_research")
+    @patch("app.backend.routes.research.render_html")
+    def test_persists_report_and_plan(self, mock_render, mock_run, client):
+        mock_run.return_value = _fake_state("NVDA")
+        mock_render.return_value = "<html></html>"
+        r1 = client.post("/research/run", json={"ticker": "NVDA"})
+        report_id = r1.json()["id"]
+        r2 = client.get(f"/research/reports/{report_id}")
+        assert r2.status_code == 200
+        assert r2.json()["ticker"] == "NVDA"
+
+
+class TestLegacyRunGate:
+    """The legacy /research/run route is superuser-only (the legacy pipeline is
+    NOT wired for per-user keys, so a regular user would leak the host's keys)."""
+
+    def test_legacy_run_forbidden_for_non_superuser(self, client_non_superuser):
+        resp = client_non_superuser.post("/research/run", json={"ticker": "NVDA"})
+        assert resp.status_code == 403, resp.text
+        assert "/research/analyze" in resp.json()["detail"]
+
+    @patch("app.backend.routes.research.run_research")
+    @patch("app.backend.routes.research.render_html")
+    def test_legacy_run_allowed_for_superuser(self, mock_render, mock_run, client):
+        # `client` fixture acts as a superuser; the gate must pass through to
+        # run_research (mocked so it does not actually execute the pipeline).
+        mock_run.return_value = _fake_state("NVDA")
+        mock_render.return_value = "<html></html>"
+        resp = client.post("/research/run", json={"ticker": "NVDA"})
+        assert resp.status_code != 403, resp.text
+        assert mock_run.called
+
+
+class TestListReports:
+    @patch("app.backend.routes.research.run_research")
+    @patch("app.backend.routes.research.render_html")
+    def test_list_filters_by_ticker(self, mock_render, mock_run, client):
+        mock_render.return_value = "<html></html>"
+        mock_run.side_effect = lambda req: _fake_state(req.ticker)
+        client.post("/research/run", json={"ticker": "NVDA"})
+        client.post("/research/run", json={"ticker": "AVGO"})
+        resp = client.get("/research/reports", params={"ticker": "NVDA"})
+        assert resp.status_code == 200
+        rows = resp.json()
+        assert len(rows) == 1
+        assert rows[0]["ticker"] == "NVDA"
+
+    def test_list_empty_returns_empty_array(self, client):
+        resp = client.get("/research/reports")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
+class TestGetHtml:
+    @patch("app.backend.routes.research.run_research")
+    @patch("app.backend.routes.research.render_html")
+    def test_returns_html_with_correct_content_type(self, mock_render, mock_run, client):
+        mock_run.return_value = _fake_state("NVDA")
+        mock_render.return_value = "<html><body>NVDA report body</body></html>"
+        r1 = client.post("/research/run", json={"ticker": "NVDA"})
+        report_id = r1.json()["id"]
+        r2 = client.get(f"/research/reports/{report_id}/html")
+        assert r2.status_code == 200
+        assert r2.headers["content-type"].startswith("text/html")
+        assert "NVDA report body" in r2.text
+
+    def test_html_404_for_missing_report(self, client):
+        resp = client.get("/research/reports/99999/html")
+        assert resp.status_code == 404
+
+
+class TestGetDetail404:
+    def test_returns_404(self, client):
+        resp = client.get("/research/reports/99999")
+        assert resp.status_code == 404

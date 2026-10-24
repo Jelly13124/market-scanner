@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.19230769230769232,
+      "reversal": 0.11538461538461538,
+      "low_vol": 0.11538461538461538,
+      "resid_mom": 0.09615384615384616,
+      "high_52w": 0.07692307692307693,
+      "max_lottery": 0.07692307692307693,
+      "turnover": 0.05769230769230769,
+      "value": 0.09615384615384616,
+      "gross_prof": 0.05769230769230769,
+      "asset_growth": 0.05769230769230769,
+      "quality": 0.05769230769230769
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 20.0,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.8759862656478656,
+    "ann_return": 0.19506407846267115,
+    "ann_vol": 0.17113567822101372,
+    "max_drawdown": -20.9454355461341,
+    "turnover": 0.4178760481787108,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.10240932791404551,
+    "ann_return": 0.013140314028164513,
+    "ann_vol": 0.16323418514023824,
+    "max_drawdown": -16.615353544113038,
+    "turnover": 0.34108813513352504,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Reducing volatility lookback to 20 days makes the low-volatility signal more responsive to recent market conditions, improving factor timing and thereby the composite's Sharpe ratio.",
+  "kept": false,
+  "attribution": {
+    "path": "lookback.vol_days",
+    "value": 20
+  }
+}

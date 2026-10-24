@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.20408163265306128,
+      "reversal": 0.12244897959183675,
+      "low_vol": 0.12244897959183675,
+      "resid_mom": 0.10204081632653064,
+      "high_52w": 0.0816326530612245,
+      "max_lottery": 0.0816326530612245,
+      "turnover": 0.06122448979591837,
+      "value": 0.10204081632653064,
+      "gross_prof": 0.06122448979591837,
+      "asset_growth": 0.0,
+      "quality": 0.06122448979591837
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 120.0,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.9067417164609628,
+    "ann_return": 0.20143874732573952,
+    "ann_vol": 0.171319669016176,
+    "max_drawdown": -21.679084578186995,
+    "turnover": 0.3015092539745301,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.004065542805680584,
+    "ann_return": 0.030139238777680433,
+    "ann_vol": 0.16166804560104225,
+    "max_drawdown": -15.393611946061805,
+    "turnover": 0.25246923841783847,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Longer volatility window (120 days) yields more stable low volatility factor, reducing noise and improving Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "lookback.vol_days",
+    "value": 120
+  }
+}

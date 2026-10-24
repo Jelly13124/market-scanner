@@ -1,0 +1,43 @@
+# Fly.io config. `fly launch` fills in `app` + `primary_region`; review everything
+# marked CHANGE-ME before `fly deploy`. See docs/DEPLOY.md for the full runbook.
+
+app = "quantlab"
+primary_region = "nrt"   # Tokyo (low latency for Asia). near your users: iad=US-East, hkg=Hong Kong, sin=Singapore
+
+[build]
+  dockerfile = "Dockerfile"
+  [build.args]
+    # Baked into the SPA bundle at build time. The API is served at ROOT (no /api
+    # prefix), so this is just your final public URL. Deploy first with the
+    # fly.dev host, then re-deploy with your custom domain once DNS is live.
+    VITE_API_URL = "https://quantlab.fly.dev"
+
+[env]
+  DATABASE_URL = "sqlite:////data/app.db"          # SQLite on the persisted volume
+  FRONTEND_DIST = "/app/app/frontend/dist"         # where the Dockerfile placed the built SPA
+  REQUIRE_EMAIL_VERIFICATION = "true"              # gate unverified password signups
+  RATE_LIMIT_ENABLED = "true"                      # slowapi on /auth/* + analyze/scan
+  FRONTEND_ORIGINS = "https://quantlab.fly.dev"   # CORS allow-list (same-origin, but set it)
+  FRONTEND_BASE_URL = "https://quantlab.fly.dev"  # base URL baked into email verify links (was defaulting to localhost)
+  PAPER_SLEEVES = "scanner_agent,scanner_only,spy_benchmark,scanner_agent_flow,factor_evolved"  # factor_evolved graduated (11-factor v0.0.25); its weekly bundle build is only ~tens of MB so 2gb suffices
+
+# SQLite lives here. Create it once: `fly volumes create data --size 3 --region <r>`.
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = false     # keep the single machine up (APScheduler + the SQLite volume)
+  min_machines_running = 1       # exactly one machine — SQLite cannot run multi-instance
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "15s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "2gb"                 # ~$12/mo (shared-cpu-1x max). factor_evolved's weekly bundle is only ~tens of MB; bump CPU size to shared-cpu-2x for 4gb if it ever OOMs.

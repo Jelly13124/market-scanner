@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.20408163265306128,
+      "reversal": 0.12244897959183675,
+      "low_vol": 0.12244897959183675,
+      "resid_mom": 0.10204081632653064,
+      "high_52w": 0.0816326530612245,
+      "max_lottery": 0.0816326530612245,
+      "turnover": 0.06122448979591837,
+      "value": 0.10204081632653064,
+      "gross_prof": 0.06122448979591837,
+      "asset_growth": 0.0,
+      "quality": 0.06122448979591837
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 21.0,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.05,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.9153063902174532,
+    "ann_return": 0.2033365310151114,
+    "ann_vol": 0.1714224913148066,
+    "max_drawdown": -20.930777259575258,
+    "turnover": 0.41934153494009424,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": -0.10392076426690913,
+    "ann_return": 0.01303135319123827,
+    "ann_vol": 0.16269165551294926,
+    "max_drawdown": -16.877831306450318,
+    "turnover": 0.33433700528332017,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Shortening vol_days to 21 makes volatility estimates more reactive, improving risk-weighted allocation and validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "lookback.vol_days",
+    "value": 21
+  }
+}

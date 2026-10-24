@@ -1,0 +1,58 @@
+{
+  "config": {
+    "factor_weights": {
+      "momentum": 0.19436345966958216,
+      "reversal": 0.11661807580174928,
+      "low_vol": 0.11661807580174928,
+      "resid_mom": 0.09718172983479108,
+      "high_52w": 0.07774538386783285,
+      "max_lottery": 0.07774538386783285,
+      "turnover": 0.05830903790087464,
+      "value": 0.09718172983479108,
+      "gross_prof": 0.05830903790087464,
+      "asset_growth": 0.047619047619047616,
+      "quality": 0.05830903790087464
+    },
+    "lookback": {
+      "momentum_days": 252,
+      "vol_days": 63,
+      "reversal_days": 21,
+      "max_days": 21,
+      "hi_days": 252,
+      "to_days": 21,
+      "resid_days": 252
+    },
+    "top_n": 30,
+    "holding_buffer": 5,
+    "max_weight": 0.03,
+    "liquidity_pct": {
+      "mktcap_pct": 0.2,
+      "advol_pct": 0.2
+    },
+    "tilt_strength": 0.5,
+    "rebalance": "monthly",
+    "cost_bps": 10.0
+  },
+  "train_metrics": {
+    "sharpe": 0.9161791604815214,
+    "ann_return": 0.19789861425885658,
+    "ann_vol": 0.16502444393882887,
+    "max_drawdown": -18.929569193738097,
+    "turnover": 0.27985714285714286,
+    "n_rebalances": 72
+  },
+  "val_metrics": {
+    "sharpe": 0.10554506765114546,
+    "ann_return": 0.0490615823475935,
+    "ann_vol": 0.15976536188182297,
+    "max_drawdown": -14.205314713679574,
+    "turnover": 0.23727272727272727,
+    "n_rebalances": 24
+  },
+  "hypothesis": "Adding asset_growth factor diversifies the fundamental overlay and captures the low-investment premium, improving validation Sharpe.",
+  "kept": false,
+  "attribution": {
+    "path": "factor_weights.asset_growth",
+    "value": 0.05
+  }
+}

@@ -1,0 +1,265 @@
+"""Offline end-to-end smoke for the scanner self-evolve CLI (Task 7).
+
+Drives the FULL ``run.main`` path OFFLINE + DETERMINISTIC:
+
+    injected prefetch_fn (synthetic bundles)  →  evolve (train+val)  →
+    single post-loop scanner_fitness("test")  →  report.write_report (md + html)
+
+No network, no LLM, no data files: ``prefetch_fn`` / ``spy_fetch_fn`` return
+in-memory synthetic bundles and a stub SPY, and ``propose_fn`` is a scripted stub
+emitting in-range scanner deltas. The bundles span dates that fall inside the
+REAL train / val / test sample windows so the loop and the held-out read actually
+exercise their windows.
+
+What this proves end-to-end:
+
+1. **Report exists** — both the ``.md`` AND the ``.html`` run-report files are
+   written.
+2. **Test verdict renders** — the post-loop ``scanner_fitness("test")`` numbers
+   (the ``interestingness`` / ``n_fired``) appear in BOTH rendered outputs.
+3. **Optimization path / retained config present** — the report carries the
+   path table + a retained config block.
+4. **Sample isolation (invariant #1) end-to-end** — across the loop's fitness
+   calls ``"test"`` is NEVER scored; the single ``"test"`` read happens only
+   post-loop. Proven by a sample-recorder wrapping the real ``scanner_fitness``.
+"""
+
+from __future__ import annotations
+
+from datetime import date, timedelta
+
+from types import MappingProxyType
+
+from v2.data.models import Price
+from v2.scanner.eval.cached_asof_client import TickerBundle
+from v2.scanner.evolve import run as run_mod
+from v2.scanner.evolve import samples as samples_mod
+from v2.scanner.evolve.samples import RegimeSpan
+
+
+# ---------------------------------------------------------------------------
+# Synthetic bundles spanning the REAL train/val/test windows
+# ---------------------------------------------------------------------------
+
+# Full daily calendar from before the earliest train window to after the test
+# window, so every sample's as-of dates exist in the synthetic series.
+_SPAN_START = "2021-10-01"  # covers the detector's lookback before the earliest engineered break
+_SPAN_END = "2026-06-05"
+
+# One intraday-move date inside EACH sample window, chosen well clear of the
+# edges so the intraday_move(z_window=60) trailing window + the +10% move bar fit.
+_BREAK_DATES = {
+    "train": "2022-06-01",  # inside bear_2022 (2022-01-03..2022-10-14)
+    "val": "2025-05-01",  # inside choppy_2025 (2025-02-18..2025-08-01)
+    "test": "2025-12-01",  # inside heldout_2025_26 (2025-09-01..2026-06-01)
+}
+
+
+def _daterange(start: str, end: str) -> list[str]:
+    d0 = date.fromisoformat(start)
+    d1 = date.fromisoformat(end)
+    return [(d0 + timedelta(days=i)).isoformat() for i in range((d1 - d0).days + 1)]
+
+
+def _price(time_iso: str, *, open_: float, close: float) -> Price:
+    hi = max(open_, close)
+    lo = min(open_, close)
+    return Price(open=open_, close=close, high=hi, low=lo, volume=1_000_000, time=time_iso)
+
+
+def _flat_price(time_iso: str, level: float = 100.0) -> Price:
+    return _price(time_iso, open_=level, close=level)
+
+
+def _firing_prices(dates: list[str]) -> list[Price]:
+    """A long flat series with a big-intraday-move bar engineered ON each break date.
+
+    Flat bars (open==close==100, cvo=0) everywhere build the trailing z-window
+    baseline, then for each break date a +10% intraday move (open=100,
+    close=110) crosses the 4% close_vs_open gate → fires, followed by a small
+    rising tail (so a 5d forward return exists). Break dates are far apart.
+    """
+    idx = {d: i for i, d in enumerate(dates)}
+    prices = [_flat_price(d) for d in dates]
+    for bdate in _BREAK_DATES.values():
+        bi = idx.get(bdate)
+        if bi is None or bi < 4 or bi + 11 >= len(prices):
+            continue
+        prices[bi] = _price(dates[bi], open_=100.0, close=110.0)  # +10% intraday move
+        for k in range(1, 11):
+            lvl = 110.0 + 1.0 * k
+            prices[bi + k] = _flat_price(dates[bi + k], lvl)
+    return prices
+
+
+def _bundle(ticker: str, prices: list[Price]) -> TickerBundle:
+    return TickerBundle(ticker=ticker, prices=prices)
+
+
+def _make_bundles() -> dict[str, TickerBundle]:
+    dates = _daterange(_SPAN_START, _SPAN_END)
+    firing = _firing_prices(dates)
+    bundles = {"AAA": _bundle("AAA", firing)}
+    # A handful of never-fire fillers to widen the random baseline.
+    for j, name in enumerate(("BBB", "CCC", "DDD", "EEE")):
+        flat = [_flat_price(d, 100.0 + 0.01 * j * i) for i, d in enumerate(dates)]
+        bundles[name] = _bundle(name, flat)
+    return bundles
+
+
+def _spy_bundle() -> TickerBundle:
+    dates = _daterange(_SPAN_START, _SPAN_END)
+    return _bundle("SPY", [_flat_price(d) for d in dates])
+
+
+# ---------------------------------------------------------------------------
+# Stub proposer — in-range scanner deltas, no LLM
+# ---------------------------------------------------------------------------
+
+
+def _scripted_propose(deltas):
+    """A ``propose_fn`` emitting ``deltas`` in order, then ``None`` forever."""
+    seq = list(deltas)
+    calls = {"n": 0}
+
+    def propose_fn(skill, config, val_history, *, llm_fn=None):
+        i = calls["n"]
+        calls["n"] += 1
+        return seq[i] if i < len(seq) else None
+
+    return propose_fn
+
+
+# ---------------------------------------------------------------------------
+# Sample-recorder — wrap the REAL scanner_fitness to record every sample arg
+# ---------------------------------------------------------------------------
+
+
+class _SampleRecorder:
+    """Wrap ``run.scanner_fitness`` and record each ``sample`` it is called with.
+
+    Delegates to the real fitness (so the loop + the post-loop test read run for
+    real over the synthetic bundles); the recorded list lets the smoke prove that
+    ``"test"`` never appeared inside the loop.
+    """
+
+    def __init__(self, monkeypatch):
+        self._real = run_mod.scanner_fitness
+        self.samples: list[str] = []
+        monkeypatch.setattr(run_mod, "scanner_fitness", self)
+
+    def __call__(self, bundles, config, sample, **kwargs):
+        self.samples.append(sample)
+        # Single worker over the ~5-ticker synthetic universe: the thread pool is
+        # pure churn here and serializing the scan keeps the smoke fast. Forced on
+        # BOTH the loop's fitness calls and the post-loop test read (both route
+        # through this wrapper). Production code keeps its max_workers=8 default.
+        kwargs.setdefault("max_workers", 1)
+        return self._real(bundles, config, sample, **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# The end-to-end smoke
+# ---------------------------------------------------------------------------
+
+
+def _tiny_window(break_date: str) -> tuple[str, str]:
+    """A ~17-day span tightly bracketing ``break_date``.
+
+    Starts 10 days before and ends 6 days after the engineered break. With
+    ``rebalance_step=5`` the stepped as-of dates land on break-10, break-5,
+    break, break+5 — so the break date itself is always scored, and the window
+    is short enough that a fitness call replays ~4 as-of dates instead of ~142.
+    """
+    b = date.fromisoformat(break_date)
+    return ((b - timedelta(days=10)).isoformat(), (b + timedelta(days=6)).isoformat())
+
+
+def test_cli_end_to_end_offline_writes_report_and_holds_out_test(tmp_path, monkeypatch):
+    # MAIN speed lever: shrink the train/val/test sample windows to ~17-day spans
+    # bracketing each engineered break, so each scanner_fitness call replays ~4
+    # as-of dates instead of ~142 across the multi-year regimes. ``window_of`` and
+    # ``run.main``'s prefetch-span helper both resolve the module global
+    # ``samples.SAMPLES`` at call time, so patching it here shrinks BOTH the
+    # prefetch span and the replay windows. The synthetic series is still long
+    # enough that intraday_move(z_window=60) fires inside each tiny window.
+    tiny_samples = MappingProxyType(
+        {
+            "train": (RegimeSpan("train_tiny", *_tiny_window(_BREAK_DATES["train"])),),
+            "val": (RegimeSpan("val_tiny", *_tiny_window(_BREAK_DATES["val"])),),
+            "test": (RegimeSpan("test_tiny", *_tiny_window(_BREAK_DATES["test"])),),
+        }
+    )
+    monkeypatch.setattr(samples_mod, "SAMPLES", tiny_samples)
+
+    bundles = _make_bundles()
+    spy = _spy_bundle()
+
+    def prefetch_fn(start, end):
+        return bundles
+
+    def spy_fetch_fn(start, end):
+        return spy
+
+    # In-range scanner deltas (no LLM). Each round nudges a different adjustable.
+    propose_fn = _scripted_propose(
+        [
+            {"path": "detectors.intraday_move.z_threshold", "value": 3.0, "hypothesis": "stricter z gate"},
+            {"path": "detectors.intraday_move.gap_pct", "value": 0.05, "hypothesis": "wider gap gate"},
+            {"path": "top_n", "value": 30, "hypothesis": "more breadth"},
+        ]
+    )
+
+    recorder = _SampleRecorder(monkeypatch)
+
+    out_dir = tmp_path / "run"
+    rc = run_mod.main(
+        argv=["--iterations", "3", "--out-dir", str(out_dir)],
+        prefetch_fn=prefetch_fn,
+        spy_fetch_fn=spy_fetch_fn,
+        propose_fn=propose_fn,
+    )
+    assert rc == 0
+
+    # 1. Both report files exist.
+    md_path = out_dir / "scanner_evolve_report.md"
+    html_path = out_dir / "scanner_evolve_report.html"
+    assert md_path.is_file()
+    assert html_path.is_file()
+
+    md = md_path.read_text(encoding="utf-8")
+    html = html_path.read_text(encoding="utf-8")
+
+    # 2. The post-loop TEST read's fitness numbers render in BOTH outputs.
+    #    Recompute the expected test diff exactly as the CLI did: the retained-best
+    #    config scored once on "test" — the LAST sample the recorder saw.
+    assert recorder.samples[-1] == "test"  # the single post-loop read
+    assert "Held-out TEST verdict" in md
+    assert "Held-out TEST verdict" in html
+
+    # The TEST n_fired value must be present (a concrete number, not the n/a path).
+    assert "_n/a" not in md.split("Held-out TEST verdict")[1].split("##")[0]
+
+    # 3. Optimization path + retained config sections are present.
+    assert "## Optimization path" in md
+    assert "## Retained config" in md
+    assert "v0" in md  # the baseline row at minimum
+
+    # The TEST fitness numbers appear in both md AND html. Find the rendered test
+    # diff/n_fired cells in the md verdict block and assert they're also in html.
+    verdict_block = md.split("Held-out TEST verdict")[1].split("## Honest caveats")[0]
+    # Pull the n_fired row value and assert it co-renders in the html.
+    assert "n_fired" in verdict_block
+    for line in verdict_block.splitlines():
+        if line.startswith("| n_fired"):
+            value = line.split("|")[2].strip()
+            assert value in html  # test fitness renders in html too
+            break
+
+    # 4. Sample isolation end-to-end: "test" NEVER inside the loop, only post-loop.
+    #    The recorder saw train+val during the loop, then exactly one "test" last.
+    loop_samples = recorder.samples[:-1]
+    assert "test" not in loop_samples
+    assert "train" in loop_samples
+    assert "val" in loop_samples
+    assert recorder.samples.count("test") == 1

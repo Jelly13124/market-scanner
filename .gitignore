@@ -1,0 +1,90 @@
+# Brainstorming visual companion (mockups, not source)
+.superpowers/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+
+# Environment Variables
+.env
+
+# IDE
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+.cursorrules
+.cursorignore
+.cursorindexingignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# graph
+*.png
+
+# Txt files
+*.txt
+
+# PDF files
+*.pdf
+
+# Frontend
+node_modules
+
+# Outputs
+outputs/
+/scratchpad/
+
+# Local backtest CSV outputs at repo root (not the universe CSVs under
+# v2/scanner/universes/ which we DO track)
+/backtest_*.csv
+/*.csv
+
+# Database files (users will have their own local databases)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Alembic (keep migration files, but ignore generated/cache files)
+app/backend/alembic/versions/__pycache__/
+
+# Workflow backtest run artifacts — keep findings_agent_backtest.md + decisions.csv,
+# ignore the resumable per-cell JSON + the run log
+workflow_backtest/cell_*.json
+workflow_backtest_run.log
+workflow_backtest_preflight/
+
+# Run logs + evolve run-output dirs (local artifacts, not source).
+*.log
+/scanner_evolve_run/
+/self_evolve_run/
+/self_evolve_run_*/
+/strategy_skill/versions_archive_*/

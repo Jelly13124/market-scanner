@@ -1,0 +1,736 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "apply": "Apply",
+    "run": "Run",
+    "loading": "Loading...",
+    "close": "Close",
+    "edit": "Edit",
+    "add": "Add",
+    "remove": "Remove",
+    "back": "Back",
+    "confirm": "Confirm",
+    "create": "Create",
+    "new": "New",
+    "search": "Search",
+    "yes": "Yes",
+    "no": "No",
+    "english": "English",
+    "chinese": "简体中文",
+    "or": "or",
+    "refresh": "Refresh",
+    "rename": "Rename",
+    "required": "required",
+    "name": "Name",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "test": "Test"
+  },
+  "auth": {
+    "signInTitle": "Sign in",
+    "signInSubtitle": "Sign in to your account to continue.",
+    "createAccountTitle": "Create account",
+    "createAccountSubtitle": "Create an account to get started.",
+    "fullNameLabel": "Full name (optional)",
+    "fullNamePlaceholder": "Jane Doe",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you@example.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "••••••••",
+    "signInButton": "Sign in",
+    "createAccountButton": "Create account",
+    "continueWithGoogle": "Continue with Google",
+    "continueWithGitHub": "Continue with GitHub",
+    "noAccountPrompt": "Don't have an account?",
+    "haveAccountPrompt": "Already have an account?",
+    "switchToRegister": "Sign up",
+    "switchToLogin": "Sign in",
+    "errorInvalidCredentials": "Invalid email or password.",
+    "errorEmailTaken": "That email is already registered.",
+    "errorInvalidInput": "Check your email and password (min 8 characters).",
+    "errorGeneric": "Something went wrong. Please try again.",
+    "account": "Account",
+    "logout": "Log out",
+    "admin": "Admin"
+  },
+  "tabBar": {
+    "closeTab": "Close tab",
+    "welcome": "Welcome to Quant Lab",
+    "welcomeHint": "Open a panel from the left sidebar (⌘B) or open settings (⌘,) to configure your preferences."
+  },
+  "tabs": {
+    "analyze": "Analyze",
+    "scanner": "Scanner",
+    "lab": "Lab",
+    "settings": "Settings",
+    "flow": "Institutional"
+  },
+  "sidebar": {
+    "home": "Home",
+    "homeTooltip": "Back to the welcome / getting-started screen",
+    "watchlists": "Watchlists",
+    "analyze": "Analyze",
+    "scanner": "Scanner",
+    "lab": "Lab",
+    "addTicker": "Add ticker",
+    "addWatchlist": "Add watchlist",
+    "newWatchlist": "New watchlist",
+    "watchlistName": "Watchlist name",
+    "watchlistNamePlaceholder": "e.g. AI watch",
+    "deleteWatchlist": "Delete watchlist \"{{name}}\"?",
+    "renameWatchlist": "Rename",
+    "noTickers": "No tickers. Click + to add.",
+    "noWatchlists": "No watchlists. Click + to create one.",
+    "tickerCount_one": "{{count}} ticker",
+    "tickerCount_other": "{{count}} tickers",
+    "analyzeTooltip": "Open per-stock SOP analyzer",
+    "scannerTooltip": "Run universe-wide screening",
+    "labTooltip": "AI strategy lab — chat to design, backtest, iterate",
+    "searchTickerPlaceholder": "Search ticker...",
+    "apiKeys": "API Keys",
+    "apiKeysHint": "Keys are saved to backend .env. Click + to get a key.",
+    "apiKeysGetKey": "Sign up / get key",
+    "apiKeysShow": "Show key",
+    "apiKeysHide": "Hide key"
+  },
+  "topBar": {
+    "toggleLeft": "Toggle Left Side Bar",
+    "toggleRight": "Toggle Right Side Bar",
+    "toggleBottom": "Toggle Bottom Panel",
+    "openSettings": "Open Settings",
+    "language": "Language"
+  },
+  "sections": {
+    "data_health": "Data Health",
+    "executive_summary": "Executive Summary",
+    "evidence_ledger": "Evidence Ledger",
+    "macro": "Macro Regime",
+    "sector": "Sector & Peer",
+    "company_fundamentals": "Company Fundamentals",
+    "financial_statements": "Financial Statements",
+    "valuation": "Valuation",
+    "technical": "Technical Analysis (incl. Backtest)",
+    "risk_position": "Risk & Position",
+    "scenarios": "Bear/Base/Bull Scenarios",
+    "conviction": "Conviction Score",
+    "event_risk": "Event Risk",
+    "debate": "Debate (personas only)",
+    "final_strategy": "Final Strategy",
+    "missing_data": "Missing Data"
+  },
+  "analyze": {
+    "title": "Analyze",
+    "toolbar": {
+      "run": "Run SOP analysis",
+      "running": "Running",
+      "newBlank": "New blank",
+      "resetToDefault": "Reset to default",
+      "save": "Save flow",
+      "saveAs": "Save as...",
+      "load": "Load",
+      "addInput": "+ Input",
+      "addSection": "+ Add",
+      "savedFlow": "Saved flow",
+      "newFlow": "New",
+      "elapsed": "elapsed",
+      "schedule": "Schedule",
+      "sectionsCount_one": "{{count}} section",
+      "sectionsCount_other": "{{count}} sections"
+    },
+    "input": {
+      "label": "Run Input",
+      "ticker": "Ticker",
+      "market": "Market",
+      "objective": "Objective",
+      "budget": "Budget (USD)",
+      "risk": "Risk tolerance",
+      "holds": "I already hold this",
+      "costBasis": "Cost basis ($/share)",
+      "reportLanguage": "Report language",
+      "reportLanguageHint": "Language of the generated report",
+      "deleteNode": "Delete Input node"
+    },
+    "objectives": {
+      "general_research": "General research",
+      "target_price": "Target price",
+      "short_term": "Short-term trade",
+      "medium_term": "Medium-term",
+      "long_term": "Long-term invest",
+      "earnings_review": "Earnings review"
+    },
+    "risks": {
+      "conservative": "Conservative",
+      "balanced": "Balanced",
+      "aggressive": "Aggressive"
+    },
+    "markets": {
+      "us": "US",
+      "cn": "A股"
+    },
+    "batch": {
+      "button": "Batch report ({{count}})",
+      "dialogTitle": "Batch report",
+      "dialogDesc": "Run a deep analysis report for each selected ticker. Each takes ~1-2 min and streams into Recent Reports.",
+      "run": "Run {{count}} reports",
+      "capNote": "At most {{cap}} at a time — only the first {{cap}} will run.",
+      "progress": "Batch analysis {{done}}/{{total}} (failed {{failed}})",
+      "done": "Batch done — {{done}}/{{total}} reports ready (failed {{failed}})",
+      "emailReports": "Email each report to my verified addresses"
+    },
+    "section": {
+      "persona": "Persona",
+      "objective_persona": "objective",
+      "rounds": "Rounds",
+      "roundsHint": "(max 5, recommended 3)",
+      "usePersonas": "Use investor personas",
+      "deleteNode": "Delete node"
+    },
+    "output": {
+      "title": "Output",
+      "description": "Final HTML report — composed of 4 backend sections",
+      "deleteNode": "Delete Output node"
+    },
+    "palette": {
+      "title": "Sections",
+      "alreadyOnCanvas": "Already on canvas",
+      "runInput": "Run Input",
+      "managerCheck": "Manager Check"
+    },
+    "flowList": {
+      "savedFlows": "Saved flows",
+      "noSaved": "No saved flows yet",
+      "savePromptName": "Name for this flow",
+      "saveSuccess": "Flow saved",
+      "deleted": "Flow deleted",
+      "savedTemplates": "Saved AnalyzeFlow templates",
+      "loadSelected": "Load selected",
+      "deleteSelected": "Delete selected",
+      "saveAsTemplate": "Save current canvas as new template",
+      "resetToDefault": "Reset to default template",
+      "templateName": "Template name"
+    },
+    "status": {
+      "title": "Section status",
+      "completed": "Completed",
+      "skipped": "Skipped",
+      "failed": "Failed",
+      "personaAssignments": "Persona assignments",
+      "personas": "Personas"
+    },
+    "reports": {
+      "title": "Recent reports",
+      "titleFor": "Recent reports for {{ticker}}",
+      "reportN": "Report #{{id}}",
+      "openInNewTab": "Open in new tab",
+      "emailReport": "Email report",
+      "emailSent": "Emailed report to {{count}} address(es)",
+      "emailFailed": "Email failed for {{count}} address(es)",
+      "noReports": "No reports yet",
+      "deleteConfirm": "Delete report #{{id}} ({{ticker}})?",
+      "deleted": "Report #{{id}} deleted"
+    },
+    "errors": {
+      "noInput": "Add an Input node to the canvas first.",
+      "noTicker": "Enter a ticker in the Input node."
+    },
+    "toasts": {
+      "complete": "Analyze complete: {{ticker}} (id {{id}})",
+      "flowSaved": "Flow saved",
+      "flowLoaded": "Flow loaded",
+      "canvasReset": "Canvas reset to default template",
+      "completeInReports": "Report #{{id}} for {{ticker}} is ready — open it from Recent Reports in the sidebar."
+    },
+    "scheduleDialog": {
+      "title": "Schedule {{ticker}}",
+      "description": "Auto-run this analysis on a schedule and email the report to your verified addresses.",
+      "frequency": "Frequency",
+      "daily": "Daily",
+      "weekdays": "Weekdays",
+      "weekly": "Weekly (Mon)",
+      "time": "Time (ET)",
+      "language": "Report language",
+      "create": "Create schedule",
+      "created": "Scheduled {{ticker}} — manage in Settings → Scheduled reports",
+      "noTicker": "Enter a ticker in the Input node first."
+    },
+    "runsSidebar": {
+      "title": "Runs",
+      "empty": "No runs yet. Click Run to start an analysis.",
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed",
+      "openReport": "Open report",
+      "clearFinished": "Clear finished",
+      "useCanvas": "Use my canvas config",
+      "useCanvasHint": "One-click analyses from Scanner/Screener reuse your Analyze canvas sections instead of running a full report."
+    }
+  },
+  "onboarding": {
+    "gate": {
+      "tooltip": "Add an API key first",
+      "addKey": "Add API key"
+    },
+    "home": {
+      "title": "Welcome to Quant Lab",
+      "subtitle": "AI deep-dive research · market scanning · backtesting — with your own API key.",
+      "exploreLabel": "Or jump into a tool",
+      "cards": {
+        "analyze": {
+          "title": "Analyze",
+          "desc": "Deep-dive one stock into a full report"
+        },
+        "scanner": {
+          "title": "Scanner",
+          "desc": "Batch-scan a universe + auto-analyze"
+        },
+        "screener": {
+          "title": "Screener",
+          "desc": "Filter stocks by your criteria"
+        },
+        "lab": {
+          "title": "Strategy Lab",
+          "desc": "Build + backtest a strategy"
+        }
+      }
+    },
+    "checklist": {
+      "title": "Getting started",
+      "allSet": "✓ You're all set",
+      "dismiss": "Dismiss",
+      "steps": {
+        "key": "Add your API key (nothing runs without it)",
+        "analyze": "Run your first analysis",
+        "watch": "Save a watchlist",
+        "schedule": "Set up a scheduled report"
+      },
+      "actions": {
+        "addKey": "Add key →",
+        "tryNvda": "Try NVDA →",
+        "openWatchlist": "Open Watchlist →",
+        "openSchedules": "Open Settings →"
+      }
+    },
+    "analyzeHint": {
+      "text": "👋 This is the analysis canvas — type a ticker in the Input node, then click Run (top-right) to generate a deep report.",
+      "dismiss": "Got it"
+    }
+  },
+  "lab": {
+    "title": "Strategy Lab",
+    "strategies": "Strategies",
+    "newStrategy": "New strategy",
+    "strategyName": "Strategy name",
+    "deleteConfirm": "Delete strategy \"{{name}}\"? This also deletes its chat + backtests.",
+    "noStrategies": "No strategies. Click + to create one.",
+    "selectPrompt": "Select or create a strategy on the left.",
+    "version": "v{{version}}",
+    "chat": {
+      "placeholder": "Describe a change or ask a question...",
+      "applyPatch": "Apply patch",
+      "reject": "Reject",
+      "applied": "Applied",
+      "patchProposed": "AI proposed a spec change — review and Apply",
+      "patchApplied": "Patch applied"
+    },
+    "spec": {
+      "title": "Spec",
+      "editJson": "Edit JSON",
+      "noStrategy": "No strategy selected",
+      "universe": "Universe",
+      "entry": "Entry ({{combiner}})",
+      "exit": "Exit (any triggers)",
+      "filters": "Filters (all must pass)",
+      "sizing": "Sizing",
+      "backtestConfig": "Backtest Config",
+      "starting": "Starting",
+      "costs": "Costs",
+      "maxPositions": "Max positions",
+      "isOosSplit": "IS/OOS split",
+      "benchmark": "Benchmark"
+    },
+    "specJson": {
+      "title": "Edit Spec JSON",
+      "description": "Bypass the AI — edit the raw spec directly. Backend will validate.",
+      "saving": "Saving..."
+    },
+    "backtest": {
+      "run": "Run Backtest",
+      "running": "Running...",
+      "expectedDuration": "Expected 30s-5min depending on universe size",
+      "verdict": "Verdict: {{label}}",
+      "degradation": "Degradation ratio (OOS/IS CAGR): {{value}}",
+      "tradeLog": "Trade log ({{count}} trades)",
+      "history": "Backtest history ({{count}})",
+      "done": "Backtest done ({{label}})",
+      "specUpdated": "Spec updated",
+      "ticker": "Ticker",
+      "entry": "Entry",
+      "exit": "Exit",
+      "pnl": "PnL",
+      "reason": "Reason",
+      "cagr": "CAGR",
+      "sharpe": "Sharpe",
+      "sortino": "Sortino",
+      "maxDd": "Max DD",
+      "winRate": "Win rate",
+      "profitFactor": "Profit factor",
+      "trades": "Trades",
+      "in": "$ in",
+      "out": "$ out",
+      "noBacktest": "No backtest run yet"
+    }
+  },
+  "scanner": {
+    "title": "Daily Market Scanner",
+    "tierPaid": "Data · EODHD",
+    "tierFree": "Data · Finnhub",
+    "tierPaidHint": "Scanner runs on the server's EODHD data feed (full-history prices + sentiment news), shared by all users — not tied to your account keys.",
+    "tierFreeHint": "Scanner runs on the free Finnhub feed (~12mo prices, ~7d news). No EODHD data feed is configured on the server.",
+    "newConfig": "+ New config",
+    "deleteConfig": "Delete config \"{{name}}\"?",
+    "deleteThisConfig": "Delete this config",
+    "reloadConfigs": "Reload configs",
+    "runNow": "Run now",
+    "running": "Running...",
+    "lastRun": "Last run",
+    "noConfigs": "No configs yet",
+    "configs": "Configs",
+    "runs": "Runs",
+    "watchlist": "Watchlist",
+    "details": "Details",
+    "config": {
+      "title": "Scanner config",
+      "name": "Name",
+      "universe": "Universe",
+      "schedule": "Schedule",
+      "topN": "Top N",
+      "detectors": "Detectors",
+      "autoSop": "Auto-analyze top-N (0 = off)",
+      "autoSopHint": "After scan, auto-run SOP analyze on the top-N tickers (0–20; 0 = off)",
+      "autoSopUsePersonas": "Use the persona router for those analyses",
+      "deliveryTitle": "Schedule & delivery",
+      "emailWatchlist": "Email the watchlist to my verified emails after each scheduled scan",
+      "emailReports": "Also email those reports",
+      "emailDeliveryHelp": "Emails go to verified addresses in Settings → Report emails (报告邮箱).",
+      "customTickers": "Custom tickers",
+      "customTickersPlaceholder": "AAPL, MSFT, NVDA, GOOGL, TSLA",
+      "userWatchlist": "User watchlist",
+      "enabled": "Enabled"
+    },
+    "agentRuns": {
+      "title": "Recent agent runs"
+    },
+    "analyze": {
+      "dialogTitle": "Analyze with agents",
+      "template": "Template"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "addSub": "Add subscription",
+      "addDialog": "Add notification subscription",
+      "channel": "Channel",
+      "sendTest": "Send test",
+      "headerValueHint": "Full header value (e.g. Bearer xxxxx)."
+    },
+    "research": {
+      "ticker": "Ticker",
+      "usePersonas": "Use personas",
+      "recent": "Recent research reports",
+      "personaAssignments": "Persona assignments"
+    },
+    "watchlistTable": {
+      "rank": "#",
+      "ticker": "Ticker",
+      "score": "Score",
+      "price": "Price",
+      "today": "Today",
+      "dir": "Dir",
+      "triggers": "Triggers",
+      "noEntries": "No watchlist entries — no tickers met any detector's threshold for this run."
+    },
+    "universe": {
+      "watchlist": "Watchlist",
+      "sp500": "S&P 500",
+      "nasdaq100": "NASDAQ 100",
+      "russell3000": "Russell 3000",
+      "all_us": "All US",
+      "custom": "Custom",
+      "sse50": "SSE 50 / 上证 50",
+      "csi300": "CSI 300 / 沪深 300",
+      "csi500": "CSI 500 / 中证 500",
+      "csi1000": "CSI 1000 / 中证 1000",
+      "hs300_ext": "HS300 + CSI500"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "apiKeys": "API Keys",
+    "apiKeysDesc": "API endpoints and authentication",
+    "reportEmails": "Report emails",
+    "reportEmailsDesc": "Verified addresses that receive your reports",
+    "schedules": "Scheduled reports",
+    "schedulesDesc": "Auto-run analysis and email reports on a schedule",
+    "timezone": "Timezone",
+    "timezoneDesc": "Your timezone for scheduled reports",
+    "timezoneHint": "Scheduled report times are interpreted in this timezone.",
+    "plans": {
+      "nav": "My schedules",
+      "navDesc": "All scheduled jobs in one place",
+      "title": "My schedules",
+      "desc": "Everything that runs on a schedule, in one place. Edit the details in the Scanner / Screener / Report-schedule panels; pause or resume here. Times are US Eastern.",
+      "scanner": "Scanner scans",
+      "screener": "Screener presets",
+      "reports": "Report deliveries",
+      "empty": "Nothing scheduled yet.",
+      "last": "last",
+      "enabled": "Enabled",
+      "paused": "Paused"
+    },
+    "apiKeysHeader": "API Keys",
+    "securityNote": "Security Note",
+    "models": "Models",
+    "modelsDesc": "Local and cloud AI models",
+    "modelsHeader": "Models",
+    "availableModels": "Available Models",
+    "noModelsAvailable": "No models available",
+    "appearance": "Appearance",
+    "appearanceDesc": "Theme and display preferences",
+    "language": "Language",
+    "theme": "Theme",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System",
+    "ollama": {
+      "title": "Ollama",
+      "notInstalled": "Ollama Not Installed",
+      "server": "Ollama Server"
+    }
+  },
+  "sidebarDialogs": {
+    "watchlistNamePlaceholder": "My Mega-caps"
+  },
+  "screener": {
+    "tab": {
+      "title": "Screener"
+    },
+    "refresh": {
+      "button": "Update data",
+      "running": "Updating",
+      "starting": "Starting…",
+      "tooltip": "Fetch the latest market data for this market (takes a few minutes)",
+      "done": "Data updated",
+      "failed": "Data update failed"
+    },
+    "market": {
+      "all": "US + CN",
+      "us": "US",
+      "cn": "CN (A-shares)",
+      "cn_dev": "CN / A-shares (in dev)"
+    },
+    "status": {
+      "no_data": "No snapshot yet",
+      "matched": "Matched",
+      "data_as_of": "Data as of"
+    },
+    "page": {
+      "label": "Page {{page}} / {{pages}} · {{total}} total",
+      "prev": "Previous page",
+      "next": "Next page"
+    },
+    "empty": {
+      "title": "No snapshot yet",
+      "body": "Snapshot runs nightly at 22:00 ET. Check back tomorrow."
+    },
+    "table": {
+      "no_results": "No tickers match the current filters."
+    },
+    "col": {
+      "ticker": "Ticker",
+      "market": "Mkt",
+      "price": "Price",
+      "chg": "Chg %",
+      "vol": "Vol",
+      "mcap": "Mkt cap",
+      "pe": "P/E",
+      "eps_g": "EPS gro",
+      "div": "Div %",
+      "sector": "Sector",
+      "rating": "Rating",
+      "perf_1d": "1D",
+      "perf_5d": "5D",
+      "perf_1m": "1M",
+      "perf_3m": "3M",
+      "perf_ytd": "YTD",
+      "perf_1y": "1Y",
+      "analyze": "Analyze"
+    },
+    "analyze": {
+      "button": "Analyze",
+      "tooltip": "Analyze this stock (deep SOP report)"
+    },
+    "bulk": {
+      "add": "Add {{count}} to watchlist",
+      "dialogTitle": "Add to watchlist",
+      "dialogDesc": "Select a watchlist to add the {{count}} selected ticker(s).",
+      "loading": "Loading…",
+      "noListsCreate": "No watchlists yet — create one below.",
+      "newListPlaceholder": "New watchlist name…",
+      "createAndAdd": "Create & add",
+      "createFailed": "Failed to create watchlist",
+      "added": "Added {{n}} to {{name}}",
+      "addFailed": "{{n}} ticker(s) failed to add"
+    },
+    "presets": {
+      "save": "Save preset",
+      "save_title": "Save preset",
+      "save_confirm": "Save",
+      "saving": "Saving…",
+      "saved": "Preset saved",
+      "save_error": "Could not save preset",
+      "name_placeholder": "Preset name",
+      "select_placeholder": "Load preset…",
+      "manage": "Manage",
+      "manage_title": "Manage presets",
+      "empty": "No presets yet",
+      "schedule": "Schedule",
+      "channel_email": "Email",
+      "channel_webhook": "Webhook",
+      "last_match": "last match",
+      "delete_confirm": "Delete this preset?",
+      "deleted": "Preset deleted",
+      "delete_error": "Could not delete preset",
+      "patch_error": "Could not update preset",
+      "runs_at": "Runs",
+      "tz_et": "ET"
+    }
+  },
+  "reports": {
+    "deleteSelected": "Delete selected ({{count}})",
+    "deleteSelectedConfirm": "Delete {{count}} selected report(s)?",
+    "deletedN": "{{count}} report(s) deleted",
+    "colId": "ID",
+    "colTicker": "Ticker",
+    "colDate": "Date"
+  },
+  "watchlist": {
+    "tab": {
+      "title": "Watchlist"
+    },
+    "openTooltip": "Open live watchlist",
+    "pickList": "Pick a watchlist",
+    "tickerCount_one": "{{count}} ticker",
+    "tickerCount_other": "{{count}} tickers",
+    "loadingQuotes": "Loading live data…",
+    "empty": "This list has no stocks yet. Add some with the search above.",
+    "noLists": "No watchlists yet — click + New to create one.",
+    "noQuotes": "No live data yet.",
+    "loadListsFailed": "Failed to load watchlists",
+    "quotesFailed": "Failed to load live quotes",
+    "removeFailed": "Failed to remove {{ticker}}",
+    "new": "New",
+    "newTooltip": "Create a new watchlist",
+    "renameTooltip": "Rename this watchlist",
+    "deleteTooltip": "Delete this watchlist",
+    "searchPlaceholder": "Search a stock to add to this list…",
+    "searching": "Searching…",
+    "noMatches": "No matches.",
+    "createDescription": "Give the list a name. You can add tickers next.",
+    "deleteConfirm": "Delete watchlist \"{{name}}\"?",
+    "createFailed": "Failed to create: {{msg}}",
+    "renameFailed": "Rename failed: {{msg}}",
+    "deleteFailed": "Delete failed: {{msg}}",
+    "addFailed": "Add {{ticker}} failed: {{msg}}",
+    "created": "Created \"{{name}}\"",
+    "renamed": "Renamed to \"{{name}}\"",
+    "deleted": "Deleted \"{{name}}\"",
+    "refresh": {
+      "button": "Refresh",
+      "tooltip": "Re-fetch live quotes"
+    },
+    "col": {
+      "ticker": "Ticker",
+      "price": "Price",
+      "change": "Chg %",
+      "volume": "Vol",
+      "range": "Day range",
+      "actions": "Actions"
+    },
+    "analyze": {
+      "button": "Analyze",
+      "tooltip": "Analyze this stock (deep SOP report)"
+    },
+    "remove": {
+      "tooltip": "Remove from list"
+    }
+  },
+  "sectors": {
+    "tab": {
+      "title": "Sectors"
+    },
+    "openTooltip": "Open sector board",
+    "asOf": "as of latest snapshot · US",
+    "empty": "No sector data yet (build a snapshot first).",
+    "stats": "{{count}} · {{gainers}}↑ {{losers}}↓",
+    "cardTooltip": "Open Screener filtered to {{sector}}",
+    "refresh": {
+      "button": "Refresh",
+      "tooltip": "Re-fetch sector performance"
+    }
+  },
+  "paper": {
+    "tab": {
+      "title": "Paper"
+    },
+    "title": "Paper Trading",
+    "openTooltip": "Open paper-trading panel",
+    "empty": "No paper-trading data yet.",
+    "baseline": "baseline",
+    "graduation": "Graduation verdict",
+    "pass": "PASS",
+    "fail": "FAIL",
+    "noClauses": "No clauses evaluated.",
+    "equityCurve": "Equity curve",
+    "equityCurveAlt": "Paper sleeves equity curve",
+    "colSleeve": "Sleeve",
+    "colFinalEquity": "Final equity",
+    "colTotalReturn": "Total return",
+    "colSharpe": "Sharpe",
+    "colMaxDrawdown": "Max drawdown",
+    "colNTrades": "# Trades",
+    "colNMarks": "# Marks"
+  },
+  "flow": {
+    "title": "Institutional Positioning",
+    "subtitle": "Dealer gamma (options-implied snapshot) + off-exchange short volume (FINRA proxy, NOT true dark-pool). Context, not a trade signal.",
+    "tickerPlaceholder": "Ticker (e.g. NVDA)",
+    "load": "Load",
+    "empty": "Enter a ticker to see its institutional positioning.",
+    "tab": {
+      "title": "Institutional"
+    },
+    "openTooltip": "Open institutional positioning",
+    "gamma": {
+      "title": "Dealer Gamma (GEX)",
+      "regime": "Regime",
+      "neg": "(short gamma -> squeeze-prone)",
+      "pos": "(long gamma -> pinned)",
+      "netGex": "Net GEX",
+      "perMove": "per 1% move",
+      "flip": "Gamma flip",
+      "spot": "Spot",
+      "strike": "Strike",
+      "wall": "$-gamma (wall)",
+      "none": "No options / gamma data."
+    },
+    "short": {
+      "title": "Off-Exchange Short Pressure",
+      "note": "FINRA Reg-SHO daily short volume — a proxy, NOT true dark-pool/ATS.",
+      "latest": "Latest short volume",
+      "dayAvg": "-day avg",
+      "trend": "trend",
+      "none": "No short-volume data."
+    }
+  }
+}

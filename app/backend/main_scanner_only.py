@@ -1,21 +1,8 @@
-"""Slim FastAPI entry that only mounts the scanner routes.
+"""Scanner-only FastAPI entry for isolated scanner work.
 
-Why this exists:
-    The full ``app.backend.main`` imports every router eagerly, including the
-    v1 LLM ``hedge_fund`` router which transitively pulls in langgraph 0.2.x
-    APIs (``CompiledGraph``) that have been renamed in langgraph >= 0.3. The
-    user's environment has langgraph 0.6, so the full backend can't boot.
-
-    For the M5 UI smoke we only need the scanner endpoints — health and
-    scanner are enough. The Stage-2 click-through is currently just a
-    clipboard-copy hint (see scanner-panel.tsx), so the LLM routes aren't on
-    the hot path.
-
-    Once the v1 langgraph compatibility is sorted out (separate work), the
-    user can switch back to ``app.backend.main:app`` for the full surface.
-
-Usage:
-    uvicorn app.backend.main_scanner_only:app --host 127.0.0.1 --port 8000
+The deployed application uses app.backend.main:app. This optional entry
+mounts only health/scanner routes and does not exercise Analyze or the
+LangGraph investment workflow. It is not proof that the full backend fails.
 """
 
 from __future__ import annotations

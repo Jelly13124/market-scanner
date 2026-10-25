@@ -1,37 +1,14 @@
-# AI Hedge Fund - Frontend [WIP] 🚧
-This project is currently a work in progress.  To track progress, please get updates [here](https://x.com/virattt).
+# Market Scanner 前端
 
-This is the frontend application for the AI Hedge Fund project. It provides a web interface to interact with the AI Hedge Fund system, allowing you to visualize and control the hedge fund operations.
-
-## Overview
-
-This frontend project is built with React and Vite, serving as the client-side component of the AI Hedge Fund system. It connects to the backend API to provide a user-friendly interface for managing the hedge fund trading system and backtester.
-
-## Installation
-
-The project contains the minimum dependencies to get up and running, and includes eslint with additional rules to help write clean React code:
+React 18、TypeScript、Vite；代码位于 src/。
 
 ```bash
-npm install # or `pnpm install` or `yarn install`
-```
-
-## Running the Application
-
-Start the application with:
-
-```bash
+npm install
 npm run dev
+npm run build
+npm run lint
 ```
 
-While the application is running, changes made to the code will be automatically reflected in the browser!
+VITE_API_URL 在构建时决定后端地址；本地开发通常指向 http://127.0.0.1:8001，生产部署由构建配置决定。不要在 VITE_* 中放置模型或数据库机密。
 
-## Disclaimer
-
-This project is for **educational and research purposes only**.
-
-- Not intended for real trading or investment
-- No warranties or guarantees provided
-- Creator assumes no liability for financial losses
-- Consult a financial advisor for investment decisions
-
-By using this software, you agree to use it solely for learning purposes.
+行情不再展示付费 tier 徽标；扫描按钮不依赖模型 key。Analyze 的可用模型状态由后端的 BYOK/Ollama 配置决定。FD 设置仅用于显式旧兼容入口。

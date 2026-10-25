@@ -50,15 +50,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEZONE = "America/New_York"
 
-# Daily scanner→agent pipeline cron: 16:30 ET weekdays, 30 min after the
-# market close so post-close data has settled. Hardcoded in v1; could be
-# moved to ``pipeline_schedule.cron_expr`` if users need flexibility.
-PIPELINE_CRON_EXPR = "30 16 * * 1-5"
-PIPELINE_JOB_ID = "daily-pipeline"
-
-# Daily research cron: 16:35 ET weekdays. Fires AFTER the legacy
-# pipeline cron at 16:30 so the watchlist for today is persisted and
-# the research job can read it without re-scanning.
+# Daily research cron: 16:35 ET weekdays. Reads available watchlist entries.
 RESEARCH_CRON_EXPR = "35 16 * * 1-5"
 RESEARCH_JOB_ID = "research_daily"
 
@@ -125,22 +117,6 @@ class SchedulerService:
                 registered += 1
             except Exception as e:
                 logger.warning("Failed to register config %s: %s", cfg.id, e)
-
-        # Register the singleton daily-pipeline cron. The job ALWAYS fires
-        # on the schedule but checks ``pipeline_schedule.enabled`` at
-        # fire-time — flipping the switch in the UI takes effect on the
-        # next firing without restarting the scheduler.
-        try:
-            self._register_pipeline_job()
-        except Exception as e:
-            logger.warning("Failed to register daily pipeline job: %s", e)
-
-        # Register the singleton daily-research cron — fires 5 min after
-        # the pipeline cron so the watchlist is already persisted.
-        try:
-            self._register_research_job()
-        except Exception as e:
-            logger.warning("Failed to register daily research job: %s", e)
 
         # Register the singleton daily screener-snapshot cron — 22:00 ET
         # every day, after both US and CN markets have closed.
@@ -324,7 +300,9 @@ class SchedulerService:
         """Job body — invoked by APScheduler on a worker thread."""
         try:
             logger.info("Cron trigger: starting scan for config %s", config_id)
-            run_id = self._scanner_service.execute(config_id)
+            from datetime import datetime, timezone
+            slot = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%MZ')
+            run_id = self._scanner_service.execute(config_id, execution_key=f'scheduled:{config_id}:{slot}')
             logger.info("Cron scan for config %s completed (run_id=%s)", config_id, run_id)
         except Exception:
             # Exceptions inside cron jobs would otherwise vanish into APScheduler's
@@ -412,45 +390,12 @@ class SchedulerService:
     # ------------------------------------------------------------------
 
     def _register_pipeline_job(self) -> None:
-        """Register the singleton daily pipeline cron.
-
-        The job runs on the cron whether or not the config has
-        ``enabled=True`` — it just no-ops when disabled. This lets the UI
-        toggle take effect on the next firing without touching the
-        scheduler.
-        """
-        trigger = CronTrigger.from_crontab(PIPELINE_CRON_EXPR, timezone=self._tz)
-        self._scheduler.add_job(
-            self._run_pipeline_job,
-            trigger=trigger,
-            id=PIPELINE_JOB_ID,
-            replace_existing=True,
-            max_instances=1,
-            misfire_grace_time=600,  # 10 min — pipeline takes longer than a scan
-            coalesce=True,
-        )
-        logger.info(
-            "Registered daily pipeline job %s (cron=%r, tz=%s)",
-            PIPELINE_JOB_ID,
-            PIPELINE_CRON_EXPR,
-            self._tz,
-        )
+        """Compatibility hook: legacy Analyze cron is no longer registered."""
+        return
 
     def _register_research_job(self) -> None:
-        """Register the singleton daily research cron."""
-        trigger = CronTrigger.from_crontab(RESEARCH_CRON_EXPR, timezone=self._tz)
-        self._scheduler.add_job(
-            _run_research_job_body,
-            trigger=trigger,
-            id=RESEARCH_JOB_ID,
-            replace_existing=True,
-            misfire_grace_time=600,
-        )
-        logger.info(
-            "Registered research job (cron=%r, tz=%s)",
-            RESEARCH_CRON_EXPR,
-            self._tz,
-        )
+        """Retired legacy research cron; user report schedules use run_sop."""
+        return
 
     def _register_snapshot_job(self) -> None:
         """Register the singleton daily screener-snapshot cron."""
@@ -528,120 +473,8 @@ class SchedulerService:
         )
 
     def _run_pipeline_job(self) -> None:
-        """Job body — invoked by APScheduler on a worker thread.
-
-        Reads the pipeline schedule at fire-time, skips cleanly when
-        disabled, otherwise calls the orchestrator and persists the result
-        via ``PipelineRunRepository`` (same path as the interactive
-        POST /pipeline/run BackgroundTask).
-
-        Wave 4 tenancy: the schedule is now per-user. For now this single
-        daily cron operates on the SEED OWNER's schedule (superuser, lowest
-        id) and stamps the produced run with that owner's id. When no
-        superuser exists it falls back to the first schedule row (legacy
-        singleton) and an unowned run. Wave 6 makes the cron per-user so
-        each user's opt-in schedule fires independently.
-
-        Deferred dependency: per-user API-key usage is NOT yet wired — the
-        analyze/scan pipeline still reads provider keys from the host .env
-        (tracked separately). So this cron run currently uses HOST keys.
-        When key-wiring lands, skip users without keys + use each user's keys.
-        """
-        # Lazy imports — scheduler module shouldn't drag in the v2 pipeline
-        # package or the LLM stack at import time (tests routinely import
-        # scheduler_service without LLM deps installed).
-        import traceback
-        import uuid
-        from app.backend.database.models import User as _User
-        from app.backend.repositories.pipeline_repository import (
-            PipelineRunRepository,
-            PipelineScheduleRepository,
-        )
-        from v2.pipeline import run_pipeline, resolve_analysts
-
-        with self._session_factory() as session:
-            # Resolve the seed owner whose schedule/runs the cron uses.
-            seed_user = session.query(_User).filter(_User.is_superuser.is_(True)).order_by(_User.id.asc()).first()
-            owner_id = seed_user.id if seed_user is not None else None
-
-            sched_repo = PipelineScheduleRepository(session)
-            cfg = sched_repo.get_or_create_for_user(owner_id) if owner_id is not None else sched_repo.get()  # legacy fallback (no superuser yet)
-            if cfg is None:
-                logger.warning("Daily pipeline: no schedule row; skipping")
-                return
-            if not cfg.enabled:
-                logger.info("Daily pipeline: schedule disabled; skipping")
-                return
-
-            # Validate template before any scan/LLM work.
-            try:
-                selected = resolve_analysts(template=cfg.template)
-            except ValueError as e:
-                logger.error("Daily pipeline: invalid template %r: %s", cfg.template, e)
-                return
-
-            run_id = uuid.uuid4().hex
-            repo = PipelineRunRepository(session)
-            repo.create_pending(
-                run_id=run_id,
-                scan_date="(deferred)",
-                template=cfg.template,
-                selected_analysts=selected,
-                top_n=cfg.top_n,
-                universe=cfg.universe,
-                user_id=owner_id,
-            )
-            template = cfg.template
-            top_n = cfg.top_n
-            universe = cfg.universe
-            model_name = cfg.model_name
-            model_provider = cfg.model_provider
-
-        # Run the pipeline in this thread — APScheduler already gave us a
-        # worker thread. orchestrator + LangGraph + DeepSeek roundtrips
-        # are all blocking but that's fine here.
-        logger.info("Daily pipeline %s: starting (template=%s, top_n=%d, universe=%s)", run_id, template, top_n, universe)
-
-        with self._session_factory() as session:
-            PipelineRunRepository(session).mark_running(run_id)
-
-        try:
-            result = run_pipeline(
-                universe=universe,
-                top_n=top_n,
-                template=template,
-                model_name=model_name,
-                model_provider=model_provider,
-                persist=False,  # we persist via the repo below
-            )
-        except Exception as e:
-            logger.exception("Daily pipeline %s failed", run_id)
-            with self._session_factory() as session:
-                PipelineRunRepository(session).mark_error(
-                    run_id,
-                    f"{type(e).__name__}: {e}\n{traceback.format_exc()}",
-                )
-            return
-
-        with self._session_factory() as session:
-            PipelineRunRepository(session).mark_complete(
-                run_id,
-                watchlist=result.watchlist,
-                agent_decisions=result.agent_decisions,
-                analyst_signals=result.analyst_signals,
-                duration_seconds=result.duration_seconds,
-            )
-        logger.info("Daily pipeline %s completed in %.1fs (status=%s)", run_id, result.duration_seconds, result.status)
-
-        # Fan out notifications. Dispatcher swallows handler exceptions
-        # so a Resend hiccup never kills the cron; wrap once more here
-        # to defend against dispatcher-init failure (lazy import).
-        try:
-            from app.backend.services.notifications import NotificationDispatcher
-
-            NotificationDispatcher(self._session_factory).dispatch(run_id=run_id)
-        except Exception:
-            logger.exception("Daily pipeline %s: notification dispatch failed", run_id)
+        """Compatibility hook for stale scheduler callbacks; performs no work."""
+        logger.info("Legacy LangGraph Analyze pipeline is retired; skipping scheduled run")
 
 
 # ----------------------------------------------------------------------
@@ -696,7 +529,7 @@ def _run_report_schedule_job(schedule_id: int) -> None:
                     use_personas=False,
                     report_language=(sched.report_language or "en"),
                 )
-                report = run_sop(req, api_keys=api_keys)
+                report = run_sop(req, api_keys=api_keys, owner_id=user_id)
                 html = render_sop(report)
                 res = email_report_html(db, user_id, ticker=ticker, html=html)
                 _logger.info(
@@ -720,90 +553,8 @@ def _run_report_schedule_job(schedule_id: int) -> None:
 
 
 def _run_research_job_body() -> None:
-    """Body of the daily research cron.
-
-    Reads the latest COMPLETE PipelineRun row for today, takes its
-    watchlist tickers, runs research per ticker, persists each report.
-
-    If no recent pipeline run exists (legacy cron disabled), logs and
-    returns — Phase 3 v1 does NOT fall back to running its own scanner.
-    That keeps the two cron jobs cleanly independent and limits cost
-    surprises when the user has only the research cron enabled.
-
-    Wave 4 tenancy: reports are created under the seed superuser
-    (SELECT id FROM users WHERE is_superuser=1 ORDER BY id LIMIT 1).
-    Wave 6 will make the cron per-user so each user's cron creates
-    under their own id.
-
-    Deferred dependency: per-user API-key usage is NOT yet wired — the
-    research pipeline still reads provider/LLM keys from the host .env
-    (tracked separately). So this cron run currently uses HOST keys. When
-    key-wiring lands, skip users without keys + use each user's keys.
-    """
-    import time
-    from datetime import date
-
-    from app.backend.database.models import User as _User
-
-    _logger = logging.getLogger(__name__)
-
-    db = SessionLocal()
-    try:
-        # Resolve the seed superuser that owns cron-created reports.
-        seed_user = db.query(_User).filter(_User.is_superuser.is_(True)).order_by(_User.id.asc()).first()
-        if seed_user is None:
-            _logger.warning("research cron: no superuser found; reports will be unowned (user_id=None). " "Create a superuser account to fix this.")
-            owner_id = None
-        else:
-            owner_id = seed_user.id
-
-        today = date.today().isoformat()
-        pipe_repo = PipelineRunRepository(db)
-        recent = pipe_repo.list_runs(status="COMPLETE", since=today, limit=1)
-        if not recent:
-            _logger.info("research cron: no legacy pipeline run for %s - skipping", today)
-            return
-        latest = recent[0]
-        tickers = []
-        for entry in latest.watchlist_json or []:
-            t = entry.get("ticker") if isinstance(entry, dict) else None
-            if t:
-                tickers.append(t)
-        if not tickers:
-            _logger.warning("research cron: latest pipeline run has empty watchlist")
-            return
-
-        research_repo = ResearchReportRepository(db)
-        for ticker in tickers:
-            req = ResearchRequest(
-                ticker=ticker,
-                holding_status="watching",
-                target_position_pct=0.05,
-                risk_tolerance="moderate",
-                report_goal="new_entry",
-                use_personas=True,
-                scanner_context={
-                    "scan_date": latest.scan_date,
-                    "triggered_detectors": [],
-                },
-            )
-            t0 = time.monotonic()
-            try:
-                state = run_research(req)
-            except Exception as e:
-                _logger.exception("research cron: ticker %s failed: %s", ticker, e)
-                continue
-            duration = time.monotonic() - t0
-            state["rendered_html"] = render_html(state)
-            r_kwargs, p_kwargs = state_to_db_kwargs(state, duration_seconds=duration)
-            try:
-                research_repo.create_with_plan(report=r_kwargs, plan=p_kwargs, user_id=owner_id)
-            except Exception as e:
-                _logger.exception("research cron: persist failed for %s: %s", ticker, e)
-                continue
-            _logger.info("research cron: persisted report for %s (%.1fs)", ticker, duration)
-    finally:
-        db.close()
+    """Compatibility callback for retired global research jobs; performs no work."""
+    logger.info('Legacy global research cron is retired; use per-user Analyze schedules')
 
 
 # ----------------------------------------------------------------------

@@ -8,6 +8,7 @@ conversion, EPS surprise labeling, 429 retry, and per-instance throttling.
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,6 +25,12 @@ def _resp(status: int, json_body) -> MagicMock:
     r.status_code = status
     r.json.return_value = json_body
     return r
+
+
+@pytest.fixture(autouse=True)
+def no_global_quota_wait(monkeypatch):
+    # HTTP is mocked; exercise the per-instance throttle independently.
+    monkeypatch.setattr('v2.data.finnhub_client._global_bucket.acquire', lambda *args, **kwargs: True)
 
 
 @pytest.fixture()
@@ -215,7 +222,7 @@ class TestCompanyFactsAndMarketCap:
             "exchange": "NASDAQ",
             "country": "US",
         })
-        mc = client.get_market_cap("AAPL", "2024-09-30")
+        mc = client.get_market_cap("AAPL", datetime.now(timezone.utc).date().isoformat())
         assert mc == 3_000_000_000.0
 
     def test_facts_populates_basic_metadata(self, client):
@@ -340,7 +347,7 @@ class TestGetFinancialMetrics:
                 "epsTTM": 6.50,
             },
         })
-        metrics = client.get_financial_metrics("AAPL", "2024-09-30")
+        metrics = client.get_financial_metrics("AAPL", datetime.now(timezone.utc).date().isoformat())
         assert len(metrics) == 1
         assert metrics[0].ticker == "AAPL"
         assert metrics[0].market_cap == 3_000_000_000.0
@@ -353,7 +360,7 @@ class TestGetFinancialMetrics:
 
     def test_empty_when_no_metric(self, client):
         client._session.get.return_value = _resp(200, {"metric": {}})
-        assert client.get_financial_metrics("AAPL", "2024-09-30") == []
+        assert client.get_financial_metrics("AAPL", datetime.now(timezone.utc).date().isoformat()) == []
 
 
 # ---------------------------------------------------------------------------
@@ -397,3 +404,9 @@ class TestThrottle:
         elapsed = time.monotonic() - start
         # Three calls with ~50ms gap → elapsed should be ≥ 100ms (two gaps).
         assert elapsed >= 0.08, f"throttle did not delay: elapsed={elapsed:.3f}s"
+
+
+def test_current_fundamentals_are_not_relabelled_as_historical(client):
+    assert client.get_financial_metrics('AAPL', '2024-09-30') == []
+    assert client.get_market_cap('AAPL', '2024-09-30') is None
+    client._session.get.assert_not_called()

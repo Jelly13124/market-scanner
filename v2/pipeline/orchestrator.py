@@ -1,7 +1,7 @@
 """Pipeline orchestrator — composes ``run_scan`` and ``run_hedge_fund``.
 
-Single entry point ``run_pipeline(...)`` shared by the FastAPI route
-(interactive UI button) and the daily scheduler job. Sequence:
+Legacy composition adapter retained for injected offline workflows.
+The live graph, UI trigger and scheduled execution have been retired. Sequence:
 
   1. Resolve scan_date (default = latest trading day ≤ today).
   2. Resolve analyst list (template or custom, validated).
@@ -161,8 +161,8 @@ def run_pipeline(
       persist:          v1: no-op (DB persistence lands in Phase 3).
       run_scan_fn,
       run_hedge_fund_fn,
-      provider_factory: Test injection seams — production callers leave
-                        these at None.
+      provider_factory: Explicit adapters for offline tests and future migration.
+                        There is no default legacy analysis implementation.
 
     Raises:
       ValueError on bad template / unknown analyst keys (validated upfront
@@ -179,6 +179,9 @@ def run_pipeline(
 
     # 1. Validate analysts BEFORE running a scan (fail-fast).
     selected = resolve_analysts(template=template, custom=custom_analysts)
+
+    if run_hedge_fund_fn is None:
+        raise RuntimeError("Legacy LangGraph Analyze was removed; use /research/analyze.")
 
     # 2. Resolve scan_date.
     if scan_date is None:
@@ -240,9 +243,7 @@ def run_pipeline(
     }
     top_tickers = [e.ticker for e in scored]
 
-    # 6. Run the agent workflow.
-    if run_hedge_fund_fn is None:
-        from src.main import run_hedge_fund as run_hedge_fund_fn  # type: ignore[no-redef]
+    # 6. Run the explicitly supplied agent adapter.
 
     # start_date gives agents ~250 calendar days (~180 trading days) of
     # history. technical_analyst's momentum_6m uses returns.rolling(126).sum()
@@ -318,7 +319,7 @@ def run_agents_only(
     selected = resolve_analysts(template=template, custom=custom_analysts)
 
     if run_hedge_fund_fn is None:
-        from src.main import run_hedge_fund as run_hedge_fund_fn  # type: ignore[no-redef]
+        raise RuntimeError("Legacy LangGraph Analyze was removed; use /research/analyze.")
 
     start_d = (datetime.strptime(scan_date, "%Y-%m-%d").date()
                - timedelta(days=250)).isoformat()

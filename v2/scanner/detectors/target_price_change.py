@@ -17,8 +17,7 @@ the injected history.
 Bootstrap: at least 2 daily snapshots are needed to compute a change.
 On the very first scan day this returns ``None`` for every ticker. Once
 a 2nd day of snapshots accumulates the detector starts firing on the
-real signal. This is documented in the detector's ``None`` reason and
-in ``progress.md``.
+real signal. The detector's ``None`` reason distinguishes insufficient history.
 """
 
 from __future__ import annotations

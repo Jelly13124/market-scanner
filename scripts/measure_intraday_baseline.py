@@ -7,7 +7,7 @@ random (positive interestingness) on real prices, in train + val. No evolution
 loop; baseline config only; the held-out ``test`` sample is NOT touched.
 
 Bounded (~30 tickers) so it runs in a few minutes. Prices via the env provider
-(hybrid → EODHD EOD OHLCV + SPY). The replay is no-lookahead (CachedAsOfClient);
+(hybrid → Yahoo EOD OHLCV + SPY). The replay is no-lookahead (CachedAsOfClient);
 forward returns are the graded outcome.
 
 Run:  PYTHONIOENCODING=utf-8 PYTHONPATH=. python scripts/measure_intraday_baseline.py

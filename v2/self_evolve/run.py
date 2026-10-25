@@ -74,7 +74,7 @@ def main(argv=None) -> int:
     parser.add_argument("--universe", default="nasdaq100", help="Universe kind (sp500 | nasdaq100 | ...).")
     parser.add_argument("--base-dir", default="strategy_skill", help="Skill dir holding skill_config.yaml + the version store.")
     parser.add_argument("--out-dir", default="self_evolve_run", help="Directory for the rendered report.")
-    parser.add_argument("--provider", default=None, help="Data provider override (fd | finnhub | eodhd | ...).")
+    parser.add_argument("--provider", default=None, help="Data provider override (fd | finnhub | ...).")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")

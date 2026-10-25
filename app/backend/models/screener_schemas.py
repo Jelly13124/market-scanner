@@ -64,6 +64,9 @@ class SnapshotRowOut(BaseModel):
 
 
 class LiveQuoteRow(BaseModel):
+    source: str | None = None
+    source_timestamp: int | None = None
+    received_at: str | None = None
     """One live (on-demand) market quote for a watchlist ticker.
 
     All numeric fields are nullable so the UI can render "—" when a symbol

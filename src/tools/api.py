@@ -1,29 +1,9 @@
-"""V1 ``src/tools/api.py`` — adapter on top of the v2 hybrid data client.
+"""Legacy agent data adapter over the current composite client.
 
-What changed (2026-05-18, plan §Phase B):
-    Originally this module called the Financial Datasets API directly. After
-    the FD paid tier started returning 402 on most endpoints, the v2 scanner
-    moved to a hybrid composite client (EODHD prices+news, Finnhub
-    insider+market-cap, yfinance earnings+analyst). The v1 agents kept calling
-    FD though — which silently produced empty results, making every persona
-    output "insufficient data".
-
-    This rewrite keeps every public function's signature + return type
-    identical (callers in ``src/agents/*.py`` and their tests are not
-    touched), but internally:
-
-      * Fetches via ``v2.data.composite_client.make_hybrid_client()`` —
-        same source-of-truth the scanner uses.
-      * Converts v2 model instances → v1 model instances (small adapter
-        helpers ``_v1_*``); the field shapes are ~95% identical so this is
-        mostly just constructor remapping.
-      * ``search_line_items`` is delegated to a separate module that pulls
-        from yfinance financial statements (the v2 client doesn't expose
-        raw line items).
-      * The existing ``_cache`` layer is preserved verbatim — agents still
-        benefit from in-process caching across multiple LLM round-trips.
-      * The ``api_key`` parameter is accepted but ignored — v2 clients read
-        their own keys from .env.
+Converts v2 data models to v1 models and retains the process cache.
+search_line_items uses the Yahoo financial-statement adapter. Legacy
+api_key parameters remain accepted but are ignored by this adapter.
+The MongoDB historical reader is a documented target, not implemented here.
 """
 
 from __future__ import annotations
@@ -65,20 +45,19 @@ _cache = get_cache()
 # The v2 hybrid client owns thread pools, HTTP sessions and provider clients;
 # constructing it is non-trivial. Build once per process, behind a lock so
 # concurrent agent threads don't race the lazy init.
-_v2_lock = threading.Lock()
-_v2_client_cache: Any = None  # type: v2.data.composite_client.CompositeClient | None
+_v2_local = threading.local()
 
 
 def _get_v2_client():
-    """Lazy thread-safe singleton for the v2 hybrid client."""
-    global _v2_client_cache
-    if _v2_client_cache is not None:
-        return _v2_client_cache
-    with _v2_lock:
-        if _v2_client_cache is None:
-            from v2.data.composite_client import make_hybrid_client
-            _v2_client_cache = make_hybrid_client()
-    return _v2_client_cache
+    """One HTTP-owning client per worker thread."""
+    from v2.data.factory import _CLIENT_OVERRIDE
+    override = _CLIENT_OVERRIDE.get()
+    if override is not None:
+        return override
+    if not hasattr(_v2_local, 'client'):
+        from v2.data.composite_client import make_hybrid_client
+        _v2_local.client = make_hybrid_client()
+    return _v2_local.client
 
 
 # ---------------------------------------------------------------------------

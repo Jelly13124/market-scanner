@@ -1,124 +1,28 @@
-# Deploying to Fly.io — runbook
+# 当前部署说明
 
-How to put the app on the public internet (semi-public: open registration + email
-verification + rate limiting). Cost ≈ **$12/mo** (Fly shared-cpu-1x 2 GB) + a volume
-(~$0.50/mo) + a domain (~$10/yr). **Each user brings their own LLM keys → you pay $0
-for usage.**
+本页描述仓库已有部署实现；MongoDB 与新 Analyze LangGraph 尚未部署。目标和验收见 [需求基线](requirements/market-data-and-analyze.md)。
 
-## What's in the box
+## 运行结构
 
-- `Dockerfile` — multi-stage: builds the frontend (vite) + the python backend into one
-  image that serves the API at root **and** the built SPA from the same origin.
-- `docker/entrypoint.sh` — runs `alembic upgrade head` on the machine (where the volume
-  is), then uvicorn.
-- `fly.toml` — one machine + a volume for SQLite, auto-TLS, `/health` check. **Fill in
-  every `CHANGE-ME` first.**
+根 Dockerfile 构建前端与 Python 后端。docker/entrypoint.sh 在挂载卷上调用 docker/db_init.py，然后启动 uvicorn app.backend.main:app。
 
-## Prerequisites
+db_init.py 按数据库状态选择 ORM 初始化并 stamp，或执行现有 Alembic 增量迁移。已有数据库升级前必须备份；不要直接用 create_all 代替迁移。
 
-1. A **Fly.io account** → install flyctl: `iwr https://fly.io/install.ps1 -useb | iex`
-   (Windows PowerShell) or `curl -L https://fly.io/install.sh | sh`. Then `fly auth login`.
-2. A **domain** (~$10/yr, Cloudflare Registrar / Porkbun) — optional at first; you can
-   launch on the free `*.fly.dev` host and add the domain later.
-3. The code on the deploy branch: `feature/per-user-keys` (it has the multi-tenant auth +
-   the per-user-key wiring + email-verify + rate-limit). Either deploy from this branch,
-   or merge it to `main` first — your call.
+fly.toml 当前记录 app=quantlab、region=nrt、同源前端与 API、SQLite 卷 /data、单实例及 GET /health 健康检查。这是仓库配置，不是已核验的线上资源状态。部署前检查目标 app、卷和域名，禁止无意新建或覆盖项目。
 
----
+## 配置与发布
 
-## Deploy — step by step
+- 构建时：VITE_API_URL；运行时：DATABASE_URL、FRONTEND_DIST、FRONTEND_ORIGINS、FRONTEND_BASE_URL。
+- 鉴权/用户 key 加密：JWT_SECRET、APP_ENCRYPTION_KEY。开启生产保护前核实 ENVIRONMENT、REQUIRE_EMAIL_VERIFICATION、RATE_LIMIT_ENABLED。
+- 邮件验证：按当前 auth 邮件实现配置 RESEND_API_KEY、RESEND_FROM_EMAIL。
+- 默认使用 Yahoo 日线和 Finnhub 当前数据；Finnhub key 缺失/权限受限会反映为缺少对应证据。
+- MongoDB 可选：MONGODB_URI、MONGODB_DATABASE、MONGODB_TIMEOUT_MS；不配置时继续在线分析。迁移命令与回滚边界见 development.md。正式服务端 schema 尚需独立验收。
+- 不在 Git、日志或提示词中保存真实 key/URI；付费模型 key 必须显式注入，owner 不再有隐式 env fallback。Ollama 失败不切换付费供应商。
 
-### 1. Launch the app (creates the Fly app, picks a name + region)
-```powershell
-cd C:\Users\Jerry\Desktop\ai-hedge-fund
-fly launch --no-deploy
-```
-- It detects the `Dockerfile` + `fly.toml`. Choose an **app name** (becomes
-  `<name>.fly.dev`) and a **region near you** (e.g. `nrt` Tokyo, `sjc` US-West).
-- Let it update `fly.toml`'s `app`/`primary_region`. Then **edit `fly.toml`**: replace
-  the three `CHANGE-ME.fly.dev` with your real `<name>.fly.dev` (in `VITE_API_URL` and
-  `FRONTEND_ORIGINS`).
+由已授权操作人检查配置和备份后执行 `fly deploy`。随后核对 /health、登录/验证、用户权限、Scanner 数据健康、Analyze、历史报告和日志；仅构建成功不等于端到端通过。
 
-### 2. Create the SQLite volume (one-time)
-```powershell
-fly volumes create data --size 3 --region <same-region-as-app>
-```
-(3 GB is plenty for SQLite + backups. It mounts at `/data` per `fly.toml`.)
+## 运维边界
 
-### 3. Set the secrets (never put these in fly.toml or git)
-```powershell
-# generate two strong secrets:
-$jwt = python -c "import secrets; print(secrets.token_hex(32))"
-$enc = python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+现有 SQLite 文件和进程内 APScheduler 要求单实例；仅增加 MongoDB 并不会自动解除这一限制。多实例需要单独迁移调度与事务存储。
 
-fly secrets set `
-  JWT_SECRET=$jwt `
-  APP_ENCRYPTION_KEY=$enc `
-  RESEND_API_KEY=<your-resend-key> `
-  RESEND_FROM_EMAIL=<verified-sender@yourdomain> `
-  EODHD_API_KEY=<your-eodhd-key> `
-  FINNHUB_API_KEY=<your-finnhub-key>
-```
-- `JWT_SECRET` — signs auth tokens (NOT the dev default).
-- `APP_ENCRYPTION_KEY` — Fernet key that encrypts users' stored API keys at rest.
-- `RESEND_*` — sends the email-verification mails (sign up at resend.com, verify a
-  sender domain for deliverability). **Without these, verification emails won't send.**
-- `EODHD_API_KEY` / `FINNHUB_API_KEY` — the HOST's market-data keys for the SHARED
-  scanner snapshot + crons (cheap, ~$20/mo EODHD). Users do NOT supply these — only their
-  own LLM keys. **No host LLM keys are needed** (per-user).
-- (Optional: `INVITE_CODES=code1,code2` if you later want invite-gating.)
-
-### 4. Deploy
-```powershell
-fly deploy
-```
-The image builds (frontend + backend), the entrypoint runs `alembic upgrade head` against
-the fresh volume, uvicorn boots. First build takes a few minutes.
-
-### 5. Smoke-test
-```powershell
-fly open                      # opens https://<name>.fly.dev
-fly logs                      # watch the boot + requests
-```
-In the browser: register an account → check your email → click the verify link → in
-Settings add your own LLM key (e.g. DeepSeek) → run an analysis. It should spend YOUR key
-(a user with no key gets "Add your … API key in Settings").
-
-### 6. Custom domain + TLS (optional)
-```powershell
-fly certs add yourapp.com
-```
-Fly prints a DNS record — add it at your registrar (an `A`/`AAAA` or `CNAME`). Wait for
-the cert to go green (`fly certs show yourapp.com`). Then update `fly.toml`'s
-`VITE_API_URL` + `FRONTEND_ORIGINS` to `https://yourapp.com` and `fly deploy` again (the
-SPA bundle bakes the URL at build time, so it must be rebuilt for the new domain).
-
----
-
-## Day-2 operations
-
-- **Update / redeploy:** `git pull` (or push your branch) → `fly deploy`.
-- **Logs:** `fly logs`. **SSH in:** `fly ssh console`.
-- **Scale RAM** (if the nightly scanner scan OOMs on 2 GB): `fly scale memory 4096`.
-- **Backups:** Fly takes **daily volume snapshots** automatically (~5-day retention) —
-  `fly volumes snapshots list <vol-id>`. For continuous SQLite backup, add **litestream**
-  to Cloudflare R2/S3 later (recommended once you have real users).
-- **One machine only.** SQLite + the in-process APScheduler require exactly one instance
-  (`min_machines_running = 1`, `auto_stop_machines = false`). Do **not** `fly scale count`
-  above 1 — two machines would diverge the SQLite DB.
-
-## Known ceilings (by design)
-
-- **SQLite, single instance** — fine for a semi-public friend-scale app. `DATABASE_URL`
-  makes a future Postgres swap a one-env-var change if you outgrow it.
-- **Email deliverability** depends on a verified Resend sender domain.
-- **2 GB** is comfortable for steady use; the heavy bit is the nightly scanner scan —
-  scale to 4 GB or move scans off-peak if needed.
-
-## Security recap (already built)
-
-- Users' LLM keys are **encrypted at rest** (Fernet, `APP_ENCRYPTION_KEY`) and **never**
-  returned in full by the API (masked `••••last4`).
-- A normal user can never reach the host's `.env` LLM keys (the analyze/lab paths fail
-  fast without the user's own key); the legacy `/research/run` is superuser-only.
-- Email verification + IP rate limiting guard the public surface; HTTPS enforced by Fly.
+容量、成本与快照保留期以部署平台实际账户为准，不沿用旧笔记中的估计。数据库升级和报告迁移均需独立的备份与回滚方案。

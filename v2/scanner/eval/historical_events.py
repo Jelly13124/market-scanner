@@ -11,7 +11,7 @@ Sourcing strategy — REUSE existing parsers, never reinvent:
     history). These unblock the ``earnings_event`` surprise phase and the
     ``analyst_rating`` detector.
   * Insider history comes from an optional Finnhub-style client (depth-limited
-    on the free tier); news from an optional EODHD-style client. Both injected.
+    on the free tier); news from an optional online client. Both injected.
   * Fundamentals history is the weak link: no existing client returns a
     *historical* :class:`FinancialMetrics` series (Finnhub gives only a current
     snapshot). :func:`fetch_financials_history` derives what it confidently can

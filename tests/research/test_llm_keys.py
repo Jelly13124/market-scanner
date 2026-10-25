@@ -59,7 +59,7 @@ def test_call_research_llm_forwards_user_keys(monkeypatch):
     assert captured["fallback"] is False
 
 
-def test_call_research_llm_none_keys_allows_fallback(monkeypatch):
+def test_call_research_llm_none_keys_blocks_fallback(monkeypatch):
     captured = {}
 
     def fake_get_model(name, provider, api_keys=None, allow_env_fallback=True):
@@ -69,11 +69,11 @@ def test_call_research_llm_none_keys_allows_fallback(monkeypatch):
 
     monkeypatch.setattr("src.research.llm.get_model", fake_get_model)
 
-    # No api_keys => host/cron path => fallback stays ON.
+    # Missing credentials must not consume a host key.
     call_research_llm("prompt text", _DummyOut)
 
     assert captured["api_keys"] is None
-    assert captured["fallback"] is True
+    assert captured["fallback"] is False
 
 
 # --- get_model env-fallback control ---------------------------------------

@@ -378,21 +378,8 @@ def run_workflow_backtest(
 
 
 def _live_seams():
-    """Bind scan/hedge-fund/provider/outcome seams to the LIVE (paid) functions.
-
-    Imported lazily inside the CLI so the offline test never pulls these in.
-    """
-    from src.main import run_hedge_fund
-    from v2.data.factory import get_provider_factory
-    from v2.scanner.runner import run_scan
-
-    provider_factory = get_provider_factory()
-    return {
-        "run_scan_fn": run_scan,
-        "run_hedge_fund_fn": run_hedge_fund,
-        "provider_factory": provider_factory,
-        "fd": provider_factory(),
-    }
+    """Live execution is retired with the legacy LangGraph Analyze."""
+    raise RuntimeError("Legacy LangGraph Analyze was removed; workflow backtest requires an explicit analysis adapter.")
 
 
 def main(argv=None):
@@ -414,36 +401,9 @@ def main(argv=None):
               "(v2/workflow_backtest/test_runner_smoke.py); no paid run performed.")
         return 0
 
-    # Live (paid) path needs API keys in os.environ. The SPY fetch below runs
-    # BEFORE _live_seams() (which transitively loads .env via src.main), so load
-    # it here explicitly — otherwise the provider 401s and the schedule is empty.
-    from dotenv import load_dotenv
-    load_dotenv()
+    # Reject before loading keys or fetching market data.
+    _live_seams()
 
-    # Live (paid) path: resolve the real universe + a SPY-based regime schedule,
-    # then bind the live seams. Kept lazy so an offline `--help` stays cheap.
-    from v2.scanner.universes import load_universe
-    from v2.data.factory import get_provider_factory
-    from v2.workflow_backtest.regime_windows import build_schedule
-    import datetime as _dt
-
-    universe_tickers = load_universe(args.universe)
-    pf = get_provider_factory()
-    fd = pf()
-    run_date = _dt.date.today().isoformat()
-    spy = fd.get_prices(_BENCHMARK, "2018-01-01", run_date)
-    # The full trading calendar = SPY's bar dates (a liquid daily proxy).
-    trading_days = sorted({p.time[:10] for p in (spy or [])})
-    schedule = build_schedule(trading_days, spy, run_date=run_date, every=args.every)
-
-    seams = _live_seams()
-    summary = run_workflow_backtest(
-        universe_tickers=universe_tickers, schedule=schedule, model_name=args.model,
-        model_provider=args.provider, top_n=args.top_n, seed=args.seed,
-        hold_days=args.hold_days, out_dir=args.out_dir, **seams,
-    )
-    print(json.dumps({k: summary[k] for k in ("n_dates", "report_path", "decisions_csv")}, indent=2))
-    return 0
 
 
 if __name__ == "__main__":

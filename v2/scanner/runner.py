@@ -33,7 +33,7 @@ from v2.data.protocol import DataClient
 from v2.models import SignalResult
 from v2.scanner.detectors import ALL_DETECTORS
 from v2.scanner.detectors.base import EventDetector
-from v2.scanner.models import ScanContext, ScannerWeights, ScoredEntry
+from v2.scanner.models import ScanContext, ScannerWeights, ScoredEntry, ScanOutcome
 from v2.scanner.scoring import compute_composite
 
 logger = logging.getLogger(__name__)
@@ -93,39 +93,41 @@ def _scan_one_ticker(
     benchmark_cvo_gap_by_date: dict[str, tuple[float, float]] | None = None,
     target_snapshots: list | None = None,
     upcoming_earnings_days_to: dict[str, int] | None = None,
-) -> ScoredEntry | None:
-    """Worker function. Returns ScoredEntry or None (no event / failure)."""
+) -> ScanOutcome:
+    """Return one explicit outcome, including every enabled detector."""
     fd = fd_pool.get()
+    evidence_start = len(getattr(fd, 'evidence', []))
+    quality_start = len(getattr(fd, 'quality', []))
     try:
-        ctx = ScanContext(
-            ticker=ticker, end_date=end_date,
-            benchmark_prices=benchmark_prices,
-            benchmark_cvo_gap_by_date=benchmark_cvo_gap_by_date,
-            target_snapshots=target_snapshots,
-            upcoming_earnings_days_to=upcoming_earnings_days_to,
-        )
-        triggers = []
-        any_triggered = False
+        ctx = ScanContext(ticker=ticker, end_date=end_date, benchmark_prices=benchmark_prices,
+            benchmark_cvo_gap_by_date=benchmark_cvo_gap_by_date, target_snapshots=target_snapshots,
+            upcoming_earnings_days_to=upcoming_earnings_days_to)
+        triggers, results = [], []
         for det in detectors:
+            item = {'detector': det.name, 'version': '1', 'status': 'no_data'}
             try:
-                trig = det.detect(ticker, end_date, fd, ctx=ctx)
-            except Exception as e:
-                logger.warning("Detector %s failed for %s: %s", det.name, ticker, e)
-                continue
-            if trig is None:
-                continue
-            triggers.append(trig)
-            if trig.triggered:
-                any_triggered = True
-
-        if not any_triggered:
-            return None
-
-        quant_results: dict[str, SignalResult] = {}
-        if quant_signals:
-            quant_results = _evaluate_quant(ticker, end_date, fd, quant_signals)
-
-        return compute_composite(ticker, triggers, quant_results, weights)
+                trigger = det.detect(ticker, end_date, fd, ctx=ctx)
+                if trigger is not None:
+                    triggers.append(trigger)
+                    item.update(status='triggered' if trigger.triggered else 'no_event',
+                        severity=float(trigger.severity_z), direction=trigger.direction,
+                        reason=trigger.reason, components=trigger.components)
+            except Exception as error:
+                logger.warning('Detector %s failed for %s (%s)', det.name, ticker, type(error).__name__)
+                item.update(status='error', reason=type(error).__name__)
+            results.append(item)
+        valid = any(item['status'] in ('triggered', 'no_event') for item in results)
+        outcome = 'evaluated' if valid else ('error' if any(item['status'] == 'error' for item in results) else 'no_data')
+        entry = None
+        if any(trigger.triggered for trigger in triggers):
+            quant = _evaluate_quant(ticker, end_date, fd, quant_signals) if quant_signals else {}
+            entry = compute_composite(ticker, triggers, quant, weights)
+        return ScanOutcome(ticker=ticker, outcome=outcome, entry=entry, detector_results=results,
+            evidence=getattr(fd, 'evidence', [])[evidence_start:],
+            quality={'inputs': getattr(fd, 'quality', [])[quality_start:],
+                     'partial': any(item['status'] in ('error', 'no_data') for item in results),
+                     'target_snapshots': [{k: getattr(x, k, None) for k in ('asof_date', 'target_median', 'target_mean', 'target_high', 'target_low')} for x in (target_snapshots or [])],
+                     'upcoming_earnings_days_to': (upcoming_earnings_days_to or {}).get(ticker)})
     finally:
         fd_pool.put(fd)
 
@@ -146,6 +148,7 @@ def run_scan(
     benchmark_ticker: str | None = None,
     target_snapshots: dict[str, list] | None = None,
     upcoming_earnings: dict[str, int] | None = None,
+    outcome_cb: Callable[[ScanOutcome], None] | None = None,
 ) -> list[ScoredEntry]:
     """Scan a universe of tickers and return the Top-N ranked candidates.
 
@@ -183,11 +186,13 @@ def run_scan(
     weights = weights or ScannerWeights()
     det_list = _resolve_detectors(detectors)
     quant_list = list(quant_signals) if quant_signals else []
-    universe = list(tickers)
+    universe = list(dict.fromkeys(tickers))
     total = len(universe)
     if total == 0:
         return []
 
+    if len({det.name for det in det_list}) != len(det_list):
+        raise ValueError("Detector names must be unique")
     worker_count = max(1, min(max_workers, total))
 
     # Build one DataClient per worker (per-thread session avoids requests.Session
@@ -254,7 +259,9 @@ def run_scan(
                 benchmark_cvo_gap_by_date[p.time[:10]] = (bcvo, bgap)
                 prev = p
 
+        benchmark_evidence = list(getattr(clients[0], 'evidence', []))
         scored: list[ScoredEntry] = []
+        outcomes: list[ScanOutcome] = []
         processed = 0
         triggered = 0
         skipped = 0
@@ -300,12 +307,15 @@ def run_scan(
             for future in as_completed(future_to_ticker):
                 ticker = future_to_ticker[future]
                 try:
-                    entry = future.result()
+                    outcome = future.result()
+                    entry = outcome.entry
                 except Exception as e:
                     logger.warning("Unhandled error scanning %s: %s", ticker, e)
                     entry = None
+                    outcome = ScanOutcome(ticker=ticker, outcome='error', quality={'error': type(e).__name__})
                     with lock:
                         errors += 1
+                outcomes.append(outcome)
                 with lock:
                     processed += 1
                     if entry is not None:
@@ -321,9 +331,18 @@ def run_scan(
         # everything from z=5 to z=43 to the same score) so MRVL's
         # z=-43 outranks PAYX's z=-3 even though both are "100".
         scored.sort(key=lambda e: (e.composite_score, e.event_severity), reverse=True)
-        top = scored[:top_n]
-        for i, entry in enumerate(top, start=1):
+        for i, entry in enumerate(scored, start=1):
             entry.rank = i
+        top = scored[:max(0, top_n)]
+        selected = {entry.ticker for entry in top}
+        if outcome_cb:
+            from v2.scanner.detectors import RETIRED_DETECTORS
+            retired = set(weights.enabled_detectors or []) & RETIRED_DETECTORS
+            for outcome in outcomes:
+                outcome.detector_results.extend({'detector': name, 'version': 'retired', 'status': 'retired'} for name in sorted(retired))
+                outcome.evidence = benchmark_evidence + outcome.evidence
+                outcome.selected = outcome.ticker in selected
+                outcome_cb(outcome)
         return top
     finally:
         for client in clients:

@@ -301,7 +301,7 @@ def main() -> None:
     from v2.scanner.universes import load_universe
     from scripts.rerender_eval_report import REGIMES
 
-    # API keys (EODHD/FINNHUB) live in .env at repo root; load before clients.
+    # API keys (Yahoo/FINNHUB) live in .env at repo root; load before clients.
     load_dotenv()
     _logging.basicConfig(
         level=_logging.INFO,

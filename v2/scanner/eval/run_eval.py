@@ -338,7 +338,7 @@ def main(argv=None):
 
     from dotenv import load_dotenv
 
-    # API keys (EODHD/FINNHUB) live in .env at repo root; load before building clients.
+    # API keys (Yahoo/FINNHUB) live in .env at repo root; load before building clients.
     load_dotenv()
 
     parser = argparse.ArgumentParser(description="Run the scanner detector/signal usefulness evaluation (3 fail-soft phases).")

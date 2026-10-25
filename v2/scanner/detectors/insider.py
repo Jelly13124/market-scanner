@@ -1,4 +1,4 @@
-"""Insider cluster detector — asymmetric buy/sell (per task_plan_scanner_v2 §3.2).
+"""Insider cluster detector — asymmetric buy/sell thresholds.
 
 Empirical reality (Cohen-Malloy-Pomorski 2012): insider BUYS carry strong
 information content; insider SELLS are weaker because they're driven by

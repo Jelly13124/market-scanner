@@ -14,7 +14,7 @@ from datetime import date
 
 import pandas as pd
 
-# Reuse Phase 1-5 data layer: composite client (EODHD → yfinance → Finnhub)
+# Reuse the agent price adapter; provider routing is owned by the data layer.
 from src.tools.api import get_prices as fetch_prices
 
 logger = logging.getLogger(__name__)

@@ -79,7 +79,7 @@ class NewsSentimentShiftDetector(EventDetector):
         for art in articles:
             d = _parse_date(art.date) if art.date else None
             # Prefer the continuous score when the provider supplies one
-            # (EODHD's daily aggregate). Falls back to the 3-bucket label,
+            # (Yahoo's daily aggregate). Falls back to the 3-bucket label,
             # which is what FD returns and what mocked tests use.
             if art.sentiment_score is not None:
                 pol = float(art.sentiment_score)

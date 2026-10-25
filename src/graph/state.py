@@ -21,7 +21,7 @@ class AgentState(TypedDict):
 # Documentation-only TypedDict for the v2 scanner→agent bridge. Lives in
 # state['data']['scanner_context'] as a dict[ticker, ScannerContext] when
 # the pipeline orchestrator (or any caller passing scanner_context= to
-# run_hedge_fund) populates it. AgentState['data'] is an open dict — this
+# an explicit analysis adapter) populates it. AgentState['data'] is an open dict — this
 # TypedDict is for IDE/readability only, no runtime enforcement.
 class ScannerContext(TypedDict, total=False):
     scan_date: str

@@ -6,7 +6,7 @@ import pytest
 
 from v2.data.client import FDClient
 from v2.data.composite_client import CompositeClient
-from v2.data.eodhd_client import EODHDClient
+from v2.data.cached_client import CachedDataClient
 from v2.data.factory import (
     get_default_provider,
     get_provider_factory,
@@ -39,13 +39,10 @@ class TestMakeDataClient:
         client = make_data_client("finnhub")
         assert isinstance(client, FinnhubClient)
 
-    def test_explicit_eodhd(self):
-        client = make_data_client("eodhd")
-        assert isinstance(client, EODHDClient)
 
     def test_explicit_hybrid(self):
         client = make_data_client("hybrid")
-        assert isinstance(client, CompositeClient)
+        assert isinstance(client, CachedDataClient)
 
     def test_unknown_provider_raises(self):
         with pytest.raises(ValueError, match="Unknown data provider"):
@@ -67,15 +64,12 @@ class TestProviderFactory:
         factory = get_provider_factory("finnhub")
         assert factory is FinnhubClient
 
-    def test_returns_callable_for_eodhd(self):
-        factory = get_provider_factory("eodhd")
-        assert factory is EODHDClient
 
     def test_returns_callable_for_hybrid(self):
         factory = get_provider_factory("hybrid")
         # Hybrid returns a builder function, not a class.
         assert callable(factory)
-        assert isinstance(factory(), CompositeClient)
+        assert isinstance(factory(), CachedDataClient)
 
 
 class TestRecommendMaxWorkers:
@@ -90,9 +84,6 @@ class TestRecommendMaxWorkers:
     def test_finnhub_caps_at_4(self):
         assert recommend_max_workers("finnhub") == 4
 
-    def test_eodhd_at_16(self):
-        # EODHD on its own has plenty of headroom.
-        assert recommend_max_workers("eodhd") == 16
 
     def test_hybrid_capped_by_finnhub_bottleneck(self):
         # Bottleneck dominates: hybrid uses Finnhub for half the calls.

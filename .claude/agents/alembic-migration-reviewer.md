@@ -12,13 +12,13 @@ this codebase.
 ## What to check
 
 ### 1. down_revision chain is intact
-- Run `C:\Users\Jerry\anaconda3\python.exe -m alembic heads`. There must be
+- Run `poetry run python -m alembic heads`. There must be
   exactly ONE head after the new migration. Multiple heads = a branch the
   author didn't intend.
 - The new migration's `down_revision` must point at what WAS the head before it
   (check `git diff` / `git log` of the versions dir). A wrong/stale
   down_revision silently detaches the migration.
-- Run `C:\Users\Jerry\anaconda3\python.exe -m alembic history | head -20` and
+- Run `poetry run python -m alembic history | head -20` and
   confirm the new revision sits at the tip with no gaps.
 
 ### 2. upgrade()/downgrade() are symmetric
@@ -49,9 +49,9 @@ this codebase.
 
 Run (in a throwaway way — don't corrupt the dev DB if you can avoid it):
 ```
-C:\Users\Jerry\anaconda3\python.exe -m alembic upgrade head
-C:\Users\Jerry\anaconda3\python.exe -m alembic downgrade -1
-C:\Users\Jerry\anaconda3\python.exe -m alembic upgrade head
+poetry run python -m alembic upgrade head
+poetry run python -m alembic downgrade -1
+poetry run python -m alembic upgrade head
 ```
 Report any error.
 

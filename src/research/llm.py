@@ -20,6 +20,7 @@ from typing import Callable, TypeVar
 
 from pydantic import BaseModel
 from src.llm.models import get_model
+from src.research.usage import CURRENT_USAGE, FAILED_CALLS
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,7 @@ def call_research_llm(
     prompt,
     pydantic_model: type[_T],
     *,
-    max_retries: int = 3,
+    max_retries: int = 1,
     default_factory: Callable[[], _T] | None = None,
     api_keys: dict | None = None,
 ) -> _T:
@@ -164,16 +165,14 @@ def call_research_llm(
     model_name = os.environ.get("RESEARCH_MODEL_NAME", _DEFAULT_MODEL)
     model_provider = os.environ.get("RESEARCH_MODEL_PROVIDER", _DEFAULT_PROVIDER)
 
-    # api_keys is None  -> host/cron path: allow env fallback (legacy behavior).
-    # api_keys is a dict -> user path: NO env fallback, so a partial user dict
-    #                       can never reach the host's env key.
+    # Every paid call requires explicit credentials, including owner/cron.
     llm = get_model(
         model_name,
         model_provider,
         api_keys=api_keys,
-        allow_env_fallback=(api_keys is None),
+        allow_env_fallback=False,
     )
-    structured = llm.with_structured_output(pydantic_model, method="json_mode")
+    structured = llm.with_structured_output(pydantic_model, method="json_mode", include_raw=True)
 
     # DeepSeek (and other json_mode providers) require:
     #   (a) the prompt to contain the literal word "json"
@@ -192,14 +191,30 @@ def call_research_llm(
     last_exc: Exception | None = None
     for attempt in range(max_retries):
         try:
-            return structured.invoke(prompt)
+            usage = CURRENT_USAGE.get()
+            if usage:
+                usage.add(calls=1)
+            response = structured.invoke(prompt)
+            if isinstance(response, dict) and 'parsed' in response:
+                if response.get('parsing_error') or response['parsed'] is None:
+                    raise ValueError('Model output did not match the requested schema')
+                metadata = getattr(response.get('raw'), 'usage_metadata', None) or {}
+                if usage:
+                    usage.add(input_tokens=metadata.get('input_tokens', 0), output_tokens=metadata.get('output_tokens', 0),
+                              token_reports=int(bool(metadata)))
+                return response['parsed']
+            return response
         except Exception as exc:
+            FAILED_CALLS.set(FAILED_CALLS.get() + 1)
+            usage = CURRENT_USAGE.get()
+            if usage:
+                usage.add(failures=1, unknown=1)
             last_exc = exc
             logger.warning(
                 "call_research_llm attempt %d/%d failed: %s",
                 attempt + 1,
                 max_retries,
-                exc,
+                type(exc).__name__,
             )
             if attempt < max_retries - 1:
                 time.sleep(0.5 * (attempt + 1))

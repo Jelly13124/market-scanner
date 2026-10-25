@@ -12,12 +12,12 @@ class _FakeDispatcher:
 
 
 def test_context_swaps_and_restores():
-    orig_cache = api_mod._v2_client_cache
+    orig_cache = factory_mod._CLIENT_OVERRIDE.get()
     orig_factory = factory_mod.get_provider_factory
     disp = _FakeDispatcher()
     with asof_agent_context(disp, "2025-03-03"):
         assert disp.asof == "2025-03-03"
-        assert api_mod._v2_client_cache is disp
+        assert api_mod._get_v2_client() is disp
         assert factory_mod.get_provider_factory()() is disp   # factory returns a factory→dispatcher
-    assert api_mod._v2_client_cache is orig_cache
+    assert factory_mod._CLIENT_OVERRIDE.get() is orig_cache
     assert factory_mod.get_provider_factory is orig_factory

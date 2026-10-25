@@ -14,10 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useApiKeysStatus } from '@/contexts/api-keys-status-context';
-import { useTabsContext } from '@/contexts/tabs-context';
 import { scannerService } from '@/services/scanner-service';
-import { TabService } from '@/services/tab-service';
 import { useRequestAnalyze } from '@/hooks/use-request-analyze';
 import { toast } from 'sonner';
 import type {
@@ -26,11 +23,10 @@ import type {
   ScannerConfigResponse,
   WatchlistEntryResponse,
 } from '@/types/scanner';
-import { KeyRound, Pencil, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Pencil, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentRunsList } from './agent-runs-list';
-import { AnalyzeButton } from './analyze-button';
 import { NotificationSettings } from './notification-settings';
 import { ScannerConfigDialog } from './scanner-config-dialog';
 import { WatchlistTable } from './watchlist-table';
@@ -43,9 +39,6 @@ interface ScannerPanelProps {
 export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
   const { t } = useTranslation();
   const requestAnalyze = useRequestAnalyze();
-  const { hasKeys } = useApiKeysStatus();
-  const { openTab } = useTabsContext();
-  const openApiKeys = () => openTab({ id: 'settings', ...TabService.createSettingsTab() });
   // ---- config state -------------------------------------------------------
   const [configs, setConfigs] = useState<ScannerConfigResponse[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(initialConfigId ?? null);
@@ -54,18 +47,6 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
   const [configError, setConfigError] = useState<string | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  // Phase 9: data tier badge — auto-detected from EODHD_API_KEY presence.
-  const [tier, setTier] = useState<'paid' | 'free' | null>(null);
-
-  // Load /tier once on mount; re-load when sidebar saves a new key.
-  useEffect(() => {
-    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-    fetch(`${API_BASE}/tier`)
-      .then((r) => r.json())
-      .then((data) => setTier(data.tier))
-      .catch(() => setTier(null));
-  }, []);
-
   // ---- run state ----------------------------------------------------------
   const [runId, setRunId] = useState<number | null>(null);
   const [run, setRun] = useState<ScanRunSummary | null>(null);
@@ -279,19 +260,6 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
       <div className="flex items-center gap-2 p-4 border-b">
         <h2 className="text-lg font-semibold mr-2">{t('scanner.title')}</h2>
 
-        {/* Phase 9: data tier badge (paid = EODHD wired, free = Finnhub only) */}
-        {tier && (
-          <span
-            className={
-              tier === 'paid'
-                ? 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border border-emerald-300/40'
-                : 'inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border border-amber-300/40'
-            }
-            title={tier === 'paid' ? t('scanner.tierPaidHint') : t('scanner.tierFreeHint')}
-          >
-            {tier === 'paid' ? t('scanner.tierPaid') : t('scanner.tierFree')}
-          </span>
-        )}
 
         <select
           value={selectedId ?? ''}
@@ -344,25 +312,19 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
           />
           Email results
         </label>
-        <Button onClick={handleRunNow} disabled={!selectedConfig || isRunning || !hasKeys} size="sm">
+        <Button onClick={handleRunNow} disabled={!selectedConfig || isRunning} size="sm">
           <Play size={14} className="mr-1" />
           {isRunning ? 'Running…' : 'Run now'}
         </Button>
-        {!hasKeys && (
-          <Button
-            onClick={openApiKeys}
-            size="sm"
-            variant="outline"
-            className="h-8 border-amber-500/60 text-amber-600"
-            title={t('onboarding.gate.tooltip')}
-          >
-            <KeyRound size={14} className="mr-1" />
-            {t('onboarding.gate.addKey')}
-          </Button>
-        )}
+
       </div>
 
       {/* Error banners */}
+      {run?.error_message && (
+        <div className="mx-4 mt-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+          {run.error_message}
+        </div>
+      )}
       {configError && (
         <div className="bg-red-50 dark:bg-red-950 border-b border-red-200 dark:border-red-800 px-4 py-2 text-sm text-red-700 dark:text-red-300">
           {configError}
@@ -423,7 +385,6 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
                   {run.completed_at && ` · completed ${new Date(run.completed_at).toLocaleString()}`}
                 </div>
               )}
-              <AnalyzeButton tickers={entries.map((e) => e.ticker)} />
             </div>
             <WatchlistTable entries={entries} runId={runId} onTickerClick={handleTickerClick} />
             <div className="mt-6">
@@ -438,7 +399,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
         )}
         {runId && entries.length === 0 && !isRunning && !streamError && (
           <div className="text-center text-sm text-muted-foreground py-12">
-            Waiting for the scan to finish…
+            {run?.status === 'COMPLETE' ? 'No candidates matched this scan.' : run?.status === 'ERROR' ? 'The scan could not be completed. See the status above.' : 'Waiting for the scan to finish…'}
           </div>
         )}
       </div>

@@ -2,18 +2,14 @@
 
 Endpoints:
 
-    POST   /pipeline/run            kick off a pipeline run (BackgroundTask)
+    POST   /pipeline/run            retired (410)
     GET    /pipeline/runs           list recent runs (paginated)
     GET    /pipeline/runs/{run_id}  full detail (watchlist + signals + decisions)
     GET    /pipeline/templates      analyst rosters + agent metadata
     GET    /pipeline/schedule       caller's daily-cron config (created on first GET)
     PATCH  /pipeline/schedule       update the caller's config
 
-POST /pipeline/run inserts a PENDING row and returns the run_id immediately;
-the actual orchestration runs in a FastAPI ``BackgroundTask`` that flips
-the row through RUNNING → COMPLETE/ERROR. ``run_pipeline`` is invoked via
-``asyncio.to_thread`` because LangGraph + LLM SDK calls block the event
-loop otherwise (per implementation plan §Top risks).
+POST /pipeline/run is retired (410). Existing runs remain readable.
 
 Wave 4 (Task 4.3): every endpoint requires a Bearer token. Runs are stamped
 with + scoped to the caller's ``user_id`` (cross-tenant get → 404). The
@@ -23,16 +19,11 @@ GET/PATCH operate on the caller's own row, created lazily on first access.
 
 from __future__ import annotations
 
-import asyncio
-import logging
-import traceback
-import uuid
-
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.backend.auth.dependencies import get_current_user
-from app.backend.database import SessionLocal, get_db
+from app.backend.database import get_db
 from app.backend.database.models import User
 from app.backend.models.pipeline_schemas import (
     AgentMetadata,
@@ -53,97 +44,18 @@ from src.utils.analysts import get_agents_list
 from v2.pipeline import (
     DEFAULT_TEMPLATE,
     TEMPLATES,
-    resolve_analysts,
-    run_pipeline,
 )
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pipeline")
 
 
-# ---------------------------------------------------------------------------
-# Background task implementation
-# ---------------------------------------------------------------------------
-
-
-def _execute_run_in_background(run_id: str, req: RunPipelineRequest) -> None:
-    """Background worker that drives one pipeline run from PENDING → done.
-
-    Owns its OWN DB session — we cannot reuse the request-scoped session
-    here because it has already been closed by the time this fires.
-    """
-    db = SessionLocal()
-    repo = PipelineRunRepository(db)
-    try:
-        repo.mark_running(run_id)
-        try:
-            # run_pipeline is a synchronous, blocking call (scanner pool +
-            # LangGraph + multiple LLM round-trips). We're already in a
-            # background task — running directly is fine.
-            result = run_pipeline(
-                scan_date=req.scan_date,
-                universe=req.universe,
-                universe_tickers=req.universe_tickers,
-                top_n=req.top_n,
-                template=req.template,
-                custom_analysts=req.custom_analysts,
-                portfolio=req.portfolio,
-                model_name=req.model_name,
-                model_provider=req.model_provider,
-                persist=False,  # we persist via repo below
-            )
-        except Exception as e:
-            logger.exception("Pipeline run %s failed", run_id)
-            repo.mark_error(run_id, f"{type(e).__name__}: {e}\n{traceback.format_exc()}")
-            return
-
-        repo.mark_complete(
-            run_id,
-            watchlist=result.watchlist,
-            agent_decisions=result.agent_decisions,
-            analyst_signals=result.analyst_signals,
-            duration_seconds=result.duration_seconds,
-        )
-        logger.info("Pipeline run %s completed in %.1fs", run_id, result.duration_seconds)
-    finally:
-        db.close()
-
-
-# ---------------------------------------------------------------------------
-# POST /pipeline/run
-# ---------------------------------------------------------------------------
-
-
-@router.post("/run", response_model=RunPipelineResponse, status_code=202)
+@router.post("/run", response_model=RunPipelineResponse, status_code=410)
 def trigger_run(
     req: RunPipelineRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> RunPipelineResponse:
-    """Kick off a pipeline run; PENDING row is created synchronously, the
-    actual orchestration runs in the background."""
-    # Fail fast on bad inputs BEFORE inserting a doomed PENDING row.
-    try:
-        selected = resolve_analysts(template=req.template, custom=req.custom_analysts)
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-
-    template_name = req.template if req.template else ("custom" if req.custom_analysts else DEFAULT_TEMPLATE)
-
-    run_id = uuid.uuid4().hex
-    PipelineRunRepository(db).create_pending(
-        run_id=run_id,
-        scan_date=req.scan_date or "(deferred)",  # resolved when worker runs
-        template=template_name,
-        selected_analysts=selected,
-        top_n=req.top_n,
-        universe=req.universe,
-        user_id=current_user.id,
-    )
-    background_tasks.add_task(_execute_run_in_background, run_id, req)
-    return RunPipelineResponse(run_id=run_id, status=PipelineStatus.PENDING)
+    """Retired entry point; do not create a run or schedule background work."""
+    raise HTTPException(410, "Legacy LangGraph Analyze was removed; use /research/analyze.")
 
 
 # ---------------------------------------------------------------------------
@@ -236,6 +148,8 @@ def update_schedule(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> PipelineScheduleResponse:
+    if patch.enabled is True:
+        raise HTTPException(410, "Legacy LangGraph Analyze scheduling was removed; use Analyze report schedules.")
     # Validate template name if changing.
     if patch.template is not None and patch.template not in TEMPLATES:
         raise HTTPException(

@@ -410,3 +410,22 @@ def _validate_cron(expr: str) -> None:
 
 def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+@router.get('/history/runs')
+def mongo_scan_runs(limit: int = 50, current_user: User = Depends(get_current_user)):
+    from src.storage.history import ScanHistory
+    from src.storage.mongo import json_value
+    history = ScanHistory()
+    return {'runs': json_value(history.list_runs(current_user.id, limit)), 'storage_status': history.store.status}
+
+
+@router.get('/history/runs/{history_id}')
+def mongo_scan_results(history_id: str, current_user: User = Depends(get_current_user)):
+    from bson import ObjectId
+    from src.storage.history import ScanHistory
+    from src.storage.mongo import json_value
+    if not ObjectId.is_valid(history_id):
+        raise HTTPException(404, 'Scan history not found')
+    history = ScanHistory()
+    return {'results': json_value(history.results(current_user.id, history_id)), 'storage_status': history.store.status}

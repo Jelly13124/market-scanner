@@ -55,7 +55,7 @@ class TestCLI:
     def test_request_carries_all_args(self, mock_run, mock_render, capsys):
         from src.research.__main__ import main
         captured_req = {}
-        def _capture(req):
+        def _capture(req, **kwargs):
             captured_req["req"] = req
             return _fake_report(req.ticker)
         mock_run.side_effect = _capture

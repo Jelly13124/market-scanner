@@ -2,8 +2,8 @@
 
 The v1 Financial Datasets ``/financials/search/line-items`` endpoint exposes
 arbitrary balance-sheet / income-statement / cash-flow rows per fiscal
-period. The v2 hybrid client (Finnhub / EODHD / yfinance) does NOT have a
-1:1 equivalent — Finnhub free only gives a few headline metrics, EODHD
+period. The v2 hybrid client (Finnhub / yfinance) does NOT have a
+1:1 equivalent — Finnhub free only gives a few headline metrics, Yahoo
 fundamentals are on a paid tier we don't have. yfinance's
 ``Ticker.income_stmt / .balance_sheet / .cashflow`` DataFrames give us the
 raw rows for free.
@@ -131,6 +131,12 @@ def search_line_items(
     ``end_date``. Each returned ``LineItem`` carries the requested fields
     as dynamic attributes (LineItem has ``model_config = {'extra': 'allow'}``).
     """
+    from datetime import date
+    if end_date < date.today().isoformat():
+        # Yahoo observations do not establish when filings were first public.
+        # An historical fundamental backtest must use verified vintages.
+        return []
+
     cache_key = f"{ticker}_{period}_{end_date}_{limit}_{'-'.join(sorted(line_items))}"
     if cache is not None:
         cached = cache.get_line_items(cache_key)
@@ -139,11 +145,15 @@ def search_line_items(
 
     # Lazy yfinance import + fetch the 3 DataFrames once per ticker.
     try:
-        import yfinance as yf
-        t = yf.Ticker(ticker)
-        income_df = t.income_stmt if period == "annual" or period == "ttm" else t.quarterly_income_stmt
-        balance_df = t.balance_sheet if period == "annual" or period == "ttm" else t.quarterly_balance_sheet
-        cash_df = t.cashflow if period == "annual" or period == "ttm" else t.quarterly_cashflow
+        import pandas as pd
+        from v2.data.cached_client import CachedDataClient
+        from v2.data.yfinance_client import YFinanceClient
+        with CachedDataClient(YFinanceClient(), source='yahoo') as client:
+            bundle = client.get_statement_bundle(ticker, period='annual' if period == 'annual' else 'quarterly')
+        def frame(name):
+            table = bundle.get(name)
+            return pd.DataFrame(table['data'], index=table['index'], columns=pd.to_datetime(table['columns'])) if table else pd.DataFrame()
+        income_df, balance_df, cash_df = frame('income'), frame('balance'), frame('cashflow')
     except Exception as e:
         logger.warning("yfinance fetch failed for %s: %s", ticker, e)
         return []
@@ -166,6 +176,23 @@ def search_line_items(
         end_ts = None
     if end_ts is not None:
         candidate_cols = [c for c in candidate_cols if pd.to_datetime(c) <= end_ts]
+    if period == 'ttm':
+        ordered = sorted(candidate_cols, reverse=True)
+        if len(ordered) < 4:
+            return []
+        # Four contiguous fiscal quarters; balance sheet remains end-of-period.
+        windows = [ordered[i:i + 4] for i in range(len(ordered) - 3)]
+        valid = [w for w in windows if all(60 <= (w[i] - w[i + 1]).days <= 120 for i in range(3))]
+        if not valid:
+            return []
+        def trailing(frame):
+            columns = {}
+            for window in valid:
+                if all(c in frame.columns for c in window):
+                    columns[window[0]] = frame[window].sum(axis=1, min_count=4)
+            return pd.DataFrame(columns)
+        income_df, cash_df = trailing(income_df), trailing(cash_df)
+        candidate_cols = [w[0] for w in valid if w[0] in income_df.columns]
     # Newest first; cap to limit.
     candidate_cols = sorted(candidate_cols, reverse=True)[:limit]
 

@@ -34,7 +34,8 @@ def _build_mock_client(sector: str) -> MagicMock:
     """A fake DataClient that records every get_prices call so the test
     can assert on which benchmark ticker was requested."""
     client = MagicMock()
-    client.get_prices.return_value = []
+    from v2.data.models import Price
+    client.get_prices.return_value = [Price(open=10, high=11, low=9, close=10, volume=100, time="2026-05-26")]
     client.get_financial_metrics.return_value = []
     client.get_insider_trades.return_value = []
     client.get_news.return_value = []

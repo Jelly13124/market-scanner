@@ -27,7 +27,7 @@ from src.tools.api import (
 class BacktestEngine:
     """Coordinates the backtest loop using the new components.
 
-    This implementation mirrors the semantics of src/backtester.py while
+    This implementation mirrors the semantics of the retired backtester while
     avoiding any changes to that file. It orchestrates agent decisions,
     trade execution, valuation, exposures and performance metrics.
     """

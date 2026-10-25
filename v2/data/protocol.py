@@ -106,7 +106,7 @@ class AnalystDataClient(DataClient, Protocol):
     """Optional sub-protocol for providers that supply analyst data.
 
     Kept distinct from the base ``DataClient`` so most providers (FD, Finnhub,
-    EODHD) don't need to stub these methods — only a yfinance-style backend
+    Yahoo) don't need to stub these methods — only a yfinance-style backend
     that actually has analyst coverage needs to implement them. Callers should
     ``isinstance(client, AnalystDataClient)`` check before invoking.
     """

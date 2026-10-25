@@ -1,8 +1,8 @@
 """Static-analysis tests for v2/scanner/detectors/*.py.
 
 Enforces the four load-bearing invariants from CLAUDE.md plus four
-observable best-practices. See docs/superpowers/specs/2026-05-21-
-detector-invariant-tests-design.md for the rule catalog.
+observable best-practices. See docs/development.md and tests/_detector_lint.py
+for the current rules.
 
 Each rule is one parameterized test; the parameter is the detector
 file path. Failure message points to file:line so fixes are trivial.

@@ -1,8 +1,7 @@
 """On-demand live market quotes for watchlist tickers.
 
-A FAST batch quote via a single ``yfinance.download`` call — deliberately
-lighter than the screener's per-ticker snapshot build (``.info`` +
-``.history`` + ``.earnings_dates``), which is far too slow for a live view.
+US quotes use Finnhub with a bounded short-lived memory cache. The legacy
+Yahoo path remains for A-share symbols. Quotes never use MongoDB.
 
 ``fetch_live_quotes`` is best-effort: it never raises. A failed batch or a
 bad symbol yields rows with ``error`` set and ``None`` data fields, so the
@@ -111,7 +110,7 @@ def _row_from_frame(ticker: str, sub: Any) -> dict[str, Any]:
     }
 
 
-def fetch_live_quotes(tickers: list[str]) -> list[dict]:
+def _fetch_yahoo_quotes(tickers: list[str]) -> list[dict]:
     """Fast batch live quotes for ``tickers`` (input order preserved).
 
     Best-effort: never raises. Empty/None input → ``[]``. A whole-batch
@@ -153,3 +152,54 @@ def fetch_live_quotes(tickers: list[str]) -> list[dict]:
             logger.warning("live quote extraction failed for %s: %s", ticker, exc)
             rows.append(_row_from_frame(ticker, None))
     return rows
+
+
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+import threading
+import time
+import os
+from v2.data.finnhub_client import FinnhubClient
+from v2.data.ashare.symbol import is_ashare
+
+_QUOTE_CACHE = OrderedDict()
+_QUOTE_LOCK = threading.Lock()
+
+
+def fetch_live_quotes(tickers: list[str]) -> list[dict]:
+    if not tickers:
+        return []
+    unique = list(dict.fromkeys(tickers))
+    def fetch(ticker):
+        now = time.monotonic()
+        with _QUOTE_LOCK:
+            cached = _QUOTE_CACHE.get(ticker)
+            if cached and cached[0] > now:
+                return dict(cached[1])
+        if is_ashare(ticker):
+            row = _fetch_yahoo_quotes([ticker])[0]
+            row['source'] = 'yahoo'
+        else:
+            row = _row_from_frame(ticker, None)
+            row.update(source='finnhub', source_timestamp=None, received_at=None)
+            try:
+                with FinnhubClient() as client:
+                    quote = client.get_quote(ticker)
+                    if quote is not None:
+                        row.update(price=quote.current_price, prev_close=quote.prev_close, change_pct=quote.percent_change,
+                            day_open=quote.day_open, day_high=quote.day_high, day_low=quote.day_low,
+                            source_timestamp=quote.asof_timestamp, received_at=quote.received_at, error=None)
+                    else:
+                        row['error'] = getattr(client, 'last_status', 'no data')
+            except Exception as error:
+                logger.warning('Live quote unavailable for %s (%s)', ticker, type(error).__name__)
+        if row['price'] is not None:
+            with _QUOTE_LOCK:
+                _QUOTE_CACHE[ticker] = (time.monotonic() + max(1, int(os.getenv('QUOTE_CACHE_TTL_SECONDS', '15'))), dict(row))
+                _QUOTE_CACHE.move_to_end(ticker)
+                while len(_QUOTE_CACHE) > 4096:
+                    _QUOTE_CACHE.popitem(last=False)
+        return row
+    with ThreadPoolExecutor(max_workers=min(4, len(unique))) as pool:
+        rows = dict(zip(unique, pool.map(fetch, unique)))
+    return [dict(rows[ticker]) for ticker in tickers]

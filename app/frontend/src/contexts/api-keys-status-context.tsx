@@ -12,10 +12,11 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 const LLM_PROVIDERS = new Set<string>([
   'ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'GROQ_API_KEY', 'GOOGLE_API_KEY',
   'OPENAI_API_KEY', 'MOONSHOT_API_KEY', 'OPENROUTER_API_KEY', 'GIGACHAT_API_KEY',
+  'SILICONFLOW_API_KEY', 'XAI_API_KEY', 'AZURE_OPENAI_API_KEY',
 ]);
 
 interface ApiKeysStatusValue {
-  /** true when ≥1 active LLM-provider key is saved. */
+  /** true when the configured BYOK model or local Ollama is available. */
   hasKeys: boolean;
   loading: boolean;
   refresh: () => Promise<void>;
@@ -35,6 +36,13 @@ export function ApiKeysStatusProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
+      const base = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${base}/research/model-status`);
+      if (response.ok) {
+        const status = await response.json();
+        setHasKeys(Boolean(status.ready));
+        return;
+      }
       const keys = await apiKeysService.getAllApiKeys();
       setHasKeys(keys.some((k) => k.is_active && k.has_key && LLM_PROVIDERS.has(k.provider)));
     } catch {

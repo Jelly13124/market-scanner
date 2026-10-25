@@ -369,7 +369,7 @@ class TestInsiderClusterDetector:
 
 
 class TestInsiderAsymmetric:
-    """Asymmetric thresholds + severity mults per task_plan_scanner_v2 §3.2.
+    """Asymmetric thresholds and configured severity multipliers.
 
     Reflects Cohen-Malloy-Pomorski 2012: insider BUYS carry strong information
     content; insider SELLS are weaker (diversification, taxes, 10b5-1 plans)."""

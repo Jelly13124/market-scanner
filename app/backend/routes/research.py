@@ -245,7 +245,7 @@ _PROVIDER_KEY_NAME = {
 _DEFAULT_RESEARCH_PROVIDER = "DeepSeek"
 
 
-def _configured_provider_key_name() -> str:
+def _configured_provider_key_name() -> str | None:
     """The *_API_KEY name for the provider the research pipeline will call.
 
     Resolved from RESEARCH_MODEL_PROVIDER (the var src/research/llm.py reads),
@@ -253,6 +253,8 @@ def _configured_provider_key_name() -> str:
     any provider not in the table so a clear key name is still surfaced.
     """
     provider = os.environ.get("RESEARCH_MODEL_PROVIDER", _DEFAULT_RESEARCH_PROVIDER)
+    if provider.lower() == "ollama":
+        return None
     return _PROVIDER_KEY_NAME.get(provider, f"{provider.upper()}_API_KEY")
 
 
@@ -328,6 +330,11 @@ def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
         scan_date=row.scan_date,
         created_at=row.created_at,
         duration_seconds=row.duration_seconds,
+        analysis_run_id=report_dict.get('analysis_run_id', arq.get('analysis_run_id')),
+        analysis_status=report_dict.get('analysis_status', arq.get('analysis_status')),
+        storage_status=report_dict.get('storage_status', arq.get('storage_status')),
+        mongo_report_id=report_dict.get('mongo_report_id', arq.get('mongo_report_id')),
+        reused=report_dict.get('reused', False), usage=report_dict.get('usage', arq.get('usage', {})),
         objective=arq.get("objective", "general_research"),
         position_budget_usd=arq.get("position_budget_usd"),
         already_holds=arq.get("already_holds", False),
@@ -362,20 +369,27 @@ def trigger_analyze(
     # to env inside require_api_key, matching ApiKeyService policy.)
     svc = ApiKeyService(db, current_user.id)
     provider_key = _configured_provider_key_name()
+    api_keys = svc.get_api_keys_dict()
     try:
-        svc.require_api_key(provider_key)
+        if provider_key is not None and not (provider_key == "DEEPSEEK_API_KEY" and api_keys.get("SILICONFLOW_API_KEY")):
+            svc.require_api_key(provider_key)
     except ApiKeyError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    api_keys = svc.get_api_keys_dict()
-
     t0 = time.monotonic()
     try:
-        report = run_sop(internal_req, api_keys=api_keys)
+        report = run_sop(internal_req, api_keys=api_keys, owner_id=current_user.id,
+                         force_rerun=req.force_rerun, source_scan_result_id=req.source_scan_result_id, resume_run_id=req.resume_run_id)
     except ValueError as e:
         # Belt-and-suspenders: a deep "No API key ..." from get_model's
         # no-fallback path (e.g. a section configured for a different provider
         # the user has no key for) is the user's problem to fix, not a 500.
         msg = str(e)
+        if "Checkpoint" in msg or "Resume and force" in msg:
+            raise HTTPException(status_code=409, detail=msg)
+        if "Unknown or unauthorized" in msg:
+            raise HTTPException(status_code=404, detail=msg)
+        if "Historical prices unavailable" in msg:
+            raise HTTPException(status_code=503, detail=msg)
         if "API key" in msg:
             logger.warning("analyze blocked: missing provider key for %s: %s", req.ticker, msg)
             raise HTTPException(status_code=400, detail=msg)
@@ -392,16 +406,11 @@ def trigger_analyze(
     html = render_sop(report)
     report["rendered_html"] = html
 
-    arq_dict = {
-        "ticker": internal_req.ticker,
-        "objective": internal_req.objective,
-        "position_budget_usd": internal_req.position_budget_usd,
-        "already_holds": internal_req.already_holds,
-        "cost_basis_usd": internal_req.cost_basis_usd,
-        "risk_tolerance": internal_req.risk_tolerance,
-        "use_personas": internal_req.use_personas,
-        "included_sections": sorted(internal_req.included_sections),
-    }
+    from src.storage.mongo import json_value
+    arq_dict = json_value(internal_req)
+    arq_dict.update(storage_status=report.get('storage_status'), mongo_report_id=report.get('mongo_report_id'),
+                    source_scan_result_id=req.source_scan_result_id, analysis_run_id=report.get('analysis_run_id'),
+                    analysis_status=report.get('analysis_status'), usage=report.get('usage', {}))
     sections_json = {
         name: {
             "markdown": p.markdown, "structured": p.structured,
@@ -493,3 +502,65 @@ def get_report_chart(
         png = render_equity_curve_png(closes, idx, horizon=20)
 
     return Response(content=png, media_type="image/png")
+
+
+@router.get('/history')
+def mongo_report_history(limit: int = 50, current_user: User = Depends(get_current_user)):
+    from src.storage.mongo import get_store, json_value
+    store = get_store()
+    rows = store.execute(lambda database: list(database.reports.find({'owner_id': str(current_user.id)},
+        {'sections': 0, 'backtest': 0}).sort('created_at', -1).limit(min(200, max(1, limit))))) or []
+    return {'reports': json_value(rows), 'storage_status': store.status}
+
+
+@router.get('/history/{history_id}')
+def mongo_report_detail(history_id: str, current_user: User = Depends(get_current_user)):
+    from bson import ObjectId
+    from src.storage.mongo import get_store, json_value
+    if not ObjectId.is_valid(history_id):
+        raise HTTPException(404, 'Report not found')
+    row = get_store().execute(lambda database: database.reports.find_one({'_id': ObjectId(history_id),
+        'owner_id': str(current_user.id)}))
+    if row is None:
+        raise HTTPException(404, 'Report not found')
+    return json_value(row)
+
+
+@router.get('/history/{history_id}/artifacts/{file_id}')
+def mongo_report_artifact(history_id: str, file_id: str, current_user: User = Depends(get_current_user)):
+    from bson import ObjectId
+    from gridfs import GridFS
+    from fastapi.responses import Response
+    from src.storage.mongo import get_store
+    if not ObjectId.is_valid(history_id) or not ObjectId.is_valid(file_id):
+        raise HTTPException(404, 'Artifact not found')
+    def read(database):
+        report = database.reports.find_one({'_id': ObjectId(history_id), 'owner_id': str(current_user.id)})
+        artifact = next((a for a in (report or {}).get('artifacts', []) if str(a['file_id']) == file_id), None)
+        return (GridFS(database).get(artifact['file_id']).read(), artifact['mime']) if artifact else None
+    result = get_store().execute(read)
+    if result is None:
+        raise HTTPException(404, 'Artifact not found')
+    return Response(content=result[0], media_type=result[1])
+
+
+@router.get('/model-status')
+async def analysis_model_status(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    provider = os.environ.get('RESEARCH_MODEL_PROVIDER', _DEFAULT_RESEARCH_PROVIDER)
+    model = os.environ.get('RESEARCH_MODEL_NAME', 'deepseek-chat')
+    key_name = _configured_provider_key_name()
+    if key_name is not None:
+        keys = ApiKeyService(db, current_user.id).get_api_keys_dict()
+        ready = bool(keys.get(key_name) or (key_name == 'DEEPSEEK_API_KEY' and keys.get('SILICONFLOW_API_KEY')))
+        return {'provider': provider, 'model': model, 'ready': ready, 'requires_key': True}
+    import httpx
+    base = os.environ.get('OLLAMA_BASE_URL', 'http://' + os.environ.get('OLLAMA_HOST', 'localhost') + ':11434')
+    try:
+        async with httpx.AsyncClient(timeout=2) as client:
+            response = await client.get(base.rstrip('/') + '/api/tags')
+            response.raise_for_status()
+            names = {item['name'] for item in response.json().get('models', [])}
+        ready = model in names or model + ':latest' in names
+    except Exception:
+        ready = False
+    return {'provider': provider, 'model': model, 'ready': ready, 'requires_key': False}

@@ -82,8 +82,8 @@ def main() -> int:
     parser.add_argument("--end-date", default=date.today().isoformat())
     parser.add_argument("--top", type=int, default=20)
     parser.add_argument(
-        "--provider", choices=["fd", "finnhub", "eodhd", "hybrid"], default=None,
-        help="Override SCANNER_DATA_PROVIDER. 'hybrid' = EODHD (prices+news) + Finnhub (insider+earnings).",
+        "--provider", choices=["fd", "finnhub", "hybrid"], default=None,
+        help="Override SCANNER_DATA_PROVIDER. 'hybrid' = MongoDB cache + Yahoo history + Finnhub current data.",
     )
     parser.add_argument("--workers", type=int, default=None,
                         help="Default: 16 for fd, 4 for finnhub")
@@ -103,15 +103,6 @@ def main() -> int:
     if active_provider == "finnhub" and not os.environ.get("FINNHUB_API_KEY"):
         print(f"{RED}ERROR: FINNHUB_API_KEY not set (looked in .env){RESET}", file=sys.stderr)
         return 2
-    if active_provider == "eodhd" and not os.environ.get("EODHD_API_KEY"):
-        print(f"{RED}ERROR: EODHD_API_KEY not set (looked in .env){RESET}", file=sys.stderr)
-        return 2
-    if active_provider == "hybrid":
-        missing = [k for k in ("EODHD_API_KEY", "FINNHUB_API_KEY") if not os.environ.get(k)]
-        if missing:
-            print(f"{RED}ERROR: hybrid provider needs both {missing} set in .env{RESET}", file=sys.stderr)
-            return 2
-
     workers = args.workers if args.workers is not None else recommend_max_workers()
 
     custom = None
@@ -141,6 +132,7 @@ def main() -> int:
     from v2.signals import ALL_SIGNALS
 
     started = time.monotonic()
+    outcomes = []
     result = run_scan(
         tickers=tickers,
         end_date=args.end_date,
@@ -149,6 +141,7 @@ def main() -> int:
         progress_cb=progress,
         progress_every=5,
         quant_signals=[cls() for cls in ALL_SIGNALS],
+        outcome_cb=outcomes.append,
     )
     elapsed = time.monotonic() - started
 
@@ -166,6 +159,9 @@ def main() -> int:
 
     print()
     print(f"  Completed in {elapsed:.1f}s ({len(result)}/{len(tickers)} tickers triggered)")
+    if outcomes and not any(o.outcome == 'evaluated' for o in outcomes):
+        print(f"{RED}No tickers could be evaluated: missing data or provider errors.{RESET}", file=sys.stderr)
+        return 2
     if not result:
         print(
             f"  {YELLOW}No tickers had events on {args.end_date}. "

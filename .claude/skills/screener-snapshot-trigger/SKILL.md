@@ -26,7 +26,7 @@ so you don't block, then poll the output.
 ### 1. Ensure the migration is applied
 
 ```
-C:\Users\Jerry\anaconda3\python.exe -m alembic upgrade head
+poetry run python -m alembic upgrade head
 ```
 (no-op if already at head `d4e8a2c1b9f6` or later)
 
@@ -53,7 +53,7 @@ Expect `row_count` ~800 and `by_market` like `{"US": ~500, "CN": ~300}`.
 
 Or query the DB directly:
 ```
-C:\Users\Jerry\anaconda3\python.exe -c "from app.backend.database import SessionLocal; from app.backend.repositories.screener_repository import ScreenerRepository; db=SessionLocal(); r=ScreenerRepository(db); print('latest:', r.latest_snapshot_date()); rows,total=r.query(limit=5); print('total:', total, '| sample:', [x.ticker for x in rows]); db.close()"
+poetry run python -c "from app.backend.database import SessionLocal; from app.backend.repositories.screener_repository import ScreenerRepository; db=SessionLocal(); r=ScreenerRepository(db); print('latest:', r.latest_snapshot_date()); rows,total=r.query(limit=5); print('total:', total, '| sample:', [x.ticker for x in rows]); db.close()"
 ```
 
 ## Notes

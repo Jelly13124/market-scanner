@@ -10,7 +10,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from app.backend.services.live_quotes import fetch_live_quotes
+from app.backend.services.live_quotes import _fetch_yahoo_quotes as fetch_live_quotes
 
 
 # ---------------------------------------------------------------------------
@@ -151,3 +151,23 @@ def test_missing_prev_close_change_pct_none(monkeypatch):
     assert r["prev_close"] is None
     assert r["change_pct"] is None
     assert r["error"] is None
+
+
+def test_us_quotes_use_finnhub_and_memory_cache(monkeypatch):
+    from unittest.mock import MagicMock
+    from v2.data.models import Quote
+    import app.backend.services.live_quotes as quotes
+    quotes._QUOTE_CACHE.clear()
+    client = MagicMock()
+    client.__enter__.return_value = client
+    client.get_quote.return_value = Quote(ticker='AAPL', current_price=100, prev_close=90, percent_change=11.1,
+        asof_timestamp=123, received_at='2026-10-25T12:00:00+00:00')
+    monkeypatch.setattr(quotes, 'FinnhubClient', lambda: client)
+    first = quotes.fetch_live_quotes(['AAPL'])[0]
+    second = quotes.fetch_live_quotes(['AAPL'])[0]
+    assert first == second
+    assert first['source'] == 'finnhub'
+    assert first['source_timestamp'] == 123
+    assert first['received_at'] == '2026-10-25T12:00:00+00:00'
+    assert client.get_quote.call_count == 1
+    quotes._QUOTE_CACHE.clear()

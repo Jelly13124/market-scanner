@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    # Mirror the backend's startup contract: load .env so EODHD_API_KEY /
+    # Mirror the backend's startup contract: load .env so FINNHUB_API_KEY /
     # FINNHUB_API_KEY etc. are available. Backend's uvicorn process loads
     # this via app/backend/main.py; the CLI needs to do it itself or
     # provider clients fail with 401.

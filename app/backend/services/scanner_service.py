@@ -81,6 +81,7 @@ class ScannerService:
         end_date: str | None = None,
         max_workers: int | None = None,
         deliver_emails: bool = True,
+        execution_key: str | None = None,
     ) -> int:
         """Run a scan synchronously to completion. Returns the new run_id.
 
@@ -99,8 +100,18 @@ class ScannerService:
         if max_workers is None:
             max_workers = recommend_max_workers()
 
+        if execution_key:
+            from src.storage.mongo import get_store
+            previous = get_store().execute(lambda database: database.scan_runs.find_one({
+                'execution_key': execution_key, 'config_id': str(config_id),
+                'status': {'$in': ['succeeded', 'partial']}}))
+            if previous and previous.get('config_snapshot', {}).get('sql_run_id'):
+                return previous['config_snapshot']['sql_run_id']
+
         # Phase 1: load config, refuse double-run, create PENDING row.
         config_payload, run_id = self._begin(config_id)
+        if execution_key:
+            config_payload.update(execution_key=execution_key, trigger_type="scheduled")
         self._run_to_completion(
             run_id,
             config_payload,
@@ -241,6 +252,7 @@ class ScannerService:
                 [d.name for d in det_instances],
             )
 
+            outcomes = []
             scored = run_scan(
                 tickers=tickers,
                 end_date=end_date,
@@ -253,16 +265,36 @@ class ScannerService:
                 benchmark_ticker=benchmark_ticker,
                 target_snapshots=target_snapshots_by_ticker,
                 upcoming_earnings=upcoming_earnings,
+                outcome_cb=outcomes.append,
             )
 
+            from src.storage.history import ScanHistory
+            history = ScanHistory().save(execution_key=config_payload.get('execution_key') or f'sql-scan:{run_id}',
+                owner_id=config_payload.get('owner_user_id'), config_id=config_payload.get('config_id', 'unknown'),
+                config=config_payload, scan_date=end_date, universe=tickers, outcomes=outcomes,
+                trigger_type=config_payload.get('trigger_type', 'manual'))
+            evaluated = sum(o.outcome == 'evaluated' for o in outcomes)
+            if outcomes and evaluated == 0:
+                raise RuntimeError('No tickers could be evaluated; market data is unavailable')
             self._persist_results(run_id, scored)
             self._mark_complete(run_id)
+            warnings = []
+            if outcomes and evaluated < len(outcomes):
+                warnings.append(f'Partial scan: {evaluated}/{len(outcomes)} tickers evaluated; remaining tickers have missing data or errors')
+            if history['status'] not in ('succeeded', 'partial'):
+                warnings.append('MongoDB scan history was not saved (' + history['status'] + '); online scan results remain available')
+            if warnings:
+                with self._session_factory() as session:
+                    row = session.get(ScanRun, run_id)
+                    row.error_message = '; '.join(warnings)
+                    session.commit()
             self._publish(
                 run_id,
                 {
                     "event": "complete",
                     "run_id": run_id,
                     "entries": len(scored),
+                    "history": history,
                 },
             )
         except Exception as e:
@@ -358,6 +390,8 @@ class ScannerService:
 
             run = ScanRunRepository(session).create_pending(config_id)
             payload = {
+                "config_id": str(config_id),
+                "sql_run_id": run.id,
                 "universe_kind": config.universe_kind,
                 "universe_tickers": config.universe_tickers,
                 "watchlist_tickers": watchlist_tickers,
@@ -442,7 +476,7 @@ class ScannerService:
         Uses ``YFinanceClient`` directly — yfinance is the only backend that
         exposes analyst price targets and has no rate limit, so we don't need
         to go through the hybrid composite (which would also pay the cost of
-        instantiating EODHD + Finnhub sub-clients).
+        instantiating Yahoo + Finnhub sub-clients).
 
         Failures are isolated per-ticker — a single yfinance HTML change
         won't abort the scan. Bootstrap: on day 1 we just have today's row,
@@ -549,6 +583,10 @@ class ScannerService:
                 start_date=cal_start,
                 end_date=cal_end,
             )
+            quality = getattr(client, 'quality', [])
+            if any(q.get('provider_status') not in (None, '200', 'returned', 'not_requested') for q in quality):
+                return None
+
         except Exception as e:
             logger.warning(
                 "earnings calendar fetch failed (from=%s to=%s): %s",

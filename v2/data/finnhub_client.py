@@ -9,8 +9,8 @@ the rate ceiling on its own. Run with ``recommend_max_workers("finnhub")``
 Auth: ``FINNHUB_API_KEY`` env var (or pass ``api_key=`` to the constructor).
 Header sent as ``X-Finnhub-Token``.
 
-Endpoint mappings (free tier):
-    get_prices              -> /stock/candle (daily candles)
+Endpoint mappings (availability depends on account permissions):
+    get_prices              -> /stock/candle (officially marked Premium Access Required)
     get_financial_metrics   -> /stock/metric (single snapshot, not a time series)
     get_news                -> /company-news (no per-article sentiment — see note)
     get_insider_trades      -> /stock/insider-transactions
@@ -132,6 +132,7 @@ class FinnhubClient:
         min_call_interval: float = 1.05,
     ) -> None:
         self._api_key = api_key or os.environ.get("FINNHUB_API_KEY", "")
+        self.last_status = "not_requested"
         self._timeout = timeout
         self._session = requests.Session()
         if self._api_key:
@@ -204,6 +205,9 @@ class FinnhubClient:
         period: str = "ttm",
         limit: int = 10,
     ) -> list[FinancialMetrics]:
+        if end_date < datetime.now(timezone.utc).date().isoformat():
+            self.last_status = 'historical_snapshot_unavailable'
+            return []
         data = self._get("/stock/metric", {"symbol": ticker, "metric": "all"})
         if not data or not isinstance(data, dict):
             return []
@@ -213,7 +217,7 @@ class FinnhubClient:
         # Finnhub returns a snapshot, not a panel — synthesize one row.
         mapped = FinancialMetrics(
             ticker=ticker,
-            report_period=end_date,
+            report_period=datetime.now(timezone.utc).date().isoformat(),
             period=period,
             currency=None,
             market_cap=_safe_float(m.get("marketCapitalization"), scale=1_000_000.0),
@@ -461,8 +465,9 @@ class FinnhubClient:
         return out
 
     def get_market_cap(self, ticker: str, end_date: str) -> float | None:
-        # WARNING: end_date is ignored — Finnhub /stock/profile2 returns current
-        # market cap only. Acceptable for live scans; wrong for historical backfills.
+        if end_date < datetime.now(timezone.utc).date().isoformat():
+            self.last_status = "historical_snapshot_unavailable"
+            return None
         facts = self.get_company_facts(ticker)
         return facts.market_cap if facts else None
 
@@ -487,6 +492,8 @@ class FinnhubClient:
             prev_close=_safe_float(data.get("pc")),
             percent_change=_safe_float(data.get("dp")),
             asof_timestamp=int(data["t"]) if isinstance(data.get("t"), (int, float)) and data.get("t") else None,
+            received_at=datetime.now(timezone.utc).isoformat(),
+            day_open=_safe_float(data.get('o')), day_high=_safe_float(data.get('h')), day_low=_safe_float(data.get('l')),
         )
 
     # ------------------------------------------------------------------
@@ -495,6 +502,9 @@ class FinnhubClient:
 
     def _get(self, path: str, params: dict) -> Any:
         """GET path with rate-limiting + 429 retry. Returns parsed JSON or None."""
+        if not self._api_key:
+            self.last_status = "missing_api_key"
+            return None
         self._throttle()
         url = self.BASE_URL + path
         for attempt, delay in enumerate((*self._RETRY_DELAYS, None)):
@@ -511,9 +521,10 @@ class FinnhubClient:
                 )
                 time.sleep(delay)
                 continue
+            self.last_status = str(resp.status_code)
             if resp.status_code == 403:
-                # Free tier blocks some endpoints (e.g., /stock/candle moved to
-                # premium). Log once at debug level to avoid log flood — the
+                # The official docs mark /stock/candle as premium. A 403 can
+                # also indicate other permission restrictions; the
                 # detector handles the None return cleanly.
                 logger.debug("Finnhub %s 403 (premium endpoint or quota)", path)
                 return None

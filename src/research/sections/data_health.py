@@ -26,7 +26,7 @@ class DataHealthSection(Section):
         rows = [
             "| Item | Status | Source | Notes |",
             "|---|---|---|---|",
-            _row("Quote", bool(s.prices), "v2/data", f"{len(s.prices)} bars"),
+            _row("Live Quote", bool(s.quote), "Finnhub", "Current quote; daily bars are separate"),
             _row("Daily chart / indicators", len(s.prices) >= 50, "v2/data",
                  f"{len(s.prices)} daily bars"),
             _row("Weekly chart / indicators", len(s.prices) >= 250, "v2/data (resampled)",
@@ -46,9 +46,10 @@ class DataHealthSection(Section):
             _row("Analyst actions", bool(s.analyst_actions), "v2/data",
                  f"{len(s.analyst_actions)} actions"),
         ]
+        rows.append(_row("MongoDB storage", s.storage_status == "ready", "MongoDB", s.storage_status + "; online fallback enabled"))
         md = "## Data Health\n\n" + "\n".join(rows) + "\n"
         return SectionPayload(
-            name=self.name, markdown=md, structured=None,
+            name=self.name, markdown=md, structured={"storage_status": s.storage_status, "inputs": s.quality},
             skipped=False, persona_used=None,
         )
 

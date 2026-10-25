@@ -1,0 +1,2194 @@
+{
+  "designVersion": "2.3",
+  "status": "design_only_not_applied",
+  "database": "market_scanner",
+  "mongodbTarget": "8.0+ replica set; verify exact server/driver versions at implementation",
+  "notes": [
+    "PK is _id for every regular collection.",
+    "Composite UK means the whole named index key, not each field separately.",
+    "FK and conditional business constraints are enforced in application code.",
+    "Daily/intraday Finnhub quotes are not persisted to MongoDB in v1.",
+    "Payload object subtype contracts and reference checks are specified in the design document.",
+    "Every daily scan persists its batch and every attempted instrument outcome; not just Top N. Scan history is distinct from raw historical price bars."
+  ],
+  "collections": {
+    "instruments": {
+      "description": "稳定标的身份与供应商代码映射",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "market",
+            "exchange",
+            "symbol",
+            "name",
+            "asset_type",
+            "currency",
+            "timezone",
+            "provider_symbols",
+            "active",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "market": {
+              "bsonType": "string",
+              "description": "市场，如 US/CN"
+            },
+            "exchange": {
+              "bsonType": "string",
+              "description": "交易所 MIC；不使用任意展示名"
+            },
+            "symbol": {
+              "bsonType": "string",
+              "description": "规范代码，不充当永久主键"
+            },
+            "name": {
+              "bsonType": "string",
+              "description": "名称"
+            },
+            "asset_type": {
+              "bsonType": "string",
+              "description": "资产类型",
+              "enum": [
+                "equity",
+                "etf",
+                "index"
+              ]
+            },
+            "currency": {
+              "bsonType": "string",
+              "description": "ISO 4217 币种"
+            },
+            "timezone": {
+              "bsonType": "string",
+              "description": "IANA 时区"
+            },
+            "provider_symbols": {
+              "bsonType": "object",
+              "description": "yahoo/finnhub 的代码映射"
+            },
+            "symbol_history": {
+              "bsonType": "array",
+              "description": "曾用代码及其有效范围",
+              "items": {
+                "bsonType": "object"
+              }
+            },
+            "active": {
+              "bsonType": "bool",
+              "description": "是否仍有效"
+            },
+            "created_at": {
+              "bsonType": "date",
+              "description": "UTC 创建时间"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_active_instrument_symbol",
+          "key": {
+            "market": 1,
+            "exchange": 1,
+            "symbol": 1
+          },
+          "unique": true,
+          "partialFilterExpression": {
+            "active": true
+          }
+        }
+      ],
+      "applicationReferences": []
+    },
+    "price_bars": {
+      "description": "Yahoo 日线历史，保存不可变修订版本",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$and": [
+          {
+            "$jsonSchema": {
+              "bsonType": "object",
+              "required": [
+                "_id",
+                "schema_version",
+                "instrument_id",
+                "source",
+                "interval",
+                "session_date",
+                "bar_time",
+                "revision",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "adjustment_policy",
+                "content_hash",
+                "fetched_at",
+                "first_seen_at"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "_id": {
+                  "bsonType": "objectId",
+                  "description": "PK；MongoDB 自动唯一索引"
+                },
+                "schema_version": {
+                  "bsonType": "int",
+                  "description": "文档 schema 版本",
+                  "minimum": 1
+                },
+                "instrument_id": {
+                  "bsonType": "objectId",
+                  "description": "FK instruments._id"
+                },
+                "source": {
+                  "bsonType": "string",
+                  "description": "来源",
+                  "enum": [
+                    "yahoo"
+                  ]
+                },
+                "interval": {
+                  "bsonType": "string",
+                  "description": "第一阶段仅日线",
+                  "enum": [
+                    "1d"
+                  ]
+                },
+                "session_date": {
+                  "bsonType": "string",
+                  "description": "交易所本地 YYYY-MM-DD",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                "bar_time": {
+                  "bsonType": "date",
+                  "description": "该交易 session 开盘时间转 UTC"
+                },
+                "revision": {
+                  "bsonType": "int",
+                  "description": "同一逻辑 bar 的版本，从 1 开始",
+                  "minimum": 1
+                },
+                "open": {
+                  "bsonType": "decimal",
+                  "description": "原始开盘价",
+                  "minimum": 0
+                },
+                "high": {
+                  "bsonType": "decimal",
+                  "description": "原始最高价",
+                  "minimum": 0
+                },
+                "low": {
+                  "bsonType": "decimal",
+                  "description": "原始最低价",
+                  "minimum": 0
+                },
+                "close": {
+                  "bsonType": "decimal",
+                  "description": "原始收盘价",
+                  "minimum": 0
+                },
+                "volume": {
+                  "bsonType": "long",
+                  "description": "成交量",
+                  "minimum": 0
+                },
+                "adjusted_close": {
+                  "bsonType": "decimal",
+                  "description": "供应商复权收盘价；缺失则省略",
+                  "minimum": 0
+                },
+                "dividend": {
+                  "bsonType": "decimal",
+                  "description": "每股分红"
+                },
+                "split_ratio": {
+                  "bsonType": "decimal",
+                  "description": "拆股比例"
+                },
+                "adjustment_policy": {
+                  "bsonType": "string",
+                  "description": "原始价格及复权计算策略版本"
+                },
+                "content_hash": {
+                  "bsonType": "string",
+                  "description": "规范化内容 SHA256"
+                },
+                "fetched_at": {
+                  "bsonType": "date",
+                  "description": "本次抓取时间"
+                },
+                "first_seen_at": {
+                  "bsonType": "date",
+                  "description": "系统第一次见到该版本的时间"
+                }
+              }
+            }
+          },
+          {
+            "$expr": {
+              "$and": [
+                {
+                  "$gte": [
+                    "$high",
+                    "$low"
+                  ]
+                },
+                {
+                  "$gte": [
+                    "$high",
+                    "$open"
+                  ]
+                },
+                {
+                  "$gte": [
+                    "$high",
+                    "$close"
+                  ]
+                },
+                {
+                  "$lte": [
+                    "$low",
+                    "$open"
+                  ]
+                },
+                {
+                  "$lte": [
+                    "$low",
+                    "$close"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "indexes": [
+        {
+          "name": "uq_bar_revision",
+          "key": {
+            "instrument_id": 1,
+            "source": 1,
+            "interval": 1,
+            "session_date": 1,
+            "revision": -1
+          },
+          "unique": true
+        },
+        {
+          "name": "ix_bar_range",
+          "key": {
+            "instrument_id": 1,
+            "interval": 1,
+            "bar_time": 1,
+            "revision": -1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "instrument_id",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        }
+      ]
+    },
+    "news_articles": {
+      "description": "新闻元数据与版本；一篇新闻可关联多个标的",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "article_key",
+            "revision",
+            "provider",
+            "canonical_url",
+            "publisher",
+            "headline",
+            "summary",
+            "language",
+            "instrument_ids",
+            "published_at",
+            "first_seen_at",
+            "fetched_at",
+            "content_hash",
+            "content_policy"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "article_key": {
+              "bsonType": "string",
+              "description": "稳定逻辑文章键：SHA256(provider+provider_article_id)，缺 ID 时用规范 URL"
+            },
+            "revision": {
+              "bsonType": "int",
+              "description": "内容修订版本",
+              "minimum": 1
+            },
+            "provider": {
+              "bsonType": "string",
+              "description": "API 数据来源，如 finnhub"
+            },
+            "provider_article_id": {
+              "bsonType": "string",
+              "description": "供应商 article id，统一字符串"
+            },
+            "canonical_url": {
+              "bsonType": "string",
+              "description": "规范化原文 URL"
+            },
+            "publisher": {
+              "bsonType": "string",
+              "description": "新闻原发布方"
+            },
+            "headline": {
+              "bsonType": "string",
+              "description": "标题"
+            },
+            "summary": {
+              "bsonType": "string",
+              "description": "供应商允许保存的摘要"
+            },
+            "language": {
+              "bsonType": "string",
+              "description": "BCP47 语言代码"
+            },
+            "instrument_ids": {
+              "bsonType": "array",
+              "description": "FK instruments._id；去重数组",
+              "items": {
+                "bsonType": "objectId"
+              },
+              "uniqueItems": true,
+              "minItems": 1
+            },
+            "published_at": {
+              "bsonType": "date",
+              "description": "供应商给出的发布时间"
+            },
+            "first_seen_at": {
+              "bsonType": "date",
+              "description": "本系统首次见到此版本"
+            },
+            "fetched_at": {
+              "bsonType": "date",
+              "description": "抓取时间"
+            },
+            "content_hash": {
+              "bsonType": "string",
+              "description": "标题/摘要等规范内容 hash"
+            },
+            "content_policy": {
+              "bsonType": "string",
+              "description": "保存范围",
+              "enum": [
+                "metadata_summary",
+                "licensed_fulltext"
+              ]
+            },
+            "fulltext_file_id": {
+              "bsonType": "objectId",
+              "description": "有授权时的 GridFS 全文引用"
+            },
+            "quality": {
+              "bsonType": "object",
+              "description": "时间缺失、来源异常、覆盖范围提示"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_article_revision",
+          "key": {
+            "article_key": 1,
+            "revision": -1
+          },
+          "unique": true
+        },
+        {
+          "name": "ix_news_instrument_time",
+          "key": {
+            "instrument_ids": 1,
+            "published_at": -1,
+            "article_key": 1,
+            "revision": -1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "instrument_ids[]",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "fulltext_file_id",
+          "target": "GridFS.files._id",
+          "enforcedBy": "application",
+          "optional": true
+        }
+      ]
+    },
+    "financial_statements": {
+      "description": "财报披露与重述版本；保留报告期和可得时间",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "instrument_id",
+            "source",
+            "period_type",
+            "period_end",
+            "filing_key",
+            "revision",
+            "first_seen_at",
+            "currency",
+            "income_statement",
+            "balance_sheet",
+            "cash_flow",
+            "content_hash",
+            "pit_status"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "instrument_id": {
+              "bsonType": "objectId",
+              "description": "FK instruments._id"
+            },
+            "source": {
+              "bsonType": "string",
+              "description": "来源供应商"
+            },
+            "period_type": {
+              "bsonType": "string",
+              "description": "财报周期",
+              "enum": [
+                "annual",
+                "quarterly"
+              ]
+            },
+            "period_end": {
+              "bsonType": "date",
+              "description": "报告期结束日"
+            },
+            "filing_key": {
+              "bsonType": "string",
+              "description": "来源 filing id；无 ID 时用稳定的报告期/文件标识"
+            },
+            "revision": {
+              "bsonType": "int",
+              "description": "同一 filing 重述版本",
+              "minimum": 1
+            },
+            "published_at": {
+              "bsonType": "date",
+              "description": "真实披露时间；未知则省略"
+            },
+            "first_seen_at": {
+              "bsonType": "date",
+              "description": "本系统首次获知版本"
+            },
+            "currency": {
+              "bsonType": "string",
+              "description": "财报币种"
+            },
+            "income_statement": {
+              "bsonType": "object",
+              "description": "标准字段映射后的利润表，金额 Decimal128",
+              "additionalProperties": false,
+              "properties": {
+                "revenue": {
+                  "bsonType": "decimal"
+                },
+                "gross_profit": {
+                  "bsonType": "decimal"
+                },
+                "operating_income": {
+                  "bsonType": "decimal"
+                },
+                "net_income": {
+                  "bsonType": "decimal"
+                },
+                "eps": {
+                  "bsonType": "decimal"
+                }
+              }
+            },
+            "balance_sheet": {
+              "bsonType": "object",
+              "description": "标准资产负债表，金额 Decimal128",
+              "additionalProperties": false,
+              "properties": {
+                "total_assets": {
+                  "bsonType": "decimal"
+                },
+                "total_liabilities": {
+                  "bsonType": "decimal"
+                },
+                "equity": {
+                  "bsonType": "decimal"
+                },
+                "cash": {
+                  "bsonType": "decimal"
+                },
+                "total_debt": {
+                  "bsonType": "decimal"
+                },
+                "shares_outstanding": {
+                  "bsonType": "decimal"
+                }
+              }
+            },
+            "cash_flow": {
+              "bsonType": "object",
+              "description": "标准现金流表，金额 Decimal128",
+              "additionalProperties": false,
+              "properties": {
+                "operating_cash_flow": {
+                  "bsonType": "decimal"
+                },
+                "capital_expenditure": {
+                  "bsonType": "decimal"
+                },
+                "free_cash_flow": {
+                  "bsonType": "decimal"
+                },
+                "dividends_paid": {
+                  "bsonType": "decimal"
+                }
+              }
+            },
+            "source_url": {
+              "bsonType": "string",
+              "description": "披露/来源链接"
+            },
+            "content_hash": {
+              "bsonType": "string",
+              "description": "规范内容 SHA256"
+            },
+            "pit_status": {
+              "bsonType": "string",
+              "description": "时点可得性",
+              "enum": [
+                "verified_publication",
+                "observed_only",
+                "unknown_publication"
+              ]
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_filing_revision",
+          "key": {
+            "instrument_id": 1,
+            "source": 1,
+            "filing_key": 1,
+            "revision": -1
+          },
+          "unique": true
+        },
+        {
+          "name": "ix_financial_period",
+          "key": {
+            "instrument_id": 1,
+            "period_type": 1,
+            "period_end": -1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "instrument_id",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        }
+      ]
+    },
+    "company_snapshots": {
+      "description": "当前公司资料、指标、分析师目标价快照，不冒充历史财报",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "instrument_id",
+            "source",
+            "snapshot_kind",
+            "observed_at",
+            "payload",
+            "content_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "instrument_id": {
+              "bsonType": "objectId",
+              "description": "FK instruments._id"
+            },
+            "source": {
+              "bsonType": "string",
+              "description": "来源"
+            },
+            "snapshot_kind": {
+              "bsonType": "string",
+              "description": "快照类型",
+              "enum": [
+                "profile",
+                "metrics",
+                "analyst_targets",
+                "provider_response"
+              ]
+            },
+            "observed_at": {
+              "bsonType": "date",
+              "description": "实际抓取观察时间"
+            },
+            "effective_at": {
+              "bsonType": "date",
+              "description": "来源声明的有效时间，无则省略"
+            },
+            "payload": {
+              "bsonType": "object",
+              "description": "按 snapshot_kind 校验的快照字段"
+            },
+            "content_hash": {
+              "bsonType": "string",
+              "description": "规范内容 SHA256"
+            },
+            "currency": {
+              "bsonType": "string",
+              "description": "货币字段的币种"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_company_observation",
+          "key": {
+            "instrument_id": 1,
+            "source": 1,
+            "snapshot_kind": 1,
+            "observed_at": 1,
+            "payload.request_key": 1
+          },
+          "unique": true
+        },
+        {
+          "name": "ix_company_snapshot_history",
+          "key": {
+            "instrument_id": 1,
+            "snapshot_kind": 1,
+            "observed_at": -1
+          }
+        },
+        {
+          "name": "ix_provider_response_cache",
+          "key": {
+            "payload.request_key": 1,
+            "payload.expires_at": 1,
+            "observed_at": -1
+          },
+          "partialFilterExpression": {
+            "snapshot_kind": "provider_response"
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "instrument_id",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        }
+      ]
+    },
+    "corporate_events": {
+      "description": "财报日历、内部人交易、评级变动、分红拆股等时间化事件",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "instrument_id",
+            "source",
+            "event_key",
+            "event_type",
+            "revision",
+            "event_at",
+            "first_seen_at",
+            "status",
+            "payload",
+            "content_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "instrument_id": {
+              "bsonType": "objectId",
+              "description": "FK instruments._id"
+            },
+            "source": {
+              "bsonType": "string",
+              "description": "来源"
+            },
+            "event_key": {
+              "bsonType": "string",
+              "description": "供应商事件 ID 或类型定义的稳定自然键"
+            },
+            "event_type": {
+              "bsonType": "string",
+              "description": "事件类型",
+              "enum": [
+                "earnings_calendar",
+                "earnings_result",
+                "insider_trade",
+                "analyst_rating",
+                "dividend",
+                "split"
+              ]
+            },
+            "revision": {
+              "bsonType": "int",
+              "description": "更新/取消版本",
+              "minimum": 1
+            },
+            "event_at": {
+              "bsonType": "date",
+              "description": "事件发生时间或计划发生时间"
+            },
+            "published_at": {
+              "bsonType": "date",
+              "description": "该事件信息首次发布的时间，未知省略"
+            },
+            "first_seen_at": {
+              "bsonType": "date",
+              "description": "本系统首次看到该版本"
+            },
+            "status": {
+              "bsonType": "string",
+              "description": "状态",
+              "enum": [
+                "scheduled",
+                "confirmed",
+                "cancelled"
+              ]
+            },
+            "payload": {
+              "bsonType": "object",
+              "description": "按事件类型定义的业务字段"
+            },
+            "content_hash": {
+              "bsonType": "string",
+              "description": "规范内容 SHA256"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_event_revision",
+          "key": {
+            "instrument_id": 1,
+            "source": 1,
+            "event_type": 1,
+            "event_key": 1,
+            "revision": -1
+          },
+          "unique": true
+        },
+        {
+          "name": "ix_event_instrument_time",
+          "key": {
+            "instrument_id": 1,
+            "event_type": 1,
+            "event_at": -1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "instrument_id",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        }
+      ]
+    },
+    "data_sync_jobs": {
+      "description": "后台同步记录：历史价格/新闻/财报；不采集日内实时 tick",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "resource_type",
+            "instrument_id",
+            "source",
+            "range_start",
+            "range_end",
+            "status",
+            "attempt",
+            "request_key",
+            "coverage",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "resource_type": {
+              "bsonType": "string",
+              "description": "同步资源",
+              "enum": [
+                "price_bars",
+                "news_articles",
+                "financial_statements",
+                "company_snapshots",
+                "corporate_events"
+              ]
+            },
+            "instrument_id": {
+              "bsonType": "objectId",
+              "description": "FK instruments._id"
+            },
+            "source": {
+              "bsonType": "string",
+              "description": "来源"
+            },
+            "range_start": {
+              "bsonType": "date",
+              "description": "查询范围起始（包含）"
+            },
+            "range_end": {
+              "bsonType": "date",
+              "description": "查询范围结束（不包含）"
+            },
+            "status": {
+              "bsonType": "string",
+              "description": "任务状态",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "partial",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "attempt": {
+              "bsonType": "int",
+              "description": "尝试次数",
+              "minimum": 0
+            },
+            "request_key": {
+              "bsonType": "string",
+              "description": "稳定请求指纹"
+            },
+            "active_job_key": {
+              "bsonType": "string",
+              "description": "仅 queued/running 存在"
+            },
+            "cursor": {
+              "bsonType": "object",
+              "description": "供应商分页位置/断点"
+            },
+            "coverage": {
+              "bsonType": "object",
+              "description": "价格缺口或分页/窗口完成信息"
+            },
+            "lease_owner": {
+              "bsonType": "string",
+              "description": "worker 标识"
+            },
+            "lease_until": {
+              "bsonType": "date",
+              "description": "租约截止"
+            },
+            "created_at": {
+              "bsonType": "date",
+              "description": "创建时间"
+            },
+            "finished_at": {
+              "bsonType": "date",
+              "description": "结束时间"
+            },
+            "error": {
+              "bsonType": "object",
+              "description": "安全错误码/摘要，禁止含 key"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_active_sync",
+          "key": {
+            "active_job_key": 1
+          },
+          "unique": true,
+          "partialFilterExpression": {
+            "active_job_key": {
+              "$type": "string"
+            }
+          }
+        },
+        {
+          "name": "ix_sync_pickup",
+          "key": {
+            "status": 1,
+            "lease_until": 1,
+            "created_at": 1
+          }
+        },
+        {
+          "name": "ix_sync_coverage",
+          "key": {
+            "instrument_id": 1,
+            "resource_type": 1,
+            "range_start": 1,
+            "range_end": 1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "instrument_id",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        }
+      ]
+    },
+    "datasets": {
+      "description": "分析证据快照：固定每份报告使用的数据版本",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "owner_id",
+            "instrument_id",
+            "as_of",
+            "knowledge_mode",
+            "dataset_hash",
+            "features",
+            "quality",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "owner_id": {
+              "bsonType": "string",
+              "description": "逻辑 FK SQL users.id；字符串规范化"
+            },
+            "instrument_id": {
+              "bsonType": "objectId",
+              "description": "主分析标的 FK"
+            },
+            "as_of": {
+              "bsonType": "date",
+              "description": "分析截止时间"
+            },
+            "knowledge_mode": {
+              "bsonType": "string",
+              "description": "时间可得性模式",
+              "enum": [
+                "live_observed",
+                "historical_pit",
+                "retrospective"
+              ]
+            },
+            "dataset_hash": {
+              "bsonType": "string",
+              "description": "实际输入/源版本/特征计算版本的 hash"
+            },
+            "manifest": {
+              "bsonType": "array",
+              "description": "固定版本文档引用；与 manifest_file_id 二选一",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "collection",
+                  "document_id",
+                  "content_hash"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "collection": {
+                    "enum": [
+                      "price_bars",
+                      "news_articles",
+                      "financial_statements",
+                      "company_snapshots",
+                      "corporate_events"
+                    ]
+                  },
+                  "document_id": {
+                    "bsonType": "objectId"
+                  },
+                  "content_hash": {
+                    "bsonType": "string"
+                  }
+                }
+              }
+            },
+            "manifest_file_id": {
+              "bsonType": "objectId",
+              "description": "超大 manifest 的 GridFS 引用"
+            },
+            "manifest_file_hash": {
+              "bsonType": "string",
+              "description": "GridFS manifest 的 SHA256"
+            },
+            "features": {
+              "bsonType": "object",
+              "description": "给模型的紧凑指标/证据摘要，包含版本标识"
+            },
+            "quality": {
+              "bsonType": "object",
+              "description": "缺失、迟到、数据权限与覆盖缺口"
+            },
+            "created_at": {
+              "bsonType": "date",
+              "description": "冻结时间"
+            },
+            "expires_at": {
+              "bsonType": "date",
+              "description": "未关联报告时允许清理的候选时间"
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "manifest"
+              ],
+              "not": {
+                "required": [
+                  "manifest_file_id"
+                ]
+              }
+            },
+            {
+              "required": [
+                "manifest_file_id",
+                "manifest_file_hash"
+              ],
+              "not": {
+                "required": [
+                  "manifest"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_owner_dataset",
+          "key": {
+            "owner_id": 1,
+            "dataset_hash": 1
+          },
+          "unique": true
+        },
+        {
+          "name": "ix_dataset_lookup",
+          "key": {
+            "owner_id": 1,
+            "instrument_id": 1,
+            "as_of": -1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "owner_id",
+          "target": "SQL.users.id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "instrument_id",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "manifest[].document_id",
+          "target": "manifest[].collection._id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "manifest_file_id",
+          "target": "GridFS.files._id",
+          "enforcedBy": "application",
+          "optional": true
+        }
+      ]
+    },
+    "analysis_runs": {
+      "description": "一次 LangGraph 分析的执行记录，而非市场数据或报告正文",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "owner_id",
+            "instrument_id",
+            "request",
+            "run_key",
+            "thread_id",
+            "versions",
+            "status",
+            "usage",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "owner_id": {
+              "bsonType": "string",
+              "description": "逻辑 FK SQL.users.id"
+            },
+            "instrument_id": {
+              "bsonType": "objectId",
+              "description": "FK instruments._id"
+            },
+            "dataset_id": {
+              "bsonType": "objectId",
+              "description": "FK datasets._id；准备数据期间可缺失"
+            },
+            "request": {
+              "bsonType": "object",
+              "description": "持仓/预算/风险/语言/章节/persona/轮数等规范输入"
+            },
+            "run_key": {
+              "bsonType": "string",
+              "description": "完整输入和版本指纹；允许多次强制执行"
+            },
+            "active_run_key": {
+              "bsonType": "string",
+              "description": "仅非终态设置，用于请求合并"
+            },
+            "thread_id": {
+              "bsonType": "string",
+              "description": "服务端生成的 LangGraph 执行 ID"
+            },
+            "versions": {
+              "bsonType": "object",
+              "description": "graph/prompt/model/provider/schema/feature 版本"
+            },
+            "status": {
+              "bsonType": "string",
+              "description": "状态",
+              "enum": [
+                "queued",
+                "waiting_data",
+                "running",
+                "succeeded",
+                "partial",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "usage": {
+              "bsonType": "object",
+              "description": "实际请求数/token/费用与缓存命中"
+            },
+            "created_at": {
+              "bsonType": "date",
+              "description": "创建时间"
+            },
+            "finished_at": {
+              "bsonType": "date",
+              "description": "结束时间"
+            },
+            "error": {
+              "bsonType": "object",
+              "description": "失败节点和安全错误摘要"
+            },
+            "cached_from_report_id": {
+              "bsonType": "objectId",
+              "description": "直接复用历史报告时的来源"
+            },
+            "source_scan_result_id": {
+              "bsonType": "objectId",
+              "description": "由扫描触发时引用 scan_results._id；独立分析省略"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_analysis_thread",
+          "key": {
+            "thread_id": 1
+          },
+          "unique": true
+        },
+        {
+          "name": "uq_active_analysis",
+          "key": {
+            "active_run_key": 1
+          },
+          "unique": true,
+          "partialFilterExpression": {
+            "active_run_key": {
+              "$type": "string"
+            }
+          }
+        },
+        {
+          "name": "ix_owner_runs",
+          "key": {
+            "owner_id": 1,
+            "instrument_id": 1,
+            "created_at": -1
+          }
+        },
+        {
+          "name": "ix_run_reuse",
+          "key": {
+            "owner_id": 1,
+            "run_key": 1,
+            "status": 1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "owner_id",
+          "target": "SQL.users.id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "instrument_id",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "dataset_id",
+          "target": "datasets._id",
+          "enforcedBy": "application",
+          "optional": true
+        },
+        {
+          "field": "cached_from_report_id",
+          "target": "reports._id",
+          "enforcedBy": "application",
+          "optional": true
+        },
+        {
+          "field": "source_scan_result_id",
+          "target": "scan_results._id",
+          "enforcedBy": "application",
+          "optional": true
+        }
+      ]
+    },
+    "reports": {
+      "description": "最终报告档案，不与运行记录或行情混存",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "owner_id",
+            "instrument_id",
+            "provenance",
+            "request_hash",
+            "language",
+            "summary",
+            "sections",
+            "artifacts",
+            "versions",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "owner_id": {
+              "bsonType": "string",
+              "description": "逻辑 FK SQL.users.id"
+            },
+            "instrument_id": {
+              "bsonType": "objectId",
+              "description": "FK instruments._id"
+            },
+            "run_id": {
+              "bsonType": "objectId",
+              "description": "新报告必填；迁移报告可以缺失"
+            },
+            "dataset_id": {
+              "bsonType": "objectId",
+              "description": "新报告必填；迁移报告可以缺失"
+            },
+            "provenance": {
+              "bsonType": "string",
+              "description": "来源",
+              "enum": [
+                "native",
+                "legacy_unverified"
+              ]
+            },
+            "legacy_sql_id": {
+              "bsonType": "string",
+              "description": "迁移旧报告稳定 ID"
+            },
+            "request_hash": {
+              "bsonType": "string",
+              "description": "规范分析请求 hash"
+            },
+            "language": {
+              "bsonType": "string",
+              "description": "语言"
+            },
+            "summary": {
+              "bsonType": "string",
+              "description": "简短结论"
+            },
+            "sections": {
+              "bsonType": "object",
+              "description": "有界章节：markdown/structured/persona/status/evidence refs"
+            },
+            "trade_plan": {
+              "bsonType": "object",
+              "description": "策略输出，缺失可省略"
+            },
+            "backtest": {
+              "bsonType": "object",
+              "description": "回测输出与数据限制，缺失可省略"
+            },
+            "artifacts": {
+              "bsonType": "array",
+              "description": "HTML/图表/超大章节 GridFS 引用",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "file_id",
+                  "mime",
+                  "bytes",
+                  "sha256",
+                  "renderer_version"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "file_id": {
+                    "bsonType": "objectId"
+                  },
+                  "mime": {
+                    "bsonType": "string"
+                  },
+                  "bytes": {
+                    "bsonType": "long",
+                    "minimum": 0
+                  },
+                  "sha256": {
+                    "bsonType": "string"
+                  },
+                  "renderer_version": {
+                    "bsonType": "string"
+                  }
+                }
+              }
+            },
+            "versions": {
+              "bsonType": "object",
+              "description": "graph/prompt/model/schema/renderer 版本"
+            },
+            "created_at": {
+              "bsonType": "date",
+              "description": "原始生成时间，不改成迁移时间"
+            },
+            "migrated_at": {
+              "bsonType": "date",
+              "description": "旧报告迁移时间"
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "run_id",
+                "dataset_id"
+              ],
+              "properties": {
+                "provenance": {
+                  "enum": [
+                    "native"
+                  ]
+                }
+              }
+            },
+            {
+              "required": [
+                "legacy_sql_id"
+              ],
+              "properties": {
+                "provenance": {
+                  "enum": [
+                    "legacy_unverified"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_native_report_run",
+          "key": {
+            "run_id": 1
+          },
+          "unique": true,
+          "partialFilterExpression": {
+            "run_id": {
+              "$type": "objectId"
+            }
+          }
+        },
+        {
+          "name": "uq_legacy_report",
+          "key": {
+            "legacy_sql_id": 1
+          },
+          "unique": true,
+          "partialFilterExpression": {
+            "legacy_sql_id": {
+              "$type": "string"
+            }
+          }
+        },
+        {
+          "name": "ix_owner_reports",
+          "key": {
+            "owner_id": 1,
+            "instrument_id": 1,
+            "created_at": -1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "owner_id",
+          "target": "SQL.users.id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "instrument_id",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "run_id",
+          "target": "analysis_runs._id",
+          "enforcedBy": "application",
+          "optional": true
+        },
+        {
+          "field": "dataset_id",
+          "target": "datasets._id",
+          "enforcedBy": "application",
+          "optional": true
+        }
+      ]
+    },
+    "llm_cache": {
+      "description": "成功节点模型结果缓存；不可替代报告档案",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "owner_id",
+            "cache_key",
+            "origin_run_id",
+            "node_name",
+            "input_hash",
+            "versions",
+            "output",
+            "usage",
+            "created_at",
+            "expires_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK；MongoDB 自动唯一索引"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "文档 schema 版本",
+              "minimum": 1
+            },
+            "owner_id": {
+              "bsonType": "string",
+              "description": "缓存隔离范围"
+            },
+            "cache_key": {
+              "bsonType": "string",
+              "description": "节点实际输入+语言+模型参数+prompt/schema 版本 hash"
+            },
+            "origin_run_id": {
+              "bsonType": "objectId",
+              "description": "首次生成结果的 run"
+            },
+            "node_name": {
+              "bsonType": "string",
+              "description": "图节点名"
+            },
+            "input_hash": {
+              "bsonType": "string",
+              "description": "实际输入指纹"
+            },
+            "versions": {
+              "bsonType": "object",
+              "description": "模型/提示词/输出结构版本"
+            },
+            "output": {
+              "bsonType": "object",
+              "description": "结构校验通过的节点结果"
+            },
+            "usage": {
+              "bsonType": "object",
+              "description": "原始调用 token 与费用"
+            },
+            "created_at": {
+              "bsonType": "date",
+              "description": "创建时间"
+            },
+            "expires_at": {
+              "bsonType": "date",
+              "description": "逻辑过期时间"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_owner_node_cache",
+          "key": {
+            "owner_id": 1,
+            "cache_key": 1
+          },
+          "unique": true
+        },
+        {
+          "name": "ttl_llm_cache",
+          "key": {
+            "expires_at": 1
+          },
+          "expireAfterSeconds": 0
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "owner_id",
+          "target": "SQL.users.id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "origin_run_id",
+          "target": "analysis_runs._id",
+          "enforcedBy": "application",
+          "optional": false
+        }
+      ]
+    },
+    "scan_runs": {
+      "description": "每日/手动扫描批次历史；保留配置和实际 universe 快照",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "owner_id",
+            "execution_key",
+            "config_id",
+            "config_snapshot",
+            "scan_date",
+            "market",
+            "timezone",
+            "trigger_type",
+            "as_of",
+            "status",
+            "universe_hash",
+            "coverage_mode",
+            "expected_count",
+            "counts",
+            "versions",
+            "attempt",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "schema 版本",
+              "minimum": 1
+            },
+            "owner_id": {
+              "bsonType": "string",
+              "description": "SQL users.id；当前配置所属用户"
+            },
+            "execution_key": {
+              "bsonType": "string",
+              "description": "幂等键：调度槽位+owner+config revision；手动执行使用新 UUID"
+            },
+            "legacy_sql_id": {
+              "bsonType": "string",
+              "description": "旧 scan_runs id，迁移才有"
+            },
+            "config_id": {
+              "bsonType": "string",
+              "description": "SQL scanner_configs.id 的逻辑引用"
+            },
+            "config_snapshot": {
+              "bsonType": "object",
+              "description": "当次参数、权重、Top N、启用 detector 与版本，不只引用可变配置"
+            },
+            "scan_date": {
+              "bsonType": "string",
+              "description": "市场本地扫描交易日",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "market": {
+              "bsonType": "string",
+              "description": "市场"
+            },
+            "timezone": {
+              "bsonType": "string",
+              "description": "用于日界和调度的 IANA 时区"
+            },
+            "trigger_type": {
+              "bsonType": "string",
+              "description": "触发方式",
+              "enum": [
+                "scheduled",
+                "manual",
+                "migration"
+              ]
+            },
+            "as_of": {
+              "bsonType": "date",
+              "description": "本次数据截止时间 UTC"
+            },
+            "status": {
+              "bsonType": "string",
+              "description": "批次状态",
+              "enum": [
+                "queued",
+                "running",
+                "succeeded",
+                "partial",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "universe_manifest": {
+              "bsonType": "array",
+              "description": "实际参与标的 ID 快照，必要时外置",
+              "items": {
+                "bsonType": "objectId"
+              },
+              "uniqueItems": true
+            },
+            "universe_file_id": {
+              "bsonType": "objectId",
+              "description": "大 universe 的 GridFS 清单，与内嵌清单二选一"
+            },
+            "universe_hash": {
+              "bsonType": "string",
+              "description": "实际 universe 有序规范化 hash"
+            },
+            "coverage_mode": {
+              "bsonType": "string",
+              "description": "历史完整性",
+              "enum": [
+                "full_universe",
+                "legacy_topn_only"
+              ]
+            },
+            "expected_count": {
+              "bsonType": "int",
+              "description": "预期标的数量",
+              "minimum": 0
+            },
+            "counts": {
+              "bsonType": "object",
+              "description": "attempted/selected/no_event/no_data/error 等计数"
+            },
+            "versions": {
+              "bsonType": "object",
+              "description": "scanner/scoring/detector/feature/schema 版本"
+            },
+            "attempt": {
+              "bsonType": "int",
+              "description": "崩溃恢复次数",
+              "minimum": 0
+            },
+            "created_at": {
+              "bsonType": "date",
+              "description": "创建时间"
+            },
+            "finished_at": {
+              "bsonType": "date",
+              "description": "完成时间"
+            },
+            "error": {
+              "bsonType": "object",
+              "description": "安全失败摘要，不含凭据"
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "universe_manifest"
+              ],
+              "not": {
+                "required": [
+                  "universe_file_id"
+                ]
+              }
+            },
+            {
+              "required": [
+                "universe_file_id"
+              ],
+              "not": {
+                "required": [
+                  "universe_manifest"
+                ]
+              }
+            }
+          ]
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_scan_execution",
+          "key": {
+            "execution_key": 1
+          },
+          "unique": true
+        },
+        {
+          "name": "uq_legacy_scan",
+          "key": {
+            "legacy_sql_id": 1
+          },
+          "unique": true,
+          "partialFilterExpression": {
+            "legacy_sql_id": {
+              "$type": "string"
+            }
+          }
+        },
+        {
+          "name": "ix_owner_scan_date",
+          "key": {
+            "owner_id": 1,
+            "scan_date": -1,
+            "created_at": -1
+          }
+        },
+        {
+          "name": "ix_scan_status",
+          "key": {
+            "status": 1,
+            "created_at": 1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "owner_id",
+          "target": "SQL.users.id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "config_id",
+          "target": "SQL.scanner_configs.id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "universe_manifest[]",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "universe_file_id",
+          "target": "GridFS.files._id",
+          "enforcedBy": "application",
+          "optional": true
+        }
+      ]
+    },
+    "scan_results": {
+      "description": "每个扫描标的的历史结果；不只保存 Top N，包含无事件、缺数据和失败",
+      "collectionType": "regular",
+      "validationLevel": "strict",
+      "validationAction": "error",
+      "validator": {
+        "$jsonSchema": {
+          "bsonType": "object",
+          "required": [
+            "_id",
+            "schema_version",
+            "scan_run_id",
+            "instrument_id",
+            "owner_id",
+            "outcome",
+            "selected",
+            "detector_results",
+            "quality",
+            "created_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "_id": {
+              "bsonType": "objectId",
+              "description": "PK"
+            },
+            "schema_version": {
+              "bsonType": "int",
+              "description": "schema 版本",
+              "minimum": 1
+            },
+            "scan_run_id": {
+              "bsonType": "objectId",
+              "description": "FK scan_runs._id"
+            },
+            "instrument_id": {
+              "bsonType": "objectId",
+              "description": "FK instruments._id"
+            },
+            "dataset_id": {
+              "bsonType": "objectId",
+              "description": "本次扫描使用的固定输入证据版本；旧迁移可缺失"
+            },
+            "owner_id": {
+              "bsonType": "string",
+              "description": "继承扫描批次 owner，查询隔离"
+            },
+            "outcome": {
+              "bsonType": "string",
+              "description": "区分完成/无数据/异常",
+              "enum": [
+                "evaluated",
+                "no_data",
+                "error",
+                "cancelled"
+              ]
+            },
+            "selected": {
+              "bsonType": "bool",
+              "description": "是否被当次 Top N 选中；不等于触发事件"
+            },
+            "rank": {
+              "bsonType": "int",
+              "description": "可评估候选中的排名，无排名则省略",
+              "minimum": 1
+            },
+            "composite_score": {
+              "bsonType": "double",
+              "description": "成功评分后才存在"
+            },
+            "event_score": {
+              "bsonType": "double",
+              "description": "事件分数"
+            },
+            "quant_score": {
+              "bsonType": "double",
+              "description": "量化分数；未算则省略"
+            },
+            "event_severity": {
+              "bsonType": "double",
+              "description": "截断前严重度"
+            },
+            "direction": {
+              "bsonType": "string",
+              "description": "方向",
+              "enum": [
+                "bullish",
+                "bearish",
+                "neutral"
+              ]
+            },
+            "detector_results": {
+              "bsonType": "array",
+              "description": "每个启用检测器的结果和版本，包括未触发与缺数据",
+              "items": {
+                "bsonType": "object",
+                "required": [
+                  "detector",
+                  "version",
+                  "status"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "detector": {
+                    "bsonType": "string",
+                    "description": "检测器名"
+                  },
+                  "version": {
+                    "bsonType": "string",
+                    "description": "检测器版本"
+                  },
+                  "status": {
+                    "bsonType": "string",
+                    "description": "明确结果状态",
+                    "enum": [
+                      "triggered",
+                      "no_event",
+                      "no_data",
+                      "error",
+                      "retired"
+                    ]
+                  },
+                  "severity": {
+                    "bsonType": "double",
+                    "description": "触发严重度"
+                  },
+                  "direction": {
+                    "bsonType": "string",
+                    "description": "方向",
+                    "enum": [
+                      "bullish",
+                      "bearish",
+                      "neutral"
+                    ]
+                  },
+                  "reason": {
+                    "bsonType": "string",
+                    "description": "证据/缺失原因"
+                  },
+                  "components": {
+                    "bsonType": "object",
+                    "description": "原始指标分量"
+                  },
+                  "evidence_refs": {
+                    "bsonType": "array",
+                    "description": "dataset 内证据引用",
+                    "items": {
+                      "bsonType": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "quality": {
+              "bsonType": "object",
+              "description": "覆盖缺口、来源权限和部分结果标记"
+            },
+            "created_at": {
+              "bsonType": "date",
+              "description": "结果保存时间"
+            }
+          }
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_scan_instrument",
+          "key": {
+            "scan_run_id": 1,
+            "instrument_id": 1
+          },
+          "unique": true
+        },
+        {
+          "name": "ix_scan_selected_rank",
+          "key": {
+            "scan_run_id": 1,
+            "selected": 1,
+            "rank": 1
+          }
+        },
+        {
+          "name": "ix_instrument_scan_history",
+          "key": {
+            "owner_id": 1,
+            "instrument_id": 1,
+            "created_at": -1
+          }
+        }
+      ],
+      "applicationReferences": [
+        {
+          "field": "scan_run_id",
+          "target": "scan_runs._id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "instrument_id",
+          "target": "instruments._id",
+          "enforcedBy": "application",
+          "optional": false
+        },
+        {
+          "field": "dataset_id",
+          "target": "datasets._id",
+          "enforcedBy": "application",
+          "optional": true
+        },
+        {
+          "field": "owner_id",
+          "target": "SQL.users.id",
+          "enforcedBy": "application",
+          "optional": false
+        }
+      ]
+    }
+  }
+}

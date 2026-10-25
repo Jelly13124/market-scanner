@@ -1,25 +1,20 @@
-"""Data provider factory — env-driven provider selection.
+"""Current provider factory selected by SCANNER_DATA_PROVIDER.
 
-Read by ``v2.scanner.runner.run_scan`` when ``provider_factory`` is None.
-The ``SCANNER_DATA_PROVIDER`` env var picks the provider; default is
-``hybrid`` (EODHD prices+news + Finnhub everything else). FD remains
-available as an opt-in but is no longer the default since the paid tier
-402s on most endpoints in our setup.
-
-Usage::
-
-    from v2.data.factory import make_data_client, get_provider_factory
-    client = make_data_client()                  # one-off
-    factory = get_provider_factory()             # for thread-pool seeding
+The runtime default remains hybrid. Explicit fd/finnhub options remain for legacy consumers.
+Hybrid uses optional MongoDB cache with online fallback.
 """
 
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from typing import Callable
 
 from v2.data.client import FDClient
 from v2.data.protocol import DataClient
+
+
+_CLIENT_OVERRIDE = ContextVar("market_data_client_override", default=None)
 
 
 def get_default_provider() -> str:
@@ -30,7 +25,7 @@ def _resolve(provider: str | None) -> str:
     return (provider or get_default_provider()).strip().lower()
 
 
-_VALID_PROVIDERS = ("fd", "finnhub", "eodhd", "hybrid")
+_VALID_PROVIDERS = ("fd", "finnhub", "hybrid")
 
 
 def _bad_provider(p: str) -> ValueError:
@@ -42,15 +37,15 @@ def _bad_provider(p: str) -> ValueError:
 
 def make_data_client(provider: str | None = None) -> DataClient:
     """Instantiate one DataClient of the selected provider."""
+    override = _CLIENT_OVERRIDE.get()
+    if override is not None:
+        return override
     p = _resolve(provider)
     if p == "fd":
         return FDClient()
     if p == "finnhub":
         from v2.data.finnhub_client import FinnhubClient
         return FinnhubClient()
-    if p == "eodhd":
-        from v2.data.eodhd_client import EODHDClient
-        return EODHDClient()
     if p == "hybrid":
         from v2.data.composite_client import make_hybrid_client
         return make_hybrid_client()
@@ -59,15 +54,15 @@ def make_data_client(provider: str | None = None) -> DataClient:
 
 def get_provider_factory(provider: str | None = None) -> Callable[[], DataClient]:
     """Return a zero-arg callable that builds fresh clients (one per worker)."""
+    override = _CLIENT_OVERRIDE.get()
+    if override is not None:
+        return lambda: override
     p = _resolve(provider)
     if p == "fd":
         return FDClient
     if p == "finnhub":
         from v2.data.finnhub_client import FinnhubClient
         return FinnhubClient
-    if p == "eodhd":
-        from v2.data.eodhd_client import EODHDClient
-        return EODHDClient
     if p == "hybrid":
         from v2.data.composite_client import make_hybrid_client
         return make_hybrid_client
@@ -77,9 +72,8 @@ def get_provider_factory(provider: str | None = None) -> Callable[[], DataClient
 def recommend_max_workers(provider: str | None = None) -> int:
     """Conservative worker-count cap for rate-limited providers.
 
-    The hybrid is gated by Finnhub's 60 calls/min global cap; EODHD's $20 tier
-    has plenty of headroom (1000+/min) but in hybrid mode we're held to the
-    slowest component.
+    Hybrid concurrency is capped conservatively for its Finnhub component.
+    Provider quotas and account permissions require separate validation.
     """
     p = _resolve(provider)
     if p in ("finnhub", "hybrid"):

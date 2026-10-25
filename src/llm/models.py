@@ -152,7 +152,7 @@ _SILICONFLOW_DEEPSEEK_MODELS = {
 }
 
 
-def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = None, allow_env_fallback: bool = True) -> ChatOpenAI | ChatGroq | ChatOllama | GigaChat | None:
+def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = None, allow_env_fallback: bool = False) -> ChatOpenAI | ChatGroq | ChatOllama | GigaChat | None:
     if model_provider == ModelProvider.GROQ:
         api_key = _resolve_key(api_keys, "GROQ_API_KEY", allow_env_fallback)
         if not api_key:
@@ -253,7 +253,7 @@ def get_model(model_name: str, model_provider: ModelProvider, api_keys: dict = N
             return GigaChat(credentials=api_key, model=model_name)
     elif model_provider == ModelProvider.AZURE_OPENAI:
         # Get and validate API key
-        api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        api_key = _resolve_key(api_keys, "AZURE_OPENAI_API_KEY", allow_env_fallback)
         if not api_key:
             # Print error to console
             print(f"API Key Error: Please make sure AZURE_OPENAI_API_KEY is set in your .env file.")

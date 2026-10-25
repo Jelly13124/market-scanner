@@ -1,14 +1,7 @@
-# Vendored Prompts
+# 运行时研究提示词
 
-These markdown files are vendored verbatim from
-https://github.com/Jelly13124/stock-analyze-skills (commit at time of vendor).
+本目录 Markdown 被 src/research/sections/*.py 和 src/research/personas/*.py 在运行时读取，不是历史设计文档。
 
-Refresh by re-running the fetch script in Phase 4 plan Task 1 Step 1
-(docs/superpowers/plans/2026-05-22-research-pipeline-phase4.md).
+提示词来自 https://github.com/Jelly13124/stock-analyze-skills 的已有引入版本。仓库未记录可靠的同步脚本/版本标记；更新前明确来源版本与变更范围，不再引用已删除的旧计划步骤。
 
-Loaded at runtime by `src/research/sections/*.py` and
-`src/research/personas/*.py` via `Path(__file__).parent.parent / "prompts"`.
-
-Do NOT edit in place — edit upstream and re-vendor. If our use diverges
-from upstream intent, fork by renaming the file (e.g. `technical_ours.md`)
-to make the divergence explicit.
+新 Analyze LangGraph 迁移需保留报告章节和 persona 契约；改变提示词须同步 prompt_version，以失效旧模型缓存。具体要求见 ../../../docs/requirements/market-data-and-analyze.md。

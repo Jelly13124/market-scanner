@@ -21,7 +21,7 @@ into an older half and a recent half; the price max (or min) over each half is
 taken as the representative swing high (or low). This is intentionally simpler
 than pivot-based detection — it is appropriate for a pre-filter screener where
 false negatives are acceptable and false positives are caught by later LLM
-analysis. See findings.md (C4) for the rationale.
+analysis. The two-half split is an intentional approximation.
 
 **Severity**: ``min(abs(rsi_old - rsi_recent) / 10.0, 8.0)`` — the RSI gap
 as a fraction of 10 RSI points, capped at 8. This is a coefficient of the

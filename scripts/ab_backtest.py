@@ -277,7 +277,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    # Load .env so EODHD / Finnhub / DeepSeek keys are available.
+    # Load .env so Yahoo / Finnhub / DeepSeek keys are available.
     try:
         from dotenv import load_dotenv
         load_dotenv()

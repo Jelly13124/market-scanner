@@ -64,11 +64,12 @@ class TestDebate:
         )
         run_debate(_req(), _shared(), ["wood", "burry"], debate_rounds=3)
         prompt = mock_llm.call_args[0][0]
-        assert "3-round" in prompt, prompt
+        assert "3-round" in prompt
+        assert mock_llm.call_count == 7, prompt
         # Round labels for 1, 2, 3 should be present in the round instructions.
-        assert "Round 1:" in prompt
-        assert "Round 2:" in prompt
-        assert "Round 3:" in prompt
+        assert "Round 1)" in prompt
+        assert "Round 2)" in prompt
+        assert "Round 3)" in prompt
         assert "Round 4:" not in prompt
 
     @patch("src.research.modules.debate.call_research_llm")
@@ -77,7 +78,8 @@ class TestDebate:
         run_debate(_req(), _shared(), ["wood", "burry"], debate_rounds=99)
         prompt = mock_llm.call_args[0][0]
         assert "5-round" in prompt
-        assert "Round 5:" in prompt
+        assert mock_llm.call_count == 11
+        assert "Round 5)" in prompt
         assert "Round 6:" not in prompt
 
     @patch("src.research.modules.debate.call_research_llm")

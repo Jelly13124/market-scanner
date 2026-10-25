@@ -233,3 +233,16 @@ class TestRunPipelineComposition:
             persist=True,
         )
         assert result.status == "complete"
+
+
+def test_retired_default_rejects_before_scan():
+    with patch("v2.pipeline.orchestrator._resolve_default_scan_date") as date_lookup:
+        with pytest.raises(RuntimeError, match="removed"):
+            run_pipeline(template="quick")
+        date_lookup.assert_not_called()
+
+
+def test_agents_only_requires_explicit_adapter():
+    from v2.pipeline.orchestrator import run_agents_only
+    with pytest.raises(RuntimeError, match="removed"):
+        run_agents_only(tickers=["AAPL"], scan_date="2024-08-01")

@@ -384,10 +384,6 @@
   },
   "scanner": {
     "title": "Daily Market Scanner",
-    "tierPaid": "Data · EODHD",
-    "tierFree": "Data · Finnhub",
-    "tierPaidHint": "Scanner runs on the server's EODHD data feed (full-history prices + sentiment news), shared by all users — not tied to your account keys.",
-    "tierFreeHint": "Scanner runs on the free Finnhub feed (~12mo prices, ~7d news). No EODHD data feed is configured on the server.",
     "newConfig": "+ New config",
     "deleteConfig": "Delete config \"{{name}}\"?",
     "deleteThisConfig": "Delete this config",

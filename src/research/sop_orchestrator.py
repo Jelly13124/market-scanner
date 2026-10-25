@@ -1,23 +1,16 @@
-"""Top-level SOP orchestrator for Phase 4 Analyze runs.
+"""Analyze SOP orchestrated by LangGraph with explicit parallel joins.
 
-run_sop dispatches all sections in SECTION_ORDER. User-excluded sections
-emit 'n/a -- user excluded' payloads. Missing implementations emit
-'no runner registered' (Phase 4 rollout is incremental, but Tasks 5-13
-ship all 16 sections so this only fires if a registry import broke).
-
-Router (Phase 2) runs first when use_personas=True; its assignments
-are stashed under prior['_persona_assignments'] so DebateSection can
-read them.
-
-Technical-signal backtest (Task 14) runs once and is appended as a
-'Backtest Validation' sub-section to Technical's markdown.
+Dispatches SECTION_ORDER, keeps exclusions explicit, shares persona
+assignments with debate, and appends technical backtest results.
+Section computations and chart rendering are retained.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated, TypedDict
+from langgraph.graph import StateGraph, START, END
 from datetime import date
 
 from src.research.backtest_signal import run_signal_backtest
@@ -61,10 +54,6 @@ _PARALLEL_SECTIONS = {
     "valuation",
     "technical",
     "institutional_flow",
-    "risk_position",
-    "scenarios",
-    "conviction",
-    "event_risk",
 }
 
 # Tunable via env so we can throttle if DeepSeek / OpenAI starts 429-ing.
@@ -103,25 +92,58 @@ def _backtest_validation_md(b: BacktestVerdict, lang: str = "en") -> str:
     return md
 
 
-def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeReport:
+def _merge_sections(left, right):
+    return {**left, **right}
+
+
+class _AnalysisState(TypedDict):
+    sections: Annotated[dict, _merge_sections]
+
+
+def _run_sop(request: AnalyzeRequest, api_keys: dict | None = None, *, owner_id=None, force_rerun=False, source_scan_result_id=None, resume_run_id=None) -> AnalyzeReport:
     """End-to-end SOP runner. Returns AnalyzeReport with all sections,
     persona assignments (when use_personas), backtest verdict, and
     rendered_html=None (Task 16's render_sop populates that).
 
-    api_keys: per-user provider keys (multi-tenant). When provided, the
-    dict is threaded onto EVERY SectionContext — including the sections
-    fanned out across the ThreadPoolExecutor — so each section's LLM call
-    uses the requesting user's own keys. It is a local var captured by the
-    _run_one closure and carried solely via SectionContext; it is NEVER
-    placed on a module global / os.environ / thread-local, because
-    concurrent multi-tenant analyze runs would otherwise race and
-    cross-contaminate tenants. None => host-env keys (single-tenant / cron)."""
+    Credentials stay in run-local closures and SectionContext, outside
+    checkpoint state. Paid calls always require explicitly supplied keys.
+    None never enables host environment key fallback."""
+    from src.research.usage import CURRENT_USAGE
+    usage = CURRENT_USAGE.get()
     scan_date = date.today().isoformat()
-    shared = fetch_shared_data(request.ticker, scan_date, market=request.market)
+    from src.storage.analysis import AnalysisHistory
+    from src.storage.checkpoint import OptionalMongoSaver
+    provider = os.environ.get('RESEARCH_MODEL_PROVIDER', 'DeepSeek')
+    model_route = {'credential_route': 'siliconflow' if provider.lower() == 'deepseek' and (api_keys or {}).get('SILICONFLOW_API_KEY') else provider.lower()}
+    history = AnalysisHistory()
+    checkpoint = None
+    saver = OptionalMongoSaver()
+    if resume_run_id:
+        if force_rerun:
+            raise ValueError('Resume and force rerun cannot be combined')
+        ticket, shared = history.resume(owner_id=owner_id, request=request, run_id=resume_run_id, model_route=model_route)
+        checkpoint = saver.get_tuple({'configurable': {'thread_id': ticket['run']['thread_id']}})
+        if checkpoint is None and not ticket['cached']:
+            raise ValueError('Checkpoint is unavailable')
+    else:
+        shared = fetch_shared_data(request.ticker, scan_date, market=request.market)
+        ticket = history.start(owner_id=owner_id, request=request, shared=shared,
+                               force=force_rerun, source_scan_result_id=source_scan_result_id, model_route=model_route)
+    if ticket and ticket['cached']:
+        cached = ticket['cached']
+        return AnalyzeReport(request=request,
+            sections={name: SectionPayload(**payload) for name, payload in cached['sections'].items()},
+            persona_assignments=cached['sections'].get('_persona_assignments', {}).get('structured'),
+            backtest=BacktestVerdict(**cached['backtest']) if cached.get('backtest') else None,
+            rendered_html=None, reused=True, storage_status=history.store.status,
+            mongo_report_id=str(cached['_id']), usage={'cache_hits': 1, 'calls': 0})
 
     # Router: only when persona-mode is on
     persona_assignments: dict | None = None
-    if request.use_personas:
+    if checkpoint:
+        saved = checkpoint.checkpoint.get('channel_values', {}).get('sections', {}).get('_persona_assignments')
+        persona_assignments = saved.structured if saved else None
+    elif request.use_personas:
         try:
             # route_personas was built for ResearchRequest in Phase 2; adapt
             from src.research.models import ResearchRequest
@@ -197,8 +219,19 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
             prior=prior_snapshot,
             api_keys=api_keys,
         )
+        from src.research.usage import FAILED_CALLS
+        failure_token = FAILED_CALLS.set(0)
         try:
-            return runner.run(ctx)
+            cached = None if force_rerun else history.section_get(ticket, name, prior_snapshot)
+            if cached:
+                usage.add(cache_hits=1)
+                return SectionPayload(**cached['output'])
+            result = runner.run(ctx)
+            if FAILED_CALLS.get():
+                from dataclasses import replace
+                result = replace(result, skipped=True, skip_reason="Model request failed; output unavailable")
+            history.section_put(ticket, name, prior_snapshot, result)
+            return result
         except Exception as e:
             logger.exception("section %s raised: %s", name, e)
             return SectionPayload(
@@ -209,66 +242,46 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
                 persona_used=None,
                 skip_reason=f"unhandled exception: {e}",
             )
+        finally:
+            FAILED_CALLS.reset(failure_token)
 
-    # Walk SECTION_ORDER, but dispatch the _PARALLEL_SECTIONS as a
-    # single concurrent batch (LLM I/O bound). Sequential phases:
-    #   1. pre-parallel sections (e.g. data_health) run one-by-one
-    #   2. parallel batch fires all included _PARALLEL_SECTIONS together,
-    #      each seeing the same prior snapshot (pre-parallel results only)
-    #   3. post-parallel sections (debate, final_strategy, exec_summary,
-    #      evidence_ledger, missing_data) run one-by-one and see the
-    #      full prior dict including all parallel outputs
-    pending_parallel: list[str] = []
-    for name in SECTION_ORDER:
+    graph = StateGraph(_AnalysisState)
+    def section_node(name):
+        def node(state):
+            payload = _make_excluded(name) if name not in request.included_sections else _run_one(name, dict(state['sections']))
+            return {'sections': {name: payload}}
+        return node
+
+    previous = START
+    pending = []
+    for name in ['data_health', *[n for n in SECTION_ORDER if n in _PARALLEL_SECTIONS],
+                 'scenarios', 'risk_position', 'conviction', 'event_risk', 'catalyst', 'debate',
+                 'final_strategy', 'evidence_ledger', 'executive_summary', 'missing_data']:
+        graph.add_node(name, section_node(name))
         if name in _PARALLEL_SECTIONS:
-            pending_parallel.append(name)
+            graph.add_edge(previous, name)
+            pending.append(name)
             continue
-
-        # Flush the parallel batch before any later sequential section so
-        # debate / output / etc. see all parallel analyses in their `prior`.
-        if pending_parallel:
-            included_parallel = [n for n in pending_parallel if n in request.included_sections]
-            excluded_parallel = [n for n in pending_parallel if n not in request.included_sections]
-            for n in excluded_parallel:
-                sections[n] = _make_excluded(n)
-            if included_parallel:
-                snapshot = dict(sections)
-                workers = min(len(included_parallel), max(1, _MAX_PARALLEL))
-                logger.info("dispatching %d parallel sections (workers=%d): %s", len(included_parallel), workers, included_parallel)
-                with ThreadPoolExecutor(
-                    max_workers=workers,
-                    thread_name_prefix="sop-section",
-                ) as ex:
-                    futures = {ex.submit(_run_one, n, snapshot): n for n in included_parallel}
-                    for fut in futures:
-                        n = futures[fut]
-                        sections[n] = fut.result()
-            pending_parallel = []
-
-        # Now dispatch this sequential section.
-        if name not in request.included_sections:
-            sections[name] = _make_excluded(name)
-            continue
-        sections[name] = _run_one(name, dict(sections))
-
-    # Flush trailing parallel batch (if SECTION_ORDER ends with parallel
-    # sections — currently doesn't, but defensive).
-    if pending_parallel:
-        included_parallel = [n for n in pending_parallel if n in request.included_sections]
-        excluded_parallel = [n for n in pending_parallel if n not in request.included_sections]
-        for n in excluded_parallel:
-            sections[n] = _make_excluded(n)
-        if included_parallel:
-            snapshot = dict(sections)
-            workers = min(len(included_parallel), max(1, _MAX_PARALLEL))
-            with ThreadPoolExecutor(
-                max_workers=workers,
-                thread_name_prefix="sop-section",
-            ) as ex:
-                futures = {ex.submit(_run_one, n, snapshot): n for n in included_parallel}
-                for fut in futures:
-                    n = futures[fut]
-                    sections[n] = fut.result()
+        if pending:
+            graph.add_edge(pending, name)  # explicit join: wait for every branch
+            pending = []
+        else:
+            graph.add_edge(previous, name)
+        previous = name
+    if pending:
+        graph.add_edge(pending, END)
+    else:
+        graph.add_edge(previous, END)
+    from src.storage.checkpoint import OptionalMongoSaver
+    from uuid import uuid4
+    thread_id = ticket['run']['thread_id'] if ticket else f'{owner_id or "ephemeral"}:{uuid4().hex}'
+    try:
+        result = graph.compile(checkpointer=saver).invoke(None if checkpoint else {'sections': sections},
+            config={'max_concurrency': max(1, _MAX_PARALLEL), 'configurable': {'thread_id': thread_id}})
+    except Exception as error:
+        history.save(ticket, None, error=error)
+        raise
+    sections = result['sections']
 
     # Append Backtest Validation to Technical's markdown + embed equity-curve PNG
     if backtest is not None and "technical" in sections and not sections["technical"].skipped:
@@ -372,12 +385,6 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
     # swap _fins for multi-period yfinance history (the hybrid provider returns
     # only 1 fundamentals period, so trend/band charts need a history source).
     _cur_pe = getattr(_fins[0], "price_to_earnings_ratio", None) if _fins else None
-    if len(_fins) < 2:
-        from src.research.charts.fundamentals_fetch import fetch_fundamental_history
-
-        _hist = fetch_fundamental_history(request.ticker, scan_date)
-        if len(_hist) >= 2:
-            _fins = _hist
     if len(_fins) >= 2:
         _attach_chart(
             "financial_statements",
@@ -412,10 +419,27 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None) -> AnalyzeRep
             caption="Price vs sector ETF, both rebased to 100 at window start.",
         )
 
-    return AnalyzeReport(
+    report = AnalyzeReport(
         request=request,
         sections=sections,
         persona_assignments=persona_assignments,
         backtest=backtest,
         rendered_html=None,
     )
+    report['analysis_run_id'] = str(ticket['run']['_id']) if ticket else None
+    report['analysis_status'] = 'partial' if any(p.skipped and p.skip_reason != 'user excluded this section' for n,p in sections.items() if not n.startswith('_')) else 'succeeded'
+    report['usage'] = usage.snapshot()
+    report['mongo_report_id'] = history.save(ticket, report)
+    report['storage_status'] = history.store.status
+    return report
+
+
+def run_sop(request: AnalyzeRequest, api_keys: dict | None = None, *, owner_id=None,
+            force_rerun=False, source_scan_result_id=None, resume_run_id=None) -> AnalyzeReport:
+    from src.research.usage import CURRENT_USAGE, Usage
+    token = CURRENT_USAGE.set(Usage())
+    try:
+        return _run_sop(request, api_keys, owner_id=owner_id, force_rerun=force_rerun,
+                        source_scan_result_id=source_scan_result_id, resume_run_id=resume_run_id)
+    finally:
+        CURRENT_USAGE.reset(token)

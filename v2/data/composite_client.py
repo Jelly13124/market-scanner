@@ -1,15 +1,7 @@
-"""Composite ``DataClient`` — routes each Protocol method to a configured backend.
+"""Composite DataClient routing each protocol method to a configured backend.
 
-The motivating use case: EODHD's $20 plan gives us prices + news (with daily
-aggregate sentiment) but blocks insider/earnings/fundamentals. Finnhub's free
-tier covers exactly the blocked endpoints. Combining them gives us **all four
-scanner detectors fully working at $20/month**.
-
-Usage::
-
-    from v2.data import make_hybrid_client
-    client = make_hybrid_client()    # EODHD prices+news, Finnhub everything else
-    runner.run_scan(..., provider_factory=make_hybrid_client)
+The builder prefers optional MongoDB cached evidence, falling back to
+Yahoo history and Finnhub current data.
 """
 
 from __future__ import annotations
@@ -19,7 +11,6 @@ from typing import Any
 
 from v2.data.ashare.symbol import is_ashare as _is_ashare
 from v2.data.client import FDClient
-from v2.data.eodhd_client import EODHDClient
 from v2.data.finnhub_client import FinnhubClient
 from v2.data.models import (
     AnalystAction,
@@ -257,91 +248,20 @@ class CompositeClient:
         return self._quotes.get_quote(ticker)
 
 
-# ----------------------------------------------------------------------
-# Convenience builder for the recommended EODHD + Finnhub hybrid.
-# ----------------------------------------------------------------------
-
-
-def _has_eodhd_key() -> bool:
-    """True iff EODHD_API_KEY env is set and non-empty. Used by
-    make_hybrid_client to auto-degrade to a free tier when the user
-    hasn't paid for EODHD."""
-    import os
-    return bool(os.environ.get("EODHD_API_KEY", "").strip())
-
-
-def make_hybrid_client(
-    *,
-    include_ashare: bool = True,
-    tier: str | None = None,
-) -> CompositeClient:
-    """Build a CompositeClient. Tier auto-detects from EODHD_API_KEY env:
-
-    ``tier='paid'`` (EODHD key present) — recommended $20 hybrid:
-        prices    -> EODHD (daily OHLCV, multi-year)
-        news      -> EODHD (articles + daily aggregate sentiment overlay)
-
-    ``tier='free'`` (no EODHD key) — degrades to Finnhub-only for prices/news:
-        prices    -> Finnhub (/stock/candle, ~12mo history on free tier)
-        news      -> Finnhub (/company-news, last 7-30d on free tier)
-
-    Both tiers share the rest of the routing:
-        insider   -> Finnhub (/stock/insider-transactions)
-        earnings  -> yfinance (Ticker.get_earnings_dates — trailing 25 quarters)
-        calendar  -> Finnhub (/calendar/earnings — forward-looking)
-        facts     -> Finnhub (/stock/profile2)
-        metrics   -> Finnhub (/stock/metric)
-        analyst   -> yfinance (Ticker.analyst_price_targets)
-        quotes    -> Finnhub (/quote)
-        ashare    -> AShareClient (mootdx + Eastmoney + CLS — when ticker is
-                     A-share). Set ``include_ashare=False`` to disable.
-
-    Pass ``tier='paid'`` or ``tier='free'`` to override the auto-detect.
-    """
+def make_hybrid_client(*, include_ashare: bool = True) -> DataClient:
+    """MongoDB cache first; Yahoo daily prices and Finnhub snapshots on miss."""
     from v2.data.yfinance_client import YFinanceClient
-    if tier is None:
-        tier = "paid" if _has_eodhd_key() else "free"
-
-    finnhub = FinnhubClient()
-    yfin = YFinanceClient()
-
-    if tier == "paid":
-        eodhd = EODHDClient()
-        prices_backend: DataClient = eodhd
-        news_backend: DataClient = eodhd
-    else:
-        # Free tier: Finnhub does double duty for prices + news.
-        prices_backend = finnhub
-        news_backend = finnhub
-
-    ashare: DataClient | None = None
+    from v2.data.cached_client import CachedDataClient
+    finnhub, yahoo = FinnhubClient(), YFinanceClient()
+    ashare = None
     if include_ashare:
         try:
             from v2.data.ashare.client import AShareClient
             ashare = AShareClient()
         except ImportError:
-            # Optional deps (mootdx etc.) not installed — degrade gracefully.
-            ashare = None
-    return CompositeClient(
-        prices_backend=prices_backend,
-        news_backend=news_backend,
-        insider_backend=finnhub,
-        # Earnings history → yfinance (trailing quarters); forward calendar
-        # → Finnhub (different endpoint, different shape). Both are reused
-        # backend instances — close() dedupes by id().
-        earnings_backend=yfin,
-        calendar_backend=finnhub,
-        facts_backend=finnhub,
-        metrics_backend=finnhub,
-        analyst_backend=yfin,
-        # Quote backend = same Finnhub instance.
-        quotes_backend=finnhub,
-        ashare_backend=ashare,
-    )
-
-
-def get_active_tier() -> str:
-    """Return 'paid' or 'free' — the tier make_hybrid_client() will use
-    under the current env. Surfaced to the frontend via a /tier endpoint
-    so users can see what data source they're hitting."""
-    return "paid" if _has_eodhd_key() else "free"
+            pass
+    online = CompositeClient(prices_backend=yahoo, news_backend=finnhub,
+        insider_backend=finnhub, earnings_backend=yahoo, facts_backend=finnhub,
+        metrics_backend=finnhub, analyst_backend=yahoo, quotes_backend=finnhub,
+        calendar_backend=finnhub, ashare_backend=ashare)
+    return CachedDataClient(online)

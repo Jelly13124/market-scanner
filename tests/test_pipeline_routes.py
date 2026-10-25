@@ -2,18 +2,15 @@
 
 Mirrors the pattern from ``tests/test_scanner_routes.py``: load the pipeline
 router via importlib to avoid pulling routes/__init__.py (which transitively
-imports v1 LLM deps not present in the test env). The orchestrator is
-patched at the module level so the routes test never actually invokes
-``run_scan`` or ``run_hedge_fund``.
+imports v1 LLM deps not present in the test env). The retired trigger creates no work; historical reads remain available.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import sys
-import time
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -90,11 +87,6 @@ def setup():
     # get_current_user. Runs/schedule are scoped to user_id == 1.
     _fake_user = User(id=1, email="test@test.com", is_active=True, is_superuser=False)
     app.dependency_overrides[get_current_user] = lambda: _fake_user
-    # The route also imports SessionLocal directly for the background task —
-    # patch it to point at our in-memory engine so background work writes
-    # to the same DB as the test.
-    _pipeline_mod.SessionLocal = SessionLocal
-
     client = TestClient(app)
     yield client, SessionLocal
     engine.dispose()
@@ -123,107 +115,16 @@ class TestTemplatesEndpoint:
 # ---------------------------------------------------------------------------
 
 
-def _fake_pipeline_result(**_ignored):
-    """Stand-in for run_pipeline(...) — accepts any kwargs the route passes."""
-    from v2.pipeline.orchestrator import PipelineResult
-
-    return PipelineResult(
-        run_id="ignored",
-        scan_date="2024-08-01",
-        template="quick",
-        selected_analysts=["scanner_signal", "fundamentals_analyst"],
-        universe="custom",
-        top_n=1,
-        watchlist=[{"ticker": "AAPL", "rank": 1, "composite_score": 80.0}],
-        agent_decisions={"AAPL": {"action": "hold", "quantity": 0}},
-        analyst_signals={"scanner_signal_agent": {"AAPL": {"signal": "bullish", "confidence": 80, "reasoning": "x"}}},
-        duration_seconds=1.5,
-        status="complete",
-    )
-
-
 class TestRunEndpoint:
-    def test_rejects_both_template_and_custom(self, setup):
-        client, _ = setup
-        r = client.post(
-            "/pipeline/run",
-            json={
-                "template": "quick",
-                "custom_analysts": ["warren_buffett"],
-            },
-        )
-        assert r.status_code == 422  # Pydantic validation fires first
-
-    def test_rejects_unknown_template_400_after_pydantic(self, setup):
-        client, _ = setup
-        # Pydantic accepts the string (no enum), then resolve_analysts raises.
-        r = client.post("/pipeline/run", json={"template": "no_such_template"})
-        assert r.status_code == 400
-        assert "unknown template" in r.json()["detail"]
-
-    def test_run_returns_pending_immediately(self, setup):
-        client, SessionLocal = setup
-        with patch.object(_pipeline_mod, "run_pipeline", side_effect=_fake_pipeline_result):
-            r = client.post(
-                "/pipeline/run",
-                json={
-                    "universe": "custom",
-                    "universe_tickers": ["AAPL"],
-                    "template": "quick",
-                    "top_n": 1,
-                },
-            )
-        assert r.status_code == 202
-        body = r.json()
-        assert body["status"] == "PENDING"
-        run_id = body["run_id"]
-        assert len(run_id) == 32  # uuid hex
-
-        # Wait briefly for the BackgroundTask to settle.
-        deadline = time.time() + 3.0
-        with SessionLocal() as db:
-            repo = PipelineRunRepository(db)
-            while time.time() < deadline:
-                row = repo.get_by_id(run_id)
-                if row and row.status == "COMPLETE":
-                    break
-                time.sleep(0.05)
-            row = repo.get_by_id(run_id)
-        assert row is not None
-        assert row.status == "COMPLETE"
-        assert row.watchlist_json == [{"ticker": "AAPL", "rank": 1, "composite_score": 80.0}]
-        assert row.duration_seconds == 1.5
-
-    def test_run_error_path_marks_row_with_traceback(self, setup):
-        client, SessionLocal = setup
-
-        def boom(**kw):
-            raise RuntimeError("simulated provider failure")
-
-        with patch.object(_pipeline_mod, "run_pipeline", side_effect=boom):
-            r = client.post(
-                "/pipeline/run",
-                json={
-                    "universe": "custom",
-                    "universe_tickers": ["AAPL"],
-                    "template": "quick",
-                    "top_n": 1,
-                },
-            )
-        run_id = r.json()["run_id"]
-
-        deadline = time.time() + 3.0
-        with SessionLocal() as db:
-            repo = PipelineRunRepository(db)
-            while time.time() < deadline:
-                row = repo.get_by_id(run_id)
-                if row and row.status == "ERROR":
-                    break
-                time.sleep(0.05)
-            row = repo.get_by_id(run_id)
-        assert row.status == "ERROR"
-        assert "simulated provider failure" in row.error
-        assert "RuntimeError" in row.error
+    def test_retired_run_creates_no_work(self, setup):
+        client, session_factory = setup
+        with patch.object(PipelineRunRepository, "create_pending") as create:
+            response = client.post("/pipeline/run", json={"template": "quick"})
+        assert response.status_code == 410
+        assert "/research/analyze" in response.json()["detail"]
+        create.assert_not_called()
+        with session_factory() as db:
+            assert PipelineRunRepository(db).list_runs(user_id=1) == []
 
 
 # ---------------------------------------------------------------------------
@@ -282,12 +183,11 @@ class TestScheduleEndpoint:
         assert body["enabled"] is False
         assert body["template"] == "balanced"
 
-    def test_patch_enables_and_changes_template(self, setup):
+    def test_patch_rejects_retired_schedule_enable(self, setup):
         client, _ = setup
         r = client.patch("/pipeline/schedule", json={"enabled": True, "template": "quick"})
-        assert r.status_code == 200
-        assert r.json()["enabled"] is True
-        assert r.json()["template"] == "quick"
+        assert r.status_code == 410
+        assert "removed" in r.json()["detail"]
 
     def test_patch_unknown_template_400(self, setup):
         client, _ = setup

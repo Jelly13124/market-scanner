@@ -189,7 +189,6 @@ class TestUnimplementedMethods:
     @pytest.mark.parametrize(
         "method,args",
         [
-            ("get_prices", ("AAPL", "2026-01-01", "2026-05-15")),
             ("get_financial_metrics", ("AAPL", "2026-05-15")),
             ("get_news", ("AAPL", "2026-05-15")),
             ("get_insider_trades", ("AAPL", "2026-05-15")),

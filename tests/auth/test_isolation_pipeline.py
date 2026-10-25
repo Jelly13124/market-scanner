@@ -104,15 +104,18 @@ class TestPipelineScheduleIsolation:
     def test_schedule_is_per_user(self, full_client, two_users):
         tok_a, tok_b = two_users
 
-        # A enables their schedule and switches template.
+        # A edits the retained configuration while execution remains retired.
         ra = full_client.patch(
             "/pipeline/schedule",
-            json={"enabled": True, "template": "quick", "top_n": 9},
+            json={"enabled": False, "template": "quick", "top_n": 9},
             headers=auth_header(tok_a),
         )
         assert ra.status_code == 200
-        assert ra.json()["enabled"] is True
+        assert ra.json()["enabled"] is False
         assert ra.json()["template"] == "quick"
+
+        rejected = full_client.patch('/pipeline/schedule', json={'enabled': True}, headers=auth_header(tok_a))
+        assert rejected.status_code == 410
 
         # B's schedule is untouched — lazily created with defaults.
         rb = full_client.get("/pipeline/schedule", headers=auth_header(tok_b))
@@ -123,7 +126,7 @@ class TestPipelineScheduleIsolation:
 
         # A still sees their own edits on a fresh GET.
         ra2 = full_client.get("/pipeline/schedule", headers=auth_header(tok_a))
-        assert ra2.json()["enabled"] is True
+        assert ra2.json()["enabled"] is False
         assert ra2.json()["top_n"] == 9
 
 

@@ -79,34 +79,29 @@ class TestLifecycle:
             ScannerConfigRepository(session).create(name="b", universe_kind="sp500", is_enabled=False, user_id=1)
             ScannerConfigRepository(session).create(name="c", universe_kind="sp500", is_enabled=True, user_id=1)
         svc.start()
-        # 2 enabled scanner configs + 1 daily pipeline + 1 daily research + 1 screener
+        # 2 enabled scanner configs + 1 daily research + 1 screener
         # snapshot + 2 paper-trading (weekly rebalance + daily marks). Screener presets
         # now register PER-PRESET crons on demand; none are enabled here, so the old
         # single global preset job is gone.
-        assert svc._scheduler.add_job.call_count == 7
+        assert svc._scheduler.add_job.call_count == 5
         job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
-        assert "daily-pipeline" in job_ids
-        assert "research_daily" in job_ids
+        assert "daily-pipeline" not in job_ids
+        assert "research_daily" not in job_ids
         assert "paper_weekly" in job_ids
         assert "paper_daily_marks" in job_ids
 
-    def test_start_registers_daily_pipeline_even_with_no_scanner_configs(self, svc):
-        """Pipeline and research jobs are independent of scanner configs —
-        both must register even when no scanner configs exist."""
+    def test_start_excludes_retired_pipeline_with_no_scanner_configs(self, svc):
+        """Active scheduled jobs register; retired pipeline does not."""
         svc.start()
-        # No configs, but daily pipeline + daily research + screener snapshot + 2
+        # No configs, but daily research + screener snapshot + 2
         # paper-trading jobs still register. (Screener presets register per-preset;
         # none enabled here.)
-        assert svc._scheduler.add_job.call_count == 5
+        assert svc._scheduler.add_job.call_count == 3
         job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
-        assert "daily-pipeline" in job_ids
-        assert "research_daily" in job_ids
+        assert "daily-pipeline" not in job_ids
+        assert "research_daily" not in job_ids
         assert "paper_weekly" in job_ids
         assert "paper_daily_marks" in job_ids
-        # Verify pipeline job properties
-        pipeline_call = next(c for c in svc._scheduler.add_job.call_args_list if c.kwargs.get("id") == "daily-pipeline")
-        assert pipeline_call.kwargs["max_instances"] == 1
-        assert pipeline_call.kwargs["misfire_grace_time"] == 600
 
 
 # ---------------------------------------------------------------------------
@@ -260,104 +255,14 @@ def schedule_singleton(session_factory):
 
 
 class TestDailyPipelineJob:
-    def test_skips_when_disabled(self, svc, schedule_singleton):
-        # enabled=False is the seeded default — pipeline body should log
-        # and return without calling run_pipeline.
-        with patch("v2.pipeline.run_pipeline") as mock_run:
-            svc._run_pipeline_job()
-            mock_run.assert_not_called()
-
-    def test_skips_when_schedule_row_missing(self, svc, session_factory):
-        # No seed row — body should bail without raising.
-        with patch("v2.pipeline.run_pipeline") as mock_run:
-            svc._run_pipeline_job()
-            mock_run.assert_not_called()
-
-    def test_skips_when_template_unknown(self, svc, session_factory):
-        from app.backend.database.models import PipelineSchedule
-
-        with session_factory() as session:
-            session.add(
-                PipelineSchedule(
-                    id=1,
-                    enabled=True,
-                    top_n=5,
-                    template="bogus_template",
-                    universe="nasdaq100",
-                    model_name="gpt-4.1",
-                    model_provider="OpenAI",
-                    user_id=1,
-                )
-            )
-            session.commit()
-        with patch("v2.pipeline.run_pipeline") as mock_run:
-            svc._run_pipeline_job()
-            mock_run.assert_not_called()
-
-    def test_runs_pipeline_and_marks_complete_when_enabled(
-        self,
-        svc,
-        schedule_singleton,
-    ):
-        from app.backend.database.models import PipelineRun, PipelineSchedule
-        from v2.pipeline.orchestrator import PipelineResult
-
-        # Flip the singleton to enabled.
-        with schedule_singleton() as session:
-            row = session.query(PipelineSchedule).filter(PipelineSchedule.id == 1).first()
-            row.enabled = True
-            row.template = "quick"
-            row.top_n = 3
-            session.commit()
-
-        fake_result = PipelineResult(
-            run_id="ignored",
-            scan_date="2024-08-01",
-            template="quick",
-            selected_analysts=["scanner_signal", "fundamentals_analyst"],
-            universe="nasdaq100",
-            top_n=3,
-            watchlist=[{"ticker": "AAPL"}],
-            agent_decisions={"AAPL": {"action": "buy"}},
-            analyst_signals={"scanner_signal_agent": {"AAPL": {"signal": "bullish"}}},
-            duration_seconds=12.5,
-        )
-        with patch("v2.pipeline.run_pipeline", return_value=fake_result) as mock_run:
-            svc._run_pipeline_job()
-            mock_run.assert_called_once()
-            # Schedule values flowed through to run_pipeline kwargs.
-            kw = mock_run.call_args.kwargs
-            assert kw["template"] == "quick"
-            assert kw["top_n"] == 3
-            assert kw["universe"] == "nasdaq100"
-            assert kw["persist"] is False  # job persists via repo
-
-        # A COMPLETE row should now exist in pipeline_runs.
-        with schedule_singleton() as session:
-            rows = session.query(PipelineRun).all()
-            assert len(rows) == 1
-            assert rows[0].status == "COMPLETE"
-            assert rows[0].duration_seconds == 12.5
-            assert rows[0].agent_decisions_json == {"AAPL": {"action": "buy"}}
-            assert rows[0].template == "quick"
-
-    def test_marks_error_when_pipeline_raises(self, svc, schedule_singleton):
+    def test_stale_enabled_schedule_cannot_create_runs(self, svc, schedule_singleton):
         from app.backend.database.models import PipelineRun, PipelineSchedule
 
         with schedule_singleton() as session:
-            row = session.query(PipelineSchedule).filter(PipelineSchedule.id == 1).first()
-            row.enabled = True
-            row.template = "quick"
+            session.query(PipelineSchedule).first().enabled = True
             session.commit()
-
-        def boom(**kw):
-            raise RuntimeError("simulated upstream failure")
-
-        with patch("v2.pipeline.run_pipeline", side_effect=boom):
+        with patch("v2.pipeline.run_pipeline") as run:
             svc._run_pipeline_job()
-
+            run.assert_not_called()
         with schedule_singleton() as session:
-            rows = session.query(PipelineRun).all()
-            assert len(rows) == 1
-            assert rows[0].status == "ERROR"
-            assert "simulated upstream failure" in rows[0].error
+            assert session.query(PipelineRun).count() == 0

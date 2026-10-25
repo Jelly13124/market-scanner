@@ -17,7 +17,7 @@ class TestSharedDataCache:
         _clear_cache()
 
     @patch("src.research.shared_data._fetch_raw")
-    def test_cache_hit_avoids_refetch(self, mock_fetch):
+    def test_each_bundle_read_checks_data_layer_freshness(self, mock_fetch):
         mock_fetch.return_value = SharedData(
             ticker="NVDA", scan_date="2026-05-22",
             prices=[], financials=[], insider_trades=[],
@@ -28,7 +28,7 @@ class TestSharedDataCache:
         d1 = fetch_shared_data("NVDA", "2026-05-22")
         d2 = fetch_shared_data("NVDA", "2026-05-22")
         assert d1 is d2  # exact object identity → cache hit
-        assert mock_fetch.call_count == 1
+        assert mock_fetch.call_count == 2
 
     @patch("src.research.shared_data._fetch_raw")
     def test_different_date_different_fetch(self, mock_fetch):

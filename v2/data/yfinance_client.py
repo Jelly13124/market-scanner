@@ -6,13 +6,13 @@ that Finnhub's free tier strips down to a single quarter. Methods we don't
 cover raise ``NotImplementedError`` so misuse fails loud.
 
 ``CompositeClient`` routes ``get_analyst_*`` and ``get_earnings_history`` here;
-everything else goes to EODHD/Finnhub.
+Daily prices also route here; current quotes route to Finnhub.
 """
 
 from __future__ import annotations
 
 import logging
-from datetime import date as _date, datetime as _datetime
+from datetime import date as _date, datetime as _datetime, timedelta
 from typing import Any
 
 from v2.data.models import (
@@ -303,6 +303,22 @@ class YFinanceClient:
     # Everything else — explicit raise so misuse fails loud
     # ------------------------------------------------------------------
 
+    def get_statement_bundle(self, ticker: str, period: str = 'quarterly') -> dict:
+        """Observed Yahoo statements; fiscal end is not a publication date."""
+        import yfinance as yf
+        stock = yf.Ticker(ticker)
+        annual = period == 'annual'
+        frames = {'income': stock.income_stmt if annual else stock.quarterly_income_stmt,
+                  'balance': stock.balance_sheet if annual else stock.quarterly_balance_sheet,
+                  'cashflow': stock.cashflow if annual else stock.quarterly_cashflow}
+        result = {}
+        for name, frame in frames.items():
+            if frame is not None and not frame.empty:
+                result[name] = {'index': [str(x) for x in frame.index],
+                    'columns': [str(x)[:10] for x in frame.columns],
+                    'data': [[_safe_float(x) for x in row] for row in frame.values]}
+        return result
+
     def _refuse(self, name: str) -> "NotImplementedError":
         return NotImplementedError(
             f"YFinanceClient.{name}() is not implemented — this is a partial "
@@ -310,8 +326,35 @@ class YFinanceClient:
             f"backend via CompositeClient."
         )
 
-    def get_prices(self, *args: Any, **kwargs: Any) -> list[Price]:
-        raise self._refuse("get_prices")
+    def get_prices(self, ticker: str, start_date: str, end_date: str, **kwargs: Any) -> list[Price]:
+        """Daily raw OHLCV, separate adjusted close/actions; legacy inclusive end."""
+        import yfinance as yf
+        from math import isfinite
+        start = _date.fromisoformat(start_date)
+        end = _date.fromisoformat(end_date)
+        if start > end:
+            raise ValueError("start_date must be on or before end_date")
+        frame = yf.Ticker(ticker.replace('.', '-') if '.' in ticker and not ticker.endswith(('.SH', '.SZ', '.BJ')) else ticker).history(
+            start=start.isoformat(), end=(end + timedelta(days=1)).isoformat(),
+            interval='1d', auto_adjust=False, actions=True, timeout=self._timeout,
+            raise_errors=True,
+        )
+        if frame is None or frame.empty:
+            return []
+        bars = {}
+        for index, row in frame.iterrows():
+            session = index.date().isoformat()
+            if not start_date <= session <= end_date:
+                continue
+            values = {name: _safe_float(row.get(column)) for name, column in
+                      [('open', 'Open'), ('high', 'High'), ('low', 'Low'), ('close', 'Close')]}
+            volume = _safe_int(row.get('Volume'))
+            if any(v is None or v <= 0 for v in values.values()) or volume is None or volume < 0:
+                continue
+            bars[session] = Price(**values, volume=volume, time=session,
+                adjusted_close=_safe_float(row.get('Adj Close')),
+                dividend=_safe_float(row.get('Dividends')), split_ratio=_safe_float(row.get('Stock Splits')))
+        return [bars[key] for key in sorted(bars)]
 
     def get_financial_metrics(self, *args: Any, **kwargs: Any) -> list[FinancialMetrics]:
         raise self._refuse("get_financial_metrics")

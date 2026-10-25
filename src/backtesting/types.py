@@ -90,7 +90,7 @@ PortfolioValuePoint = TypedDict(
 class PerformanceMetrics(TypedDict, total=False):
     """Performance metrics computed over the equity curve.
 
-    Keys are aligned with the current implementation in src/backtester.py.
+    Keys are aligned with the current implementation in the retired backtester.
     Values are optional to support progressive calculation over time.
     """
 

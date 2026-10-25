@@ -16,7 +16,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-# Load .env so DEEPSEEK_API_KEY / EODHD_API_KEY etc. are available.
+# Load .env so DEEPSEEK_API_KEY / FINNHUB_API_KEY etc. are available.
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -51,6 +51,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--only", action="append", default=None,
                    help="Restrict to specific sections (repeatable). "
                         "Default: all 16 SOP sections.")
+    p.add_argument("--model-key-env", default=None, help="Explicit environment variable containing your model key (paid providers only)")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args(argv)
 
@@ -128,7 +129,9 @@ def main(argv: list[str] | None = None) -> int:
           f"sections={len(included)}, personas={request.use_personas})...",
           file=sys.stderr)
 
-    report = run_sop(request)
+    import os
+    explicit_keys = {args.model_key_env: os.environ[args.model_key_env]} if args.model_key_env else {}
+    report = run_sop(request, api_keys=explicit_keys, owner_id="local")
 
     _print_persona_box(report.get("persona_assignments"))
     _print_backtest_box(report.get("backtest"))

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from v2.data.composite_client import CompositeClient, make_hybrid_client
-from v2.data.eodhd_client import EODHDClient
+from v2.data.cached_client import CachedDataClient
 from v2.data.finnhub_client import FinnhubClient
 from v2.data.protocol import DataClient
 from v2.data.yfinance_client import YFinanceClient
@@ -30,8 +30,8 @@ def _stub(name: str) -> MagicMock:
 @pytest.fixture()
 def stubs():
     return {
-        "prices": _stub("eodhd"),
-        "news": _stub("eodhd"),
+        "prices": _stub("yahoo"),
+        "news": _stub("yahoo"),
         "insider": _stub("finnhub"),
         "earnings": _stub("finnhub"),
         "facts": _stub("finnhub"),
@@ -179,29 +179,11 @@ class TestCloseIdempotent:
 
 
 class TestMakeHybridClient:
-    def test_builds_hybrid_with_eodhd_and_finnhub(self):
-        client = make_hybrid_client()
-        assert isinstance(client, CompositeClient)
-        assert isinstance(client._prices, EODHDClient)
-        assert isinstance(client._news, EODHDClient)
-        assert isinstance(client._insider, FinnhubClient)
-        # Earnings history was re-routed to yfinance (trailing quarters); the
-        # forward-looking calendar stays on Finnhub.
-        assert isinstance(client._earnings, YFinanceClient)
-        assert isinstance(client._facts, FinnhubClient)
-        assert isinstance(client._metrics, FinnhubClient)
-
-    def test_prices_and_news_share_eodhd_instance(self):
-        client = make_hybrid_client()
-        # Same EODHD client object backs both prices and news (saves a session).
-        assert client._prices is client._news
-
-    def test_insider_facts_metrics_share_finnhub_instance(self):
-        client = make_hybrid_client()
-        finnhub = client._insider
-        # Earnings history routes to yfinance now, so it does NOT share the
-        # finnhub instance; the forward calendar still does.
-        assert client._earnings is not finnhub
-        assert client._facts is finnhub
-        assert client._metrics is finnhub
-        assert client._calendar is finnhub
+    def test_daily_prices_use_yahoo_and_quotes_use_finnhub(self):
+        client = make_hybrid_client(include_ashare=False)
+        assert isinstance(client, CachedDataClient)
+        assert isinstance(client.backend._prices, YFinanceClient)
+        assert isinstance(client.backend._quotes, FinnhubClient)
+        assert client.backend._prices is client.backend._earnings
+        assert client.backend._news is client.backend._quotes
+        client.close()

@@ -1,18 +1,8 @@
-"""Pipeline orchestration for the research workflow.
+"""Legacy sequential research workflow, still used by owner routes and cron.
 
-Phase 1: linear orchestration with explicit sequencing — no LangGraph
-node DAG yet. (LangGraph wiring lands in Phase 2 when the persona-router
-introduces conditional edges and the debate node introduces fan-out.
-For Phase 1 the sequence is simple enough that a plain function reads
-clearer than a graph.)
-
-Sequence:
-  1. fetch_shared_data
-  2. Run every module except risk_position
-  3. Run risk_position with prior_results = the above
-  4. synthesize(request, module_results) -> (report, TradePlan)
-  5. replay_trade_plan -> BacktestSummary
-  6. Assemble ResearchState
+Fetches shared data, runs analysis modules and risk, synthesizes the report,
+and replays its strategy. It is not a LangGraph workflow. The new Analyze
+LangGraph requirements do not imply that this implementation has migrated.
 """
 
 from __future__ import annotations

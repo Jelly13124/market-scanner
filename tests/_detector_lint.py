@@ -235,7 +235,7 @@ def scan_no_client_memoization(path: Path) -> list[Violation]:
     """RULE-4: ``detect()`` does not stash the ``fd`` client on ``self``.
 
     Background: ``requests.Session`` (the underlying transport for the
-    Finnhub / EODHD clients) is not thread-safe across worker threads.
+    Finnhub / Yahoo clients) is not thread-safe across worker threads.
     The runner gives each worker a dedicated client via queue.Queue.
     Memoizing ``self._client = fd`` would shred that isolation — the
     first thread's client survives into other threads' calls.

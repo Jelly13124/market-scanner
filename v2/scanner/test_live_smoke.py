@@ -6,7 +6,7 @@ Enable with::
     pytest v2/scanner/test_live_smoke.py -s
 
 Burns API quota on whichever provider ``SCANNER_DATA_PROVIDER`` resolves to
-(typically the ``hybrid`` EODHD+Finnhub stack). Runs a real scan against
+(typically the ``hybrid`` Yahoo+Finnhub stack). Runs a real scan against
 ``nasdaq100_sp500`` and asserts the basic invariants — fast feedback when
 some upstream contract changes silently.
 """
@@ -25,7 +25,7 @@ pytestmark = pytest.mark.skipif(
 
 
 def _today_str() -> str:
-    # Use the previous business day so the FD/EODHD bars are settled.
+    # Use the previous business day so the FD/Yahoo bars are settled.
     d = date.today() - timedelta(days=1)
     while d.weekday() >= 5:
         d -= timedelta(days=1)

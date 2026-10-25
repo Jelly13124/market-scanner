@@ -31,52 +31,12 @@ ALL_DETECTORS: tuple[type[EventDetector], ...] = (
     BollingerSqueezeDetector,
     RsiDivergenceDetector,
     MaCrossDetector,
-    # UNREGISTERED 2026-06-01 as net-counterproductive / broken pre-filters per the
-    # regime-segmented eval (findings_scanner_eval.md + findings_scanner_round2.md).
-    # Flagged events had significantly NEGATIVE interestingness-vs-random — they flag
-    # stocks that then move LESS than a random pick, worst in the bear regime:
-    #   * OBVDivergenceDetector  (obv_divergence,       t=-4.3 / -2.4)
-    #   * NewsSentimentShiftDetector (news_sentiment_shift, t=-5.0 — also the
-    #       long-planned removal as sentiment moves to the LLM agent layer)
-    #   * VolumeAnomalyDetector  (price_volume_anomaly, flat-day volume ≈0/neg)
-    # Classes remain importable + re-registerable (files retained); drop them
-    # back into this tuple + DETECTOR_METADATA to re-enable.
-    #
-    # HighBreakoutDetector (high_breakout) + GapDetector (gap) — DELETED
-    # 2026-06-12. Both were UNREGISTERED 2026-06-01 for significantly NEGATIVE
-    # interestingness-vs-random (high_breakout t=-4.2 / -4.4; gap z-scoring
-    # BROKEN — a 5σ threshold still fired ~49% of bear ticker-days, negative at
-    # every swept 3.0–5.0σ threshold, no sane threshold exists; see
-    # findings_scanner_round2.md). The scanner-evolve set no longer tunes them,
-    # so the source (gap.py / high_breakout.py) and their tests were deleted.
-    # The "gap" / "high_breakout" string names are KEPT in RETIRED_DETECTORS
-    # below so persisted ScannerConfig rows referencing them still pass
-    # ScannerWeights validation as harmless no-ops.
-    #
-    # EarningsSurpriseDetector + EarningsUpcomingDetector — UNREGISTERED
-    # 2026-05-18. Merged into the unified ``EarningsEventDetector`` above.
-    # The two old classes remain importable for back-compat with tests and
-    # any persisted ScannerConfig keyed by the old detector names; the
-    # legacy keys are aliased to ``earnings_event`` in DETECTOR_METADATA
-    # below so old config rows still produce a working detector list.
-    #
-    # EstimateRevisionDetector — DELETED 2026-05-20. Was UNREGISTERED on
-    # 2026-05-15 because yfinance's ``eps_revisions`` field had incoherent
-    # semantics (observed up_7d > up_30d for AAPL/MSFT/TSLA which is
-    # impossible if cumulative). The intended signal is now served by
-    # TargetPriceChangeDetector (M9.d, DB-backed snapshots). Data-layer
-    # plumbing (DataClient.get_estimate_revisions + EstimateRevisions
-    # model) intentionally KEPT — general-purpose, callable if a future
-    # detector wants to re-attempt with a different data source.
+    # Other imported classes remain available for compatibility but are not
+    # enabled by default. Retired names below preserve saved configurations.
 )
 
 
-# UI metadata + recommended ("academic prior") severity multipliers per
-# detector. Source for the GET /scanner/detectors endpoint and for the
-# "Recommended defaults" preset button in the config dialog. Default values
-# follow task_plan_scanner_v2.md §4.2: PEAD strongest, ANLY structurally
-# lagging, news removed (kept here at 0.50 as transitional under-weight
-# until the formal removal in §5).
+# UI labels and configurable default severity multipliers for active detectors.
 DETECTOR_METADATA: dict[str, dict] = {
     "earnings_event": {
         "label": "Earnings Event",
@@ -157,8 +117,7 @@ LEGACY_DETECTOR_ALIASES: dict[str, str] = {
 # class back into ALL_DETECTORS + DETECTOR_METADATA) to revive it.
 RETIRED_DETECTORS: frozenset[str] = frozenset(
     {
-        # "high_breakout" / "gap" classes were DELETED 2026-06-12 (see above);
-        # the names stay here so old configs that reference them still validate.
+        # Removed implementations retain names so saved configurations validate.
         "high_breakout",
         "obv_divergence",
         "news_sentiment_shift",

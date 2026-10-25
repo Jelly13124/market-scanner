@@ -33,6 +33,8 @@ class Price(BaseModel):
     volume: int
     time: str
     adjusted_close: float | None = None
+    dividend: float | None = None
+    split_ratio: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +151,7 @@ class CompanyNews(BaseModel):
     # FD's polarity label, typically one of "positive" / "negative" / "neutral".
     # Nullable because not every article is scored.
     sentiment: str | None = None
-    # Continuous polarity score, when the provider supplies one. EODHD's
+    # Continuous polarity score, when the provider supplies one. Yahoo's
     # /sentiments endpoint returns a daily "normalized" score (~[-1, +1] but
     # positive-skewed in practice) — far more sensitive than the 3-bucket
     # label. Detectors should prefer this over ``sentiment`` when present.
@@ -351,6 +353,10 @@ class Quote(BaseModel):
     prev_close: float | None = None
     percent_change: float | None = None   # today's % move (Finnhub's `dp`)
     asof_timestamp: int | None = None     # epoch seconds (Finnhub's `t`)
+    received_at: str | None = None
+    day_open: float | None = None
+    day_high: float | None = None
+    day_low: float | None = None
 
 
 class EstimateRevisions(BaseModel):

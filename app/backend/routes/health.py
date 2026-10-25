@@ -17,20 +17,10 @@ async def health():
     return {"status": "ok"}
 
 
-@router.get("/tier")
-async def get_tier():
-    """Phase 9: report active data-source tier.
-
-    Returns ``{"tier": "paid" | "free", "eodhd_key_set": bool}`` —
-    consumed by the frontend Scanner panel to show a tier badge so
-    users see whether they're on the $20 EODHD path or the free
-    Finnhub-only fallback.
-    """
-    from v2.data.composite_client import get_active_tier, _has_eodhd_key
-    return {
-        "tier": get_active_tier(),
-        "eodhd_key_set": _has_eodhd_key(),
-    }
+@router.get("/data-status")
+async def data_status():
+    from src.storage.mongo import get_store
+    return {"storage": get_store().status, "history_source": "yahoo", "quote_source": "finnhub", "online_fallback": True}
 
 
 @router.get("/ping")

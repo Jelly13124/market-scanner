@@ -12,7 +12,6 @@ import inspect
 import pytest
 
 from v2.data.client import FDClient
-from v2.data.eodhd_client import EODHDClient
 from v2.data.finnhub_client import FinnhubClient
 from v2.data.protocol import DataClient
 
@@ -30,8 +29,8 @@ _PROTOCOL_METHODS = [
 ]
 
 
-@pytest.fixture(params=[FDClient, FinnhubClient, EODHDClient],
-                ids=["fd", "finnhub", "eodhd"])
+@pytest.fixture(params=[FDClient, FinnhubClient],
+                ids=["fd", "finnhub"])
 def client_cls(request):
     return request.param
 
@@ -39,7 +38,7 @@ def client_cls(request):
 class TestProtocolConformance:
     def test_instance_is_dataclient(self, client_cls):
         # @runtime_checkable inspection.
-        if client_cls in (FinnhubClient, EODHDClient):
+        if client_cls is FinnhubClient:
             instance = client_cls(api_key="test")
         else:
             instance = client_cls()

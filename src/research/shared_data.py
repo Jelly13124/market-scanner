@@ -40,6 +40,10 @@ class SharedData:
     company_facts: dict
     sector_etf_prices: list               # benchmark for sector module
     spy_prices: list                      # benchmark for macro module
+    quote: Any | None = None
+    evidence: list = field(default_factory=list)
+    quality: list = field(default_factory=list)
+    storage_status: str = "unconfigured"
 
 
 _CACHE: dict[tuple[str, str, str], SharedData] = {}
@@ -157,12 +161,22 @@ def _fetch_raw(ticker: str, scan_date: str, market: str = "us") -> SharedData:
     except Exception as e:
         logger.warning("shared_data: benchmark(%s) failed: %s", benchmark_ticker, e)
 
+    try:
+        bundle.quote = client.get_quote(ticker)
+    except Exception:
+        bundle.quality.append({'resource': 'quote', 'status': 'unavailable'})
+    bundle.evidence = list(getattr(client, 'evidence', []))
+    bundle.quality.extend(getattr(client, 'quality', []))
+    bundle.storage_status = getattr(getattr(client, 'store', None), 'status', 'unconfigured')
+
     close = getattr(client, "close", None)
     if callable(close):
         try:
             close()
         except Exception:
             pass
+    if not bundle.prices:
+        raise ValueError('Historical prices unavailable from MongoDB and the online source')
     return bundle
 
 
@@ -177,12 +191,6 @@ def fetch_shared_data(
     Cache key includes ``market`` so the same A-share ticker analyzed as
     both "us" and "cn" (hypothetically) doesn't collide.
     """
-    key = (ticker, scan_date, market)
-    with _LOCK:
-        hit = _CACHE.get(key)
-    if hit is not None:
-        return hit
-    bundle = _fetch_raw(ticker, scan_date, market=market)
-    with _LOCK:
-        _CACHE[key] = bundle
-    return bundle
+    # Mongo read-through enforces freshness; do not hide it behind an
+    # unbounded, day-long process cache shared by concurrent requests.
+    return _fetch_raw(ticker, scan_date, market=market)

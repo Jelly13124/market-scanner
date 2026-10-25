@@ -11,28 +11,7 @@ detector that fires on a large fraction of ticker-days has a "fired" set ≈ the
 whole population, so its interestingness is ≈0 *by construction* — a
 mis-calibrated fire threshold, not a useless signal.
 
-The original ``gap``-sweep ``main()`` was REMOVED 2026-06-12 when ``GapDetector``
-was deleted; its result is preserved in ``scanner_eval/threshold_sweep_gap.csv``
-+ ``findings_scanner_round2.md``. The harness below is detector-agnostic and
-tested offline by ``test_eval_threshold_sweep.py`` — re-add a ``main()`` to sweep
-any threshold-tunable detector (e.g. ``intraday_move``'s gate thresholds).
-
-THE CRITICAL CORRECTNESS RULE (same as the rest of the harness)
----------------------------------------------------------------
-**Clamp for the DECISION, unclamped for the OUTCOME.** The detector is replayed
-through :class:`CachedAsOfClient` with ``set_asof(asof)`` so every read it does
-is clamped to ``<= asof`` (no lookahead). Forward returns that measure what
-happened AFTER a fire are computed from the ticker's FULL price list — at eval
-time the future is known (this is a backtest). :func:`score_detector` already
-follows this rule; the light fire-rate replay here uses the IDENTICAL clamped
-as-of grid, so the fire COUNT is computed under the same no-lookahead discipline.
-
-A detector is "sweepable" iff its constructor exposes a fire-threshold knob.
-Wrap that in a ``make_detector(value)`` factory and pass ascending values to
-:func:`sweep_threshold`.
-
-Output: :func:`sweep_threshold` returns one row per (value, regime);
-:func:`write_csv` stamps a detector name → ``scanner_eval/threshold_sweep_<det>.csv``.
+The harness is detector-agnostic; callers provide the detector factory.
 """
 
 from __future__ import annotations

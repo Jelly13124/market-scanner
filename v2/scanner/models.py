@@ -16,12 +16,8 @@ Direction = Literal["bullish", "bearish", "neutral"]
 class ScannerWeights(BaseModel):
     """Composite-score weights. Configurable per ScannerConfig."""
 
-    # Quant overlay OFF by default (2026-06-01). The detector-only composite beat
-    # SPY in all 3 regimes (bear +1.04% / bull +0.79% / choppy +1.93% 5d alpha),
-    # while turning the quant signals ON dragged it down every regime (−1.83% in
-    # bear). See findings_scanner_eval.md (Phase 3). Reversible per-config — set
-    # quant_weight > 0 on a ScannerConfig to re-enable once the fundamental signals
-    # have a real point-in-time data source. Signal CODE is kept, just unweighted.
+    # Quant overlay is disabled by default. Re-enabling requires validated
+    # signal data coverage, especially point-in-time fundamentals.
     event_weight: float = 1.00
     quant_weight: float = 0.00
     factor_weights: dict[str, float] = Field(
@@ -184,3 +180,13 @@ class ScanContext(BaseModel):
     # "calendar loaded but ticker has no event in window" → detector
     # returns ``triggered=False``.
     upcoming_earnings_days_to: dict[str, int] | None = None
+
+
+class ScanOutcome(BaseModel):
+    ticker: str
+    outcome: Literal['evaluated', 'no_data', 'error', 'cancelled']
+    entry: ScoredEntry | None = None
+    selected: bool = False
+    detector_results: list[dict] = Field(default_factory=list)
+    evidence: list[dict] = Field(default_factory=list)
+    quality: dict = Field(default_factory=dict)

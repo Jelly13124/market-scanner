@@ -2,7 +2,6 @@
 
 from v2.data.client import FDClient
 from v2.data.composite_client import CompositeClient, make_hybrid_client
-from v2.data.eodhd_client import EODHDClient
 from v2.data.factory import (
     get_default_provider,
     get_provider_factory,
@@ -31,7 +30,6 @@ __all__ = [
     "Earnings",
     "EarningsData",
     "EarningsRecord",
-    "EODHDClient",
     "FDClient",
     "Filing",
     "FinnhubClient",

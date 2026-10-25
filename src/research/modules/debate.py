@@ -104,6 +104,15 @@ def _build_round_instructions(p1_name: str, p2_name: str, rounds: int) -> str:
     return "\n".join(lines)
 
 
+from typing import TypedDict, Annotated
+import operator
+
+
+class _DebateState(TypedDict):
+    statements: Annotated[list[str], operator.add]
+    verdict: str
+
+
 def run_debate(
     request: ResearchRequest,
     shared_data: SharedData,
@@ -129,47 +138,42 @@ def run_debate(
 
     rounds = max(1, min(5, int(debate_rounds)))
 
-    p1 = PERSONA_REGISTRY[personas[0]]
-    p2 = PERSONA_REGISTRY[personas[1]]
-    p1_label = p1.name.title()
-    p2_label = p2.name.title()
+    from typing import TypedDict, Annotated
+    from langgraph.graph import StateGraph, START, END
+    import operator
+    import json
+    from src.storage.mongo import json_value
 
-    sector = (shared_data.company_facts or {}).get("sector", "Unknown")
-
-    round_instructions = _build_round_instructions(p1_label, p2_label, rounds)
-
-    prompt = (
-        f"You are simulating a {rounds}-round investment debate between two "
-        f"famous investors about ticker {request.ticker} ({sector} sector).\n\n"
-        f"=== Persona A: {p1_label} ===\n"
-        f"{p1.system_addition()}\n\n"
-        f"=== Persona B: {p2_label} ===\n"
-        f"{p2.system_addition()}\n\n"
-        f"Run the debate as follows:\n"
-        f"{round_instructions}\n\n"
-        f"Format each statement with a markdown bold label like "
-        f"`**{p1_label} (Round 1):**` followed by the prose.\n\n"
-        f"Finally produce a 1-2 sentence VERDICT identifying which persona made the "
-        f"stronger case on this ticker AT THIS MOMENT — given the sector and "
-        f"the ticker's profile. Do not split the difference; pick one."
-    )
-
-    out = call_research_llm(
-        prompt, _DebateTranscript,
-        default_factory=lambda: _DebateTranscript(
-            transcript=(
-                f"**{p1_label}:** debate LLM failed.\n\n"
-                f"**{p2_label}:** debate LLM failed."
-            ),
-            verdict="Debate generation failed; no verdict.",
-        ),
-        api_keys=api_keys,
-    )
-
-    markdown = out.transcript + "\n\n**Verdict:** " + out.verdict
-    return ModuleResult(
-        module_name="debate",
-        persona_used=f"{personas[0]}+{personas[1]}",
-        markdown=markdown,
-        key_metrics={},
-    )
+    # The schema is defined globally below so postponed annotations resolve.
+    evidence = json.dumps(json_value({
+        'ticker': request.ticker, 'as_of': shared_data.scan_date,
+        'facts': shared_data.company_facts, 'latest_prices': shared_data.prices[-5:],
+        'financials': shared_data.financials[:2], 'news': shared_data.news[:5],
+    }), ensure_ascii=False)
+    graph = StateGraph(_DebateState)
+    previous = START
+    for round_number in range(1, rounds + 1):
+        for persona in personas:
+            name = f'{persona}_round_{round_number}'
+            def speak(state, persona=persona, round_number=round_number):
+                investor = PERSONA_REGISTRY[persona]
+                prompt = (f'{investor.system_addition()}\nSpeak ONLY as {persona}, round {round_number}/{rounds}. '
+                          'Use the evidence below. Respond to the strongest preceding argument; do not invent facts. '
+                          'Give your own thesis or rebuttal in 2-4 sentences.\n'
+                          f'EVIDENCE: {evidence}\nPREVIOUS STATEMENTS: ' + '\n'.join(state['statements']))
+                out = call_research_llm(prompt, _DebateTranscript, api_keys=api_keys)
+                return {'statements': [f'**{persona.title()} (Round {round_number}):** {out.transcript}']}
+            graph.add_node(name, speak)
+            graph.add_edge(previous, name)
+            previous = name
+    def judge(state):
+        out = call_research_llm(f'Judge the following {rounds}-round debate using only the provided evidence. '
+            f'Identify the stronger argument and unresolved uncertainty.\nEVIDENCE: {evidence}\n' +
+            '\n'.join(state['statements']), _DebateTranscript, api_keys=api_keys)
+        return {'verdict': out.verdict}
+    graph.add_node('judge', judge)
+    graph.add_edge(previous, 'judge')
+    graph.add_edge('judge', END)
+    result = graph.compile().invoke({'statements': [], 'verdict': ''})
+    return ModuleResult(module_name='debate', persona_used='+'.join(personas),
+        markdown='\n\n'.join(result['statements']) + '\n\n**Verdict:** ' + result['verdict'], key_metrics={})

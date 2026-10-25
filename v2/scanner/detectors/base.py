@@ -45,7 +45,7 @@ def close_of(p) -> float | None:
     """Adjusted-close-preferred read of a ``Price`` bar.
 
     Returns the split- and dividend-adjusted close when the provider
-    supplies it (EODHD does, Finnhub doesn't), otherwise the raw close.
+    supplies it (Yahoo does, Finnhub doesn't), otherwise the raw close.
     Returns ``None`` when neither is set. Detectors should always go
     through this rather than ``p.close`` directly — using raw close on
     ex-div / split days produces spurious giant moves.

@@ -19,6 +19,9 @@ langchain-openai = "^0.3.5"
 langchain-deepseek = "^0.1.2"
 langchain-ollama = "0.3.6"
 langgraph = "0.2.56"
+langgraph-checkpoint = "2.1.2"
+pymongo = ">=4.10,<5"
+exchange-calendars = ">=4.5,<5"
 pandas = "^2.1.0"
 numpy = "^1.24.0"
 python-dotenv = "1.0.0"
@@ -104,6 +107,7 @@ alpaca = ["alpaca-py"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.0"
+mongomock = "^4.3.0"
 black = "^23.7.0"
 isort = "^5.12.0"
 flake8 = "^6.1.0"
@@ -120,6 +124,3 @@ include = '\.pyi?$'
 [tool.isort]
 profile = "black"
 force_alphabetical_sort_within_sections = true
-
-[tool.poetry.scripts]
-backtester = "src.backtesting.cli:main"

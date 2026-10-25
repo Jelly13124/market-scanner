@@ -153,7 +153,7 @@ class TestApiKeyServiceResolution:
         finally:
             _close(gen)
 
-    def test_superuser_falls_back_to_env(self, full_client, two_users, monkeypatch):
+    def test_superuser_requires_explicit_stored_key(self, full_client, two_users, monkeypatch):
         """The seed superuser (host) may fall back to .env when they have no stored key."""
         tok_a, _ = two_users
         uid_a = _uid(full_client, tok_a)
@@ -166,8 +166,9 @@ class TestApiKeyServiceResolution:
             db.commit()
 
             svc = ApiKeyService(db, user_id=uid_a)
-            assert svc.get_api_key("OPENAI_API_KEY") == "host-env-key"
-            assert svc.require_api_key("OPENAI_API_KEY") == "host-env-key"
+            assert svc.get_api_key("OPENAI_API_KEY") is None
+            with pytest.raises(ApiKeyError):
+                svc.require_api_key("OPENAI_API_KEY")
         finally:
             _close(gen)
 

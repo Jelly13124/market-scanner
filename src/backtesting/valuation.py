@@ -24,7 +24,7 @@ def calculate_portfolio_value(portfolio: Portfolio, current_prices: Mapping[str,
 def compute_exposures(portfolio: Portfolio, current_prices: Mapping[str, float]) -> Dict[str, float]:
     """Compute long/short/gross/net exposures and long/short ratio.
 
-    Mirrors the calculations performed in src/backtester.py run loop.
+    Mirrors the calculations performed in the retired backtester run loop.
     """
     positions = portfolio.get_positions()
     long_exposure = 0.0

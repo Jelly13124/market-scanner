@@ -112,6 +112,9 @@ _RiskBand = _Literal["conservative", "balanced", "aggressive"]
 class AnalyzeRunRequest(BaseModel):
     """POST /research/analyze body."""
 
+    resume_run_id: str | None = None
+    force_rerun: bool = False
+    source_scan_result_id: str | None = None
     ticker: str
     objective: _Objective = "general_research"
     position_budget_usd: float | None = Field(default=None, ge=0.0)
@@ -201,6 +204,12 @@ class VerdictPayload(BaseModel):
 
 
 class AnalyzeReportDetail(BaseModel):
+    analysis_run_id: str | None = None
+    analysis_status: str | None = None
+    storage_status: str | None = None
+    mongo_report_id: str | None = None
+    reused: bool = False
+    usage: dict = Field(default_factory=dict)
     """Response from POST /research/analyze and GET /research/reports/{id}/analyze."""
     model_config = ConfigDict(from_attributes=True)
 

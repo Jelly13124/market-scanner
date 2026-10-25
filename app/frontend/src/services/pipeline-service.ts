@@ -6,8 +6,6 @@ import {
   PipelineRunSummary,
   PipelineScheduleResponse,
   PipelineScheduleUpdateRequest,
-  RunPipelineRequest,
-  RunPipelineResponse,
   TemplatesResponse,
 } from '@/types/pipeline';
 
@@ -58,18 +56,6 @@ export const pipelineService = {
   async getRun(runId: string): Promise<PipelineRunDetail> {
     const r = await fetch(`${API_BASE_URL}/pipeline/runs/${runId}`);
     if (!r.ok) throw await _toError(r, 'getRun');
-    return r.json();
-  },
-
-  // -- triggering ------------------------------------------------------------
-
-  async triggerRun(body: RunPipelineRequest): Promise<RunPipelineResponse> {
-    const r = await fetch(`${API_BASE_URL}/pipeline/run`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) throw await _toError(r, 'triggerRun');
     return r.json();
   },
 

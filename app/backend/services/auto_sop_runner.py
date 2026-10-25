@@ -87,6 +87,20 @@ def run_auto_sop_for_scan(
         except Exception:
             logger.exception("auto_sop: failed to load keys for user %s", owner_user_id)
 
+    from src.storage.mongo import get_store
+    def source_ids(database):
+        run = database.scan_runs.find_one({'owner_id': str(owner_user_id),
+            'config_snapshot.sql_run_id': scan_run_id, 'status': {'$in': ['succeeded', 'partial']}})
+        if not run:
+            return {}
+        result = {}
+        for row in database.scan_results.find({'scan_run_id': run['_id'], 'owner_id': str(owner_user_id), 'selected': True}):
+            instrument = database.instruments.find_one({'_id': row['instrument_id']})
+            if instrument:
+                result[instrument['symbol']] = str(row['_id'])
+        return result
+    source_scan_ids = get_store().execute(source_ids) or {}
+
     # ---- Phase 1: analyze every ticker CONCURRENTLY (DB-free) ----
     # run_sop is thread-safe — FastAPI already calls it concurrently across
     # requests, and it threads api_keys via SectionContext (never globals). It
@@ -107,7 +121,8 @@ def run_auto_sop_for_scan(
         )
         t0 = time.monotonic()
         try:
-            report = run_sop(req, api_keys=api_keys)
+            report = run_sop(req, api_keys=api_keys, owner_id=owner_user_id,
+                             source_scan_result_id=source_scan_ids.get(ticker))
         except Exception as e:
             logger.exception("auto_sop: run_sop failed for %s: %s", ticker, e)
             return None

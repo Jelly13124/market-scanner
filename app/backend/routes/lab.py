@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
 from app.backend.database.models import User
+from app.backend.repositories.watchlist_repository import UserWatchlistRepository
 from app.backend.routes.research import _configured_provider_key_name
 from app.backend.services.api_key_service import ApiKeyError, ApiKeyService
 from app.backend.models.lab_schemas import (
@@ -82,6 +83,13 @@ def _scaffold_spec(strategy_name: str) -> dict:
     }
 
 
+def _validate_universe_owner(spec: dict, db: Session, user_id: int):
+    universe = spec.get("universe") or {}
+    if universe.get("kind") == "watchlist":
+        if UserWatchlistRepository(db).get(universe.get("watchlist_id"), user_id=user_id) is None:
+            raise HTTPException(404, "Watchlist not found")
+
+
 # ---- Strategy CRUD ----
 
 @router.get("/strategies", response_model=list[StrategyResponse])
@@ -104,6 +112,7 @@ def create_strategy(
         StrategySpec.model_validate(spec)
     except Exception as e:
         raise HTTPException(422, f"Invalid initial_spec_json: {e}")
+    _validate_universe_owner(spec, db, current_user.id)
     repo = StrategyRepository(db)
     if repo.get_by_name(req.name, user_id=current_user.id) is not None:
         raise HTTPException(409, f"Strategy named {req.name!r} already exists")
@@ -143,6 +152,7 @@ def update_strategy(
             StrategySpec.model_validate(req.spec_json)
         except Exception as e:
             raise HTTPException(422, f"Invalid spec_json: {e}")
+        _validate_universe_owner(req.spec_json, db, current_user.id)
         s = repo.update_spec(strategy_id, user_id=current_user.id, spec_json=req.spec_json,
                               description=req.description)
         # Also log a manual_edit chat message
@@ -208,7 +218,8 @@ def post_chat(
     svc = ApiKeyService(db, current_user.id)
     provider_key = _configured_provider_key_name()
     try:
-        svc.require_api_key(provider_key)
+        if provider_key is not None:
+            svc.require_api_key(provider_key)
     except ApiKeyError as e:
         raise HTTPException(status_code=400, detail=str(e))
     api_keys = svc.get_api_keys_dict()
@@ -303,6 +314,7 @@ def apply_chat_patch(
         raise HTTPException(404, f"Message {req.message_id} not found for this strategy")
     if msg.spec_patch_json is None:
         raise HTTPException(400, "Message has no spec patch to apply")
+    _validate_universe_owner(msg.spec_patch_json, db, current_user.id)
     # Update strategy spec, bump version, mark patch accepted
     s = strategy_repo.update_spec(strategy_id, user_id=current_user.id, spec_json=msg.spec_patch_json)
     chat_repo.mark_patch_accepted(req.message_id, accepted=True)
@@ -326,8 +338,9 @@ def trigger_backtest(
     except Exception as e:
         raise HTTPException(422, f"Stored spec is invalid: {e}")
 
+    _validate_universe_owner(strategy.spec_json, db, current_user.id)
     try:
-        result = run_backtest(spec, db)
+        result = run_backtest(spec, db, user_id=current_user.id)
     except Exception as e:
         logger.exception("backtest failed for strategy %s", strategy_id)
         raise HTTPException(500, f"Backtest failed: {type(e).__name__}: {e}")

@@ -35,14 +35,14 @@ class TestRoutePersonas:
     @patch("src.research.router.call_research_llm")
     def test_returns_assignments_dict(self, mock_llm):
         mock_llm.return_value = _RouterOutput(
-            fundamentals="munger",
+            fundamentals="buffett",
             valuation="wood",
             risk_position="druckenmiller",
             debate=["wood", "burry"],
             rationale="Tech growth name; valuation tension between innovation premium and FCF reality.",
         )
         assignments = route_personas(_req(), _shared())
-        assert assignments["fundamentals"] == "munger"
+        assert assignments["fundamentals"] == "buffett"
         assert assignments["valuation"] == "wood"
         assert assignments["risk_position"] == "druckenmiller"
         assert assignments["debate"] == ["wood", "burry"]

@@ -51,12 +51,14 @@ class TestAnalyzeFlowRoutes:
             "name": "balanced",
             "included_sections": ["data_health", "executive_summary"],
             "use_personas": True,
+            "debate_rounds": 4,
             "persona_overrides": {"valuation": "graham"},
         }, headers=_hdr(tok))
         assert resp.status_code == 201, resp.text
         body = resp.json()
         flow_id = body["id"]
         assert body["name"] == "balanced"
+        assert body["debate_rounds"] == 4
         assert body["persona_overrides"] == {"valuation": "graham"}
 
         # list shows it
@@ -69,6 +71,7 @@ class TestAnalyzeFlowRoutes:
         resp_get = client.get(f"/analyze-flows/{flow_id}", headers=_hdr(tok))
         assert resp_get.status_code == 200
         assert resp_get.json()["name"] == "balanced"
+        assert resp_get.json()["debate_rounds"] == 4
 
     def test_create_duplicate_name_409(self, client):
         tok = _token(client)
@@ -85,15 +88,20 @@ class TestAnalyzeFlowRoutes:
         c = client.post("/analyze-flows", json={
             "name": "tweak", "included_sections": ["data_health"],
         }, headers=_hdr(tok))
+        assert c.json()["debate_rounds"] == 1
         flow_id = c.json()["id"]
         resp = client.patch(f"/analyze-flows/{flow_id}", json={
             "included_sections": ["macro", "sector"],
             "use_personas": True,
+            "debate_rounds": 5,
         }, headers=_hdr(tok))
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["included_sections"] == ["macro", "sector"]
         assert body["use_personas"] is True
+        assert body["debate_rounds"] == 5
+        reread = client.get(f"/analyze-flows/{flow_id}", headers=_hdr(tok))
+        assert reread.json()["debate_rounds"] == 5
         # name not in PATCH body → unchanged
         assert body["name"] == "tweak"
 

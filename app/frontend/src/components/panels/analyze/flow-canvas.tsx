@@ -46,8 +46,8 @@ import { OutputNode, type OutputNodeData } from './output-node';
 import { SectionNode, type SectionNodeData } from './section-node';
 
 /** Effective config the orchestrator needs (mirror of AnalyzeFlowCreate
- * minus the cosmetic name/use_personas). */
-export interface CanvasConfig {
+ * minus the cosmetic name). */
+export interface CanvasConfig extends DebateSettings {
   included_sections: string[];
   persona_overrides: Record<string, string>;
 }
@@ -57,7 +57,7 @@ export interface CanvasConfig {
  * defaults when the Debate node is absent from the canvas. */
 export interface DebateSettings {
   use_personas: boolean;   // false when Debate node missing
-  debate_rounds: number;   // default 3 (clamped 1..5)
+  debate_rounds: number;   // default 1 (clamped 1..5)
 }
 
 export interface FlowCanvasHandle {
@@ -77,6 +77,21 @@ export interface FlowCanvasHandle {
 }
 
 const nodeTypes = { section: SectionNode, input: InputNode, output: OutputNode };
+
+function _debateSettings(nodes: Node[]): DebateSettings {
+  const debateNode = nodes.find(
+    (n) => n.type === 'section'
+      && (n.data as unknown as SectionNodeData).name === 'debate',
+  );
+  if (!debateNode) return { use_personas: false, debate_rounds: 1 };
+  const d = debateNode.data as unknown as SectionNodeData;
+  let rounds = d.debateRounds ?? 1;
+  if (!Number.isFinite(rounds)) rounds = 1;
+  return {
+    use_personas: !!(d.usePersonas ?? true) && d.enabled !== false,
+    debate_rounds: Math.max(1, Math.min(5, Math.trunc(rounds))),
+  };
+}
 
 function _sectionNodeId(sectionName: string): string {
   return `section:${sectionName}`;
@@ -205,7 +220,12 @@ const InnerCanvas = forwardRef<FlowCanvasHandle, InnerCanvasProps>(
             );
             const data = node.data as unknown as SectionNodeData;
             data.enabled = included.has(name);
-            data.persona = overrides[name] ?? null;
+            const persona = overrides[name];
+            data.persona = persona && data.supportsPersonas.includes(persona) ? persona : null;
+            if (name === 'debate') {
+              data.usePersonas = flow.use_personas;
+              data.debateRounds = flow.debate_rounds ?? 1;
+            }
             return { ...node, data: data as unknown as Record<string, unknown> };
           });
           newNodes.unshift(_buildInputNode(40, 200));
@@ -247,12 +267,14 @@ const InnerCanvas = forwardRef<FlowCanvasHandle, InnerCanvasProps>(
             // visual-only nodes are silently skipped.
             if (!SECTION_ORDER.includes(d.name)) continue;
             included.add(d.name);
-            if (d.persona) overrides[d.name] = d.persona;
+            if (d.persona && (SECTION_PERSONAS[d.name] ?? []).includes(d.persona)) {
+              overrides[d.name] = d.persona;
+            }
           }
           const sortedIncluded = Array.from(included).sort(
             (a, b) => SECTION_ORDER.indexOf(a) - SECTION_ORDER.indexOf(b),
           );
-          return { included_sections: sortedIncluded, persona_overrides: overrides };
+          return { included_sections: sortedIncluded, persona_overrides: overrides, ..._debateSettings(nodes) };
         },
         getInputData: () => {
           const input = nodes.find((n) => n.id === INPUT_NODE_ID_CONST);
@@ -269,29 +291,7 @@ const InnerCanvas = forwardRef<FlowCanvasHandle, InnerCanvasProps>(
           );
           onChange?.();
         },
-        getDebateSettings: () => {
-          // Source of truth for use_personas + debate_rounds is the Debate
-          // SectionNode. If absent (user deleted it), default to no-personas
-          // and rounds=3 — the backend will still default debate_rounds
-          // independently, but we want a defined value here.
-          const debateNode = nodes.find(
-            (n) => n.type === 'section'
-              && (n.data as unknown as SectionNodeData).name === 'debate',
-          );
-          if (!debateNode) {
-            return { use_personas: false, debate_rounds: 3 };
-          }
-          const d = debateNode.data as unknown as SectionNodeData;
-          // Defaults match section-node.tsx UI defaults.
-          const usePersonas = d.usePersonas ?? true;
-          let rounds = d.debateRounds ?? 3;
-          if (!Number.isFinite(rounds)) rounds = 3;
-          rounds = Math.max(1, Math.min(5, Math.trunc(rounds)));
-          return {
-            use_personas: !!usePersonas && d.enabled !== false,
-            debate_rounds: rounds,
-          };
-        },
+        getDebateSettings: () => _debateSettings(nodes),
         getPresentSections: () => {
           const present = new Set<string>();
           for (const n of nodes) {

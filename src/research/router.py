@@ -47,7 +47,7 @@ class _RouterOutput(BaseModel):
         default_factory=list,
         description=(
             "Either an empty list (no debate) or EXACTLY two persona names "
-            "for a two-round debate panel. Three or more is invalid."
+            "for a debate panel with user-selected rounds. Three or more is invalid."
         ),
     )
     rationale: str = Field(

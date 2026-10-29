@@ -65,7 +65,9 @@
     "scanner": "扫描器",
     "lab": "策略实验室",
     "settings": "设置",
-    "flow": "机构"
+    "flow": "机构",
+    "backtest": "历史回测",
+    "paper": "模拟交易"
   },
   "sidebar": {
     "home": "主页",
@@ -93,7 +95,9 @@
     "apiKeysHint": "密钥保存到后端 .env。点 + 去注册。",
     "apiKeysGetKey": "注册 / 获取密钥",
     "apiKeysShow": "显示密钥",
-    "apiKeysHide": "隐藏密钥"
+    "apiKeysHide": "隐藏密钥",
+    "backtest": "历史回测",
+    "backtestTooltip": "配置策略并运行历史回测"
   },
   "topBar": {
     "toggleLeft": "切换左侧栏",
@@ -183,7 +187,7 @@
       "persona": "人格",
       "objective_persona": "客观",
       "rounds": "辩论轮数",
-      "roundsHint": "(最多 5, 推荐 3)",
+      "roundsHint": "（1–5 轮，默认 1；轮数越多，调用越多）",
       "usePersonas": "使用投资者人格",
       "deleteNode": "删除节点"
     },
@@ -292,6 +296,10 @@
         "lab": {
           "title": "策略实验室",
           "desc": "搭建 + 回测策略"
+        },
+        "backtest": {
+          "title": "历史回测",
+          "desc": "使用历史价格检验策略规则"
         }
       }
     },
@@ -676,26 +684,41 @@
     }
   },
   "paper": {
+    "title": "我的模拟账户",
+    "openTooltip": "打开个人模拟交易账户",
+    "subtitle": "独立的虚拟美元资金、持仓和成交记录。",
+    "manualNote": "仅模拟使用。成交价和估值价格由你手动输入，不是实时报价或券商成交。仅支持美元股票做多，无杠杆和手续费；持仓按最近一次手动价格估值。",
+    "initialCash": "初始虚拟资金（USD）",
+    "createAccount": "创建我的模拟账户",
+    "cash": "可用虚拟资金",
+    "equity": "估值总资产",
+    "total_pnl": "总盈亏",
+    "realized_pnl": "已实现盈亏",
+    "unrealized_pnl": "未实现盈亏",
+    "action": "操作",
+    "buy": "模拟买入",
+    "sell": "模拟卖出",
+    "mark": "更新估值",
+    "ticker": "股票代码",
+    "quantity": "股数",
+    "price": "手动价格（USD）",
+    "lastPrice": "最近手动价格",
+    "averageCost": "平均成本",
+    "marketValue": "持仓市值",
+    "submitOrder": "记录模拟成交",
+    "updateMark": "更新手动估值",
+    "positions": "我的持仓",
+    "trades": "近期成交（最多 200 条）",
+    "noPositions": "暂无持仓，可先记录一笔模拟买入。",
+    "noTrades": "暂无模拟成交。",
+    "time": "时间",
+    "cashAfter": "成交后现金",
     "tab": {
-      "title": "纸面交易"
+      "title": "模拟交易"
     },
-    "title": "纸面交易",
-    "openTooltip": "打开纸面交易面板",
-    "empty": "暂无纸面交易数据。",
-    "baseline": "基准",
-    "graduation": "毕业评定",
-    "pass": "通过",
-    "fail": "未通过",
-    "noClauses": "未评估任何条件。",
-    "equityCurve": "净值曲线",
-    "equityCurveAlt": "各 sleeve 净值曲线",
-    "colSleeve": "组合",
-    "colFinalEquity": "最终净值",
-    "colTotalReturn": "总收益",
-    "colSharpe": "夏普",
-    "colMaxDrawdown": "最大回撤",
-    "colNTrades": "交易数",
-    "colNMarks": "标记数"
+    "status": "开发中",
+    "limitations": "暂不支持自动报价、挂单撮合、资金曲线或策略自动执行。",
+    "unavailable": "模拟交易暂未开放。当前原型仅支持手动输入价格，尚未接入市场行情自动估值。"
   },
   "flow": {
     "title": "机构持仓",
@@ -728,5 +751,34 @@
       "trend": "趋势",
       "none": "无做空量数据。"
     }
+  },
+  "backtest": {
+    "title": "历史回测",
+    "subtitle": "使用历史价格验证规则策略，无需配置 AI 模型 key。",
+    "empty": "先在左侧创建策略，再配置股票池、日期和交易规则。",
+    "advanced": "高级策略配置 / JSON",
+    "universe": "股票池",
+    "rule": "入场规则",
+    "maRule": "均线金叉",
+    "rsiRule": "RSI 超卖",
+    "keepAdvanced": "保留高级入场规则",
+    "fast": "快均线周期",
+    "slow": "慢均线周期",
+    "rsiLevel": "RSI 阈值",
+    "start": "开始日期",
+    "end": "结束日期",
+    "cash": "初始资金（USD）",
+    "commission": "手续费（基点）",
+    "slippage": "滑点（基点）",
+    "stop": "止损（%）",
+    "save": "保存参数",
+    "saveHint": "修改参数后先保存，再运行回测。高级编辑器可配置更多规则。",
+    "dataHint": "全指数历史数据加载可能较慢，首次建议使用少量股票的自选列表。结果包含样本内 / 样本外分段。",
+    "dateError": "开始日期必须早于结束日期。",
+    "maError": "快均线周期必须小于慢均线周期。",
+    "chartError": "无法加载回测图表，请检查登录状态或重新运行。",
+    "newStrategy": "新建策略",
+    "status": "基础版",
+    "limitations": "尚未接入 Analyze 策略；暂不支持运行进度、取消任务和参数对比。"
   }
 }

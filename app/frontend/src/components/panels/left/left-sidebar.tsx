@@ -2,14 +2,12 @@ import { useResizable } from '@/hooks/use-resizable';
 import { cn } from '@/lib/utils';
 import { ReactNode, useEffect } from 'react';
 import { AnalyzeAction } from './analyze-action';
-import { FlowAction } from './flow-action';
 import { HomeAction } from './home-action';
-import { LabAction } from './lab-action';
+import { BacktestAction } from './backtest-action';
 import { PaperAction } from './paper-action';
 import { ReportsAction } from './reports-action';
 import { ScannerAction } from './scanner-action';
 import { ScreenerAction } from './screener-action';
-import { SectorsAction } from './sectors-action';
 import { WatchlistAction } from './watchlist-action';
 
 interface LeftSidebarProps {
@@ -54,19 +52,15 @@ export function LeftSidebar({
 
       <ScreenerAction />
 
-      <SectorsAction />
-
       <ScannerAction />
 
       <AnalyzeAction />
-
-      <FlowAction />
 
       <ReportsAction />
 
       <PaperAction />
 
-      <LabAction />
+      <BacktestAction />
 
       {/* Resize handle - on the right side for left sidebar */}
       {!isDragging && (

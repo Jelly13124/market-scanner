@@ -114,7 +114,7 @@ class TestRunResearchPersonaPath:
         mock_fetch.return_value = _shared()
         mock_router.return_value = {
             "fundamentals": "buffett",
-            "valuation": "graham",
+            "valuation": "burry",
             "risk_position": None,
             "debate": ["wood", "burry"],
             "_rationale": "tech growth tension",

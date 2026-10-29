@@ -64,7 +64,7 @@ def _fair_value_range(
 
 class ValuationModule(AnalysisModule):
     name = "valuation"
-    supports_personas: list[str] = ["buffett", "graham", "munger", "fisher"]
+    supports_personas: list[str] = ["buffett", "burry"]
 
     def run(self, request, persona, shared_data: SharedData) -> ModuleResult:
         persona = self._coerce_persona(persona)

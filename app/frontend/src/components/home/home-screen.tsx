@@ -16,7 +16,7 @@ export function HomeScreen() {
     { id: 'analyze' as const, make: () => TabService.createAnalyzeTab() },
     { id: 'scanner' as const, make: () => TabService.createScannerTab() },
     { id: 'screener' as const, make: () => TabService.createScreenerTab() },
-    { id: 'lab' as const, make: () => TabService.createLabTab() },
+    { id: 'backtest' as const, make: () => TabService.createBacktestTab() },
   ];
 
   return (

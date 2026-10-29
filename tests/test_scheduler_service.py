@@ -79,29 +79,29 @@ class TestLifecycle:
             ScannerConfigRepository(session).create(name="b", universe_kind="sp500", is_enabled=False, user_id=1)
             ScannerConfigRepository(session).create(name="c", universe_kind="sp500", is_enabled=True, user_id=1)
         svc.start()
-        # 2 enabled scanner configs + 1 daily research + 1 screener
-        # snapshot + 2 paper-trading (weekly rebalance + daily marks). Screener presets
+        # 2 enabled scanner configs + the screener snapshot. Host paper jobs
+        # are disabled by default. Screener presets
         # now register PER-PRESET crons on demand; none are enabled here, so the old
         # single global preset job is gone.
-        assert svc._scheduler.add_job.call_count == 5
-        job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
-        assert "daily-pipeline" not in job_ids
-        assert "research_daily" not in job_ids
-        assert "paper_weekly" in job_ids
-        assert "paper_daily_marks" in job_ids
-
-    def test_start_excludes_retired_pipeline_with_no_scanner_configs(self, svc):
-        """Active scheduled jobs register; retired pipeline does not."""
-        svc.start()
-        # No configs, but daily research + screener snapshot + 2
-        # paper-trading jobs still register. (Screener presets register per-preset;
-        # none enabled here.)
         assert svc._scheduler.add_job.call_count == 3
         job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
         assert "daily-pipeline" not in job_ids
         assert "research_daily" not in job_ids
-        assert "paper_weekly" in job_ids
-        assert "paper_daily_marks" in job_ids
+        assert "paper_weekly" not in job_ids
+        assert "paper_daily_marks" not in job_ids
+
+    def test_start_excludes_retired_pipeline_with_no_scanner_configs(self, svc):
+        """Active scheduled jobs register; retired pipeline does not."""
+        svc.start()
+        # Only the screener snapshot registers by default.
+        # (Screener presets register per-preset;
+        # none enabled here.)
+        assert svc._scheduler.add_job.call_count == 1
+        job_ids = {call.kwargs.get("id") for call in svc._scheduler.add_job.call_args_list}
+        assert "daily-pipeline" not in job_ids
+        assert "research_daily" not in job_ids
+        assert "paper_weekly" not in job_ids
+        assert "paper_daily_marks" not in job_ids
 
 
 # ---------------------------------------------------------------------------

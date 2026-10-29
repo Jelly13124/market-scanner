@@ -1,17 +1,15 @@
 import { AnalyzePanel } from '@/components/panels/analyze/analyze-panel';
-import { LabPanel } from '@/components/panels/lab/lab-panel';
+import { BacktestPanel } from '@/components/panels/backtest/backtest-panel';
 import { ReportsPanel } from '@/components/panels/reports/reports-panel';
 import { PaperPanel } from '@/components/panels/paper/paper-panel';
 import { ScannerPanel } from '@/components/panels/scanner/scanner-panel';
-import { InstitutionalFlowPanel } from '@/components/panels/flow/institutional-flow-panel';
 import { ScreenerTab } from '@/components/panels/screener/screener-tab';
-import { SectorsTab } from '@/components/panels/sectors/sectors-tab';
 import { WatchlistTab } from '@/components/panels/watchlist/watchlist-tab';
 import { Settings } from '@/components/settings/settings';
 import { ReactNode, createElement } from 'react';
 
 export interface TabData {
-  type: 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist' | 'sectors' | 'flow' | 'paper';
+  type: 'settings' | 'scanner' | 'analyze' | 'backtest' | 'screener' | 'reports' | 'watchlist' | 'paper';
   title: string;
   metadata?: Record<string, any>;
 }
@@ -30,8 +28,8 @@ export class TabService {
       case 'analyze':
         return createElement(AnalyzePanel, {});
 
-      case 'lab':
-        return createElement(LabPanel, {});
+      case 'backtest':
+        return createElement(BacktestPanel, {});
 
       case 'screener':
         return createElement(ScreenerTab, {});
@@ -41,12 +39,6 @@ export class TabService {
 
       case 'watchlist':
         return createElement(WatchlistTab, {});
-
-      case 'sectors':
-        return createElement(SectorsTab, {});
-
-      case 'flow':
-        return createElement(InstitutionalFlowPanel, {});
 
       case 'paper':
         return createElement(PaperPanel, {});
@@ -61,15 +53,6 @@ export class TabService {
       type: 'settings',
       title: 'Settings',
       content: TabService.createTabContent({ type: 'settings', title: 'Settings' }),
-    };
-  }
-
-  /** Open / focus the single Institutional Positioning tab. */
-  static createInstitutionalFlowTab(): TabData & { content: ReactNode } {
-    return {
-      type: 'flow',
-      title: 'Institutional',
-      content: TabService.createTabContent({ type: 'flow', title: 'Institutional' }),
     };
   }
 
@@ -95,14 +78,14 @@ export class TabService {
     };
   }
 
-  /** Open / focus the single Lab tab. */
-  static createLabTab(): TabData & { content: ReactNode } {
+  /** Open / focus the single Backtest tab. */
+  static createBacktestTab(): TabData & { content: ReactNode } {
     const metadata = {};
     return {
-      type: 'lab',
-      title: 'Lab',
+      type: 'backtest',
+      title: 'Backtest',
       metadata,
-      content: TabService.createTabContent({ type: 'lab', title: 'Lab', metadata }),
+      content: TabService.createTabContent({ type: 'backtest', title: 'Backtest', metadata }),
     };
   }
 
@@ -124,7 +107,7 @@ export class TabService {
     };
   }
 
-  /** Open / focus the single Paper (forward-test) tab. */
+  /** Open / focus the single personal Paper tab. */
   static createPaperTab(): TabData & { content: ReactNode } {
     return {
       type: 'paper',
@@ -139,15 +122,6 @@ export class TabService {
       type: 'watchlist',
       title: 'Watchlist',
       content: TabService.createTabContent({ type: 'watchlist', title: 'Watchlist' }),
-    };
-  }
-
-  /** Open / focus the single Sectors board tab. */
-  static createSectorsTab(): TabData & { content: ReactNode } {
-    return {
-      type: 'sectors',
-      title: 'Sectors',
-      content: TabService.createTabContent({ type: 'sectors', title: 'Sectors' }),
     };
   }
 
@@ -168,8 +142,8 @@ export class TabService {
       case 'analyze':
         return TabService.createAnalyzeTab();
 
-      case 'lab':
-        return TabService.createLabTab();
+      case 'backtest':
+        return TabService.createBacktestTab();
 
       case 'screener':
         return TabService.createScreenerTab();
@@ -179,12 +153,6 @@ export class TabService {
 
       case 'watchlist':
         return TabService.createWatchlistTab();
-
-      case 'sectors':
-        return TabService.createSectorsTab();
-
-      case 'flow':
-        return TabService.createInstitutionalFlowTab();
 
       case 'paper':
         return TabService.createPaperTab();

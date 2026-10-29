@@ -84,6 +84,8 @@ export function AnalyzePanel() {
       canvasRef.current?.getConfig() ?? {
         included_sections: [],
         persona_overrides: {},
+        use_personas: false,
+        debate_rounds: 1,
       },
     [],
   );
@@ -107,9 +109,9 @@ export function AnalyzePanel() {
     }
     // Debate settings now live on the Debate node, not the Input node.
     // If the Debate node is on canvas, its values win; otherwise we send
-    // safe defaults (no personas, rounds=3).
+    // safe defaults (no personas, rounds=1).
     const debate = canvasRef.current?.getDebateSettings()
-      ?? { use_personas: false, debate_rounds: 3 };
+      ?? { use_personas: false, debate_rounds: 1 };
     const req: AnalyzeRunRequest = {
       ticker,
       objective: input.objective,

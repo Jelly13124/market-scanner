@@ -49,7 +49,7 @@ def _metrics_block(ctx: SectionContext) -> str:
 
 class CompanyFundamentalsSection(Section):
     name = "company_fundamentals"
-    supports_personas = ["buffett", "munger", "fisher"]
+    supports_personas = ["buffett", "lynch"]
 
     def run(self, ctx: SectionContext) -> SectionPayload:
         user_prompt = (

@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { useTabsContext } from '@/contexts/tabs-context';
 import { cn } from '@/lib/utils';
-import { Activity, Layout, Settings, X } from 'lucide-react';
+import { Layout, Settings, X } from 'lucide-react';
 import { ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -14,8 +14,6 @@ const getTabIcon = (type: string): ReactNode => {
   switch (type) {
     case 'settings':
       return <Settings size={13} />;
-    case 'flow':
-      return <Activity size={13} />;
     default:
       return <Layout size={13} />;
   }

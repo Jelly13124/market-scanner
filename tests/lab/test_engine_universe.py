@@ -27,23 +27,29 @@ def test_watchlist_resolves_from_db():
     spec = UniverseSpec(kind="watchlist", watchlist_id=42)
     fake_row = type("W", (), {"tickers": ["NVDA", "AVGO", "AMD"]})()
     with patch("src.lab.engine.universe.UserWatchlistRepository") as mock_repo_cls:
-        mock_repo_cls.return_value.get_by_id_unscoped.return_value = fake_row
-        tickers = load_universe_tickers(spec, db=object())
+        mock_repo_cls.return_value.get.return_value = fake_row
+        tickers = load_universe_tickers(spec, db=object(), user_id=7)
+        mock_repo_cls.return_value.get.assert_called_once_with(42, user_id=7)
     assert tickers == ["NVDA", "AVGO", "AMD"]
 
 
 def test_watchlist_missing_raises():
     spec = UniverseSpec(kind="watchlist", watchlist_id=999)
     with patch("src.lab.engine.universe.UserWatchlistRepository") as mock_repo_cls:
-        mock_repo_cls.return_value.get_by_id_unscoped.return_value = None
+        mock_repo_cls.return_value.get.return_value = None
         with pytest.raises(UniverseError):
-            load_universe_tickers(spec, db=object())
+            load_universe_tickers(spec, db=object(), user_id=7)
 
 
 def test_watchlist_empty_raises():
     spec = UniverseSpec(kind="watchlist", watchlist_id=42)
     fake_row = type("W", (), {"tickers": []})()
     with patch("src.lab.engine.universe.UserWatchlistRepository") as mock_repo_cls:
-        mock_repo_cls.return_value.get_by_id_unscoped.return_value = fake_row
+        mock_repo_cls.return_value.get.return_value = fake_row
         with pytest.raises(UniverseError):
-            load_universe_tickers(spec, db=object())
+            load_universe_tickers(spec, db=object(), user_id=7)
+
+
+def test_private_watchlist_requires_owner():
+    with pytest.raises(UniverseError, match="user is required"):
+        load_universe_tickers(UniverseSpec(kind="watchlist", watchlist_id=42), db=object())

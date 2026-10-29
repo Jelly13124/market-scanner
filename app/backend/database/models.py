@@ -425,6 +425,7 @@ class AnalyzeFlow(Base):
     included_sections = Column(JSON, nullable=False, default=list)  # list[str]
     persona_overrides = Column(JSON, nullable=True)  # dict[section_name, persona_name]
     use_personas = Column(Boolean, nullable=False, default=False)
+    debate_rounds = Column(Integer, nullable=False, default=1, server_default=text("1"))
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
 
@@ -666,7 +667,7 @@ class ScreenerPreset(Base):
     filters_json = Column(JSON, nullable=False, default=dict)
     sort_by = Column(String(32), nullable=False, default="market_cap")
     sort_dir = Column(String(4), nullable=False, default="desc")
-    schedule_enabled = Column(Boolean, nullable=False, default=False, server_default=text("0"))
+    schedule_enabled = Column(Boolean, nullable=False, default=False, server_default=sa.false())
     # Per-preset cron cadence, evaluated in the owner's timezone. server_default
     # = 22:05 daily so rows predating this column keep the old global preset-cron
     # time; users can now set a per-preset frequency/time.
@@ -704,6 +705,42 @@ class OAuthAccount(Base):
     email = Column(String(255))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     __table_args__ = (UniqueConstraint("provider", "provider_account_id", name="uq_oauth_provider_account"),)
+
+
+class UserPaperAccount(Base):
+    __tablename__ = "user_paper_accounts"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, unique=True)
+    initial_cash = Column(Numeric(24, 6), nullable=False)
+    cash = Column(Numeric(24, 6), nullable=False)
+    realized_pnl = Column(Numeric(24, 6), nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class UserPaperPosition(Base):
+    __tablename__ = "user_paper_positions"
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("user_paper_accounts.id"), nullable=False, index=True)
+    ticker = Column(String(20), nullable=False)
+    quantity = Column(Numeric(24, 6), nullable=False)
+    cost_basis = Column(Numeric(24, 6), nullable=False)
+    last_price = Column(Numeric(24, 6), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("account_id", "ticker", name="uq_user_paper_position"),)
+
+
+class UserPaperTrade(Base):
+    __tablename__ = "user_paper_trades"
+    id = Column(Integer, primary_key=True)
+    account_id = Column(Integer, ForeignKey("user_paper_accounts.id"), nullable=False, index=True)
+    ticker = Column(String(20), nullable=False)
+    side = Column(String(4), nullable=False)
+    quantity = Column(Numeric(24, 6), nullable=False)
+    price = Column(Numeric(24, 6), nullable=False)
+    notional = Column(Numeric(24, 6), nullable=False)
+    realized_pnl = Column(Numeric(24, 6), nullable=False)
+    cash_after = Column(Numeric(24, 6), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class PaperSleeve(Base):

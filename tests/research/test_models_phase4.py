@@ -19,7 +19,21 @@ def test_analyze_request_has_required_fields():
         included_sections=set(SECTION_ORDER),
     )
     assert req.ticker == "NVDA"
+    assert req.debate_rounds == 1
     assert "executive_summary" in req.included_sections
+
+
+def test_api_debate_rounds_default_and_custom_range():
+    import pytest
+    from pydantic import ValidationError
+    from app.backend.models.research_schemas import AnalyzeRunRequest
+
+    assert AnalyzeRunRequest(ticker="NVDA").debate_rounds == 1
+    for rounds in range(1, 6):
+        assert AnalyzeRunRequest(ticker="NVDA", debate_rounds=rounds).debate_rounds == rounds
+    for rounds in (0, 6):
+        with pytest.raises(ValidationError):
+            AnalyzeRunRequest(ticker="NVDA", debate_rounds=rounds)
 
 
 def test_section_order_has_20_canonical_sections():

@@ -57,6 +57,7 @@ def create_flow(
         name=req.name,
         included_sections=req.included_sections,
         use_personas=req.use_personas,
+        debate_rounds=req.debate_rounds,
         persona_overrides=req.persona_overrides,
         user_id=current_user.id,
     )
@@ -97,6 +98,7 @@ def update_flow(
         name=req.name,
         included_sections=req.included_sections,
         use_personas=req.use_personas,
+        debate_rounds=req.debate_rounds,
         persona_overrides=req.persona_overrides,
     )
     return AnalyzeFlowResponse.model_validate(row)

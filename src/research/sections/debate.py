@@ -57,7 +57,7 @@ class DebateSection(Section):
         # Phase 5E: pass the user-chosen number of debate rounds through.
         # AnalyzeRequest clamps to 1..5 in __post_init__, but be defensive
         # since this section may be called from tests with bare dataclasses.
-        rounds = getattr(ctx.request, "debate_rounds", 3) or 3
+        rounds = getattr(ctx.request, "debate_rounds", 1) or 1
         try:
             module_result = run_debate(
                 adapter, ctx.shared, debate_personas,

@@ -85,3 +85,22 @@ def test_e2e_handles_empty_universe(mock_universe, mock_loader_cls):
     result = run_backtest(spec, db=MagicMock())
     assert result.error_message is not None
     assert "empty" in result.error_message.lower() or "universe" in result.error_message.lower()
+
+
+@patch("src.lab.backtest_runner.run_simulation")
+@patch("src.lab.backtest_runner.DataLoader")
+@patch("src.lab.backtest_runner.load_universe_tickers")
+def test_oos_simulation_and_metrics_use_same_starting_equity(universe, loader, simulation):
+    from types import SimpleNamespace
+    from src.lab.engine.data import DataLoadResult
+    universe.return_value = ["AAPL"]
+    loader.return_value.load.return_value = DataLoadResult(bars={"AAPL": _df_uptrend()}, failed={})
+    simulation.side_effect = [
+        SimpleNamespace(equity_curve=[100000, 120000], trades=[]),
+        SimpleNamespace(equity_curve=[120000, 126000], trades=[]),
+    ]
+    spec = _minimal_spec()
+    result = run_backtest(spec, db=MagicMock())
+    assert simulation.call_args_list[1].args[0].backtest_config.starting_capital_usd == 120000
+    assert abs(result.oos_metrics.total_return - 0.05) < 1e-9
+    assert spec.backtest_config.starting_capital_usd == 100000

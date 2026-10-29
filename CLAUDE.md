@@ -11,6 +11,7 @@
 
 ## 必须保留
 
+- Web 应用的 SQL 存储默认使用 PostgreSQL（课程要求），保存用户、配置、流程和 SQL 报告；不可隐式回退本机 SQLite。SQLite 仅用于显式隔离测试和旧库备份。
 - z-score 使用有意义的 std floor；signal/detector 缺数据按契约降级；None 与未触发事件不同。
 - HTTP client/session 每个 worker 独立。保留旧保存配置 alias/retired 名，除非实施并验证数据迁移。
 - 用户模型 key 显式注入，禁止隐式消耗主机付费 key；不打印/提交真实环境配置或把 key 存入报告/checkpoint。

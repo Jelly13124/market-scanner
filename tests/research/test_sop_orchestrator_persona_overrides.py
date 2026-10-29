@@ -83,7 +83,7 @@ def test_override_takes_precedence_over_router(
     # direct dict lookup resolves them.
     mock_router.return_value = {
         "company_fundamentals": "buffett",
-        "valuation": "graham",
+        "valuation": "burry",
         "risk_position": None,
         "debate": [],
         "_rationale": "x",
@@ -92,9 +92,9 @@ def test_override_takes_precedence_over_router(
     for n, s in stubs.items():
         mock_registry[n] = s
 
-    # User pins valuation to munger — that should override router's graham
-    run_sop(_req(use_personas=True, persona_overrides={"valuation": "munger"}))
-    assert stubs["valuation"].received_persona == "munger"
+    # User pins valuation to buffett — that should override router's burry
+    run_sop(_req(use_personas=True, persona_overrides={"valuation": "buffett"}))
+    assert stubs["valuation"].received_persona == "buffett"
     # company_fundamentals NOT in override → router's buffett still wins
     assert stubs["company_fundamentals"].received_persona == "buffett"
 
@@ -110,8 +110,8 @@ def test_partial_override_only_affects_listed_sections(
     mock_fetch.return_value = _stub_shared()
     mock_bt.return_value = _stub_backtest()
     mock_router.return_value = {
-        "company_fundamentals": "fisher",
-        "valuation": "graham",
+        "company_fundamentals": "lynch",
+        "valuation": "burry",
         "risk_position": "burry",
         "debate": [],
         "_rationale": "x",
@@ -127,8 +127,8 @@ def test_partial_override_only_affects_listed_sections(
     ))
     assert stubs["risk_position"].received_persona == "druckenmiller"
     # Other persona-aware sections defer to router
-    assert stubs["company_fundamentals"].received_persona == "fisher"
-    assert stubs["valuation"].received_persona == "graham"
+    assert stubs["company_fundamentals"].received_persona == "lynch"
+    assert stubs["valuation"].received_persona == "burry"
 
 
 @patch("src.research.sop_orchestrator.fetch_shared_data")

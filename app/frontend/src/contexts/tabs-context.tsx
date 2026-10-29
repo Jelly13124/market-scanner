@@ -1,7 +1,7 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from 'react';
 
 // Define tab types
-export type TabType = 'settings' | 'scanner' | 'analyze' | 'lab' | 'screener' | 'reports' | 'watchlist' | 'sectors' | 'flow' | 'paper';
+export type TabType = 'settings' | 'scanner' | 'analyze' | 'backtest' | 'screener' | 'reports' | 'watchlist' | 'paper';
 
 export interface Tab {
   id: string;
@@ -57,41 +57,7 @@ export function TabsProvider({ children }: TabsProviderProps) {
   const [isInitialized, setIsInitialized] = useState(false);
 
   // Generate unique tab ID
-  const generateTabId = useCallback((type: TabType, _identifier?: string): string => {
-    if (type === 'settings') {
-      return 'settings';
-    }
-    if (type === 'scanner') {
-      // Single scanner tab — configId is selected within the panel itself, so
-      // we don't key the tab by config id.
-      return 'scanner';
-    }
-    if (type === 'analyze') {
-      // Single analyze tab.
-      return 'analyze';
-    }
-    if (type === 'lab') {
-      // Single lab tab — selected strategy is tracked inside the panel.
-      return 'lab';
-    }
-    if (type === 'screener') {
-      // Single screener tab.
-      return 'screener';
-    }
-    if (type === 'reports') {
-      // Single reports tab.
-      return 'reports';
-    }
-    if (type === 'watchlist') {
-      // Single watchlist tab — selected list is tracked inside the panel.
-      return 'watchlist';
-    }
-    if (type === 'sectors') {
-      // Single sectors board tab.
-      return 'sectors';
-    }
-    return `${type}-${Date.now()}`;
-  }, []);
+  const generateTabId = useCallback((type: TabType, _identifier?: string): string => type, []);
 
   // Save tabs to localStorage
   const saveTabsToStorage = useCallback((tabsToSave: Tab[], activeId: string | null) => {
@@ -139,13 +105,16 @@ export function TabsProvider({ children }: TabsProviderProps) {
       if (savedTabs.length > 0) {
         // We'll restore the content later when the tab service is available
         // For now, just set up the tab structure
-        const restoredTabs: Tab[] = savedTabs.map(savedTab => ({
-          ...savedTab,
-          content: null, // Will be filled in by TabService when tabs are accessed
-        }));
-        
-        setTabs(restoredTabs);
-        setActiveTabId(savedActiveTabId);
+        const allowed = new Set(['settings', 'scanner', 'analyze', 'backtest', 'screener', 'reports', 'watchlist']);
+        const restoredTabs: Tab[] = savedTabs
+          .filter((saved) => allowed.has(saved.type as string) || (saved.type as string) === 'lab')
+          .map((saved) => (saved.type as string) === 'lab'
+            ? { ...saved, type: 'backtest' as TabType, id: 'backtest', title: 'Backtest', content: null }
+            : { ...saved, content: null });
+        const unique = restoredTabs.filter((tab, index, all) => all.findIndex((t) => t.id === tab.id) === index);
+        const active = savedActiveTabId === 'lab' ? 'backtest' : savedActiveTabId;
+        setTabs(unique);
+        setActiveTabId(unique.some((tab) => tab.id === active) ? active : unique[0]?.id ?? null);
       }
       
       setIsInitialized(true);

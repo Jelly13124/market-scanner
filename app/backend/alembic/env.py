@@ -10,8 +10,12 @@ from alembic import context
 config = context.config
 
 # Honor DATABASE_URL (same env var the app uses) so migrations target the same
-# database — falls back to the alembic.ini sqlite url when unset.
+# database — falls back to the alembic.ini local PostgreSQL URL when unset.
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parents[3] / ".env")
 
 _env_db_url = os.getenv("DATABASE_URL")
 if _env_db_url:

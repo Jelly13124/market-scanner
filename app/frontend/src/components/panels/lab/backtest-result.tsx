@@ -1,3 +1,4 @@
+import { useAuthenticatedImage } from '@/hooks/use-authenticated-image';
 // Phase 6G: verdict badge + IS/OOS metrics + 3 chart imgs + collapsible trade log.
 
 import { backtestService } from '@/services/backtest-service';
@@ -48,7 +49,7 @@ export function BacktestResult({ backtestId }: Props) {
 
       <div className="grid grid-cols-2 gap-4">
         <div className="border rounded overflow-hidden">
-          <img
+          <AuthenticatedImage
             src={backtestService.chartUrl(bt.id, 'equity_curve')}
             alt="Equity curve"
             className="w-full"
@@ -104,14 +105,14 @@ export function BacktestResult({ backtestId }: Props) {
 
       <div className="grid grid-cols-2 gap-4">
         <div className="border rounded overflow-hidden">
-          <img
+          <AuthenticatedImage
             src={backtestService.chartUrl(bt.id, 'drawdown')}
             alt="Drawdown"
             className="w-full"
           />
         </div>
         <div className="border rounded overflow-hidden">
-          <img
+          <AuthenticatedImage
             src={backtestService.chartUrl(bt.id, 'monthly_heatmap')}
             alt="Monthly heatmap"
             className="w-full"
@@ -145,4 +146,11 @@ function MetricRow({ label, is, oos, bench, pct }: MetricRowProps) {
       {bench !== undefined && <td className="text-right font-mono">{fmt(bench)}</td>}
     </tr>
   );
+}
+
+function AuthenticatedImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
+  const { url, error } = useAuthenticatedImage(src);
+  const { t } = useTranslation();
+  return error ? <p role="alert" className="p-3 text-sm text-red-600">{t('backtest.chartError')}</p>
+    : url ? <img src={url} alt={alt} className={className} /> : <p className="p-3 text-xs">{t('common.loading')}</p>;
 }

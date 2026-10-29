@@ -31,7 +31,7 @@ def _safe(getter, default=None):
 
 class FundamentalsModule(AnalysisModule):
     name = "fundamentals"
-    supports_personas: list[str] = ["buffett", "munger", "fisher"]
+    supports_personas: list[str] = ["buffett", "lynch"]
 
     def run(self, request, persona, shared_data: SharedData) -> ModuleResult:
         persona = self._coerce_persona(persona)

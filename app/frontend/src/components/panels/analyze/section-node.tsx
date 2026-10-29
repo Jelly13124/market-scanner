@@ -29,7 +29,7 @@ export interface SectionNodeData {
   // Debate-only fields (read by flow-canvas serializer when name==='debate').
   // Defaulted lazily so older saved canvases load cleanly.
   usePersonas?: boolean;     // default true
-  debateRounds?: number;     // default 3 (1..5)
+  debateRounds?: number;     // default 1 (1..5)
   [key: string]: unknown;
 }
 
@@ -54,7 +54,7 @@ export function SectionNode({ id, data, selected }: NodeProps) {
   const supports = d.supportsPersonas ?? [];
   const isDebate = d.name === 'debate';
   const debateUsePersonas = d.usePersonas ?? true;
-  const debateRounds = d.debateRounds ?? 3;
+  const debateRounds = d.debateRounds ?? 1;
 
   return (
     <div

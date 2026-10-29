@@ -48,21 +48,15 @@ class TestPersonaRegistry:
             assert key == persona.name, f"Registry key {key} != persona.name {persona.name}"
 
 
-# Phase 2 Task 2: Test all 7 additional personas
+# Test the active investor roster
 from src.research.personas.burry import BurryPrompt
 from src.research.personas.druckenmiller import DruckenmillerPrompt
-from src.research.personas.fisher import FisherPrompt
-from src.research.personas.graham import GrahamPrompt
 from src.research.personas.lynch import LynchPrompt
-from src.research.personas.munger import MungerPrompt
 from src.research.personas.wood import WoodPrompt
 
 
 _ALL_PERSONAS = [
     ("buffett", BuffettPrompt),
-    ("munger", MungerPrompt),
-    ("graham", GrahamPrompt),
-    ("fisher", FisherPrompt),
     ("lynch", LynchPrompt),
     ("wood", WoodPrompt),
     ("burry", BurryPrompt),
@@ -80,7 +74,7 @@ def test_each_persona_basics(name, cls):
     assert len(sys_add) > 100   # at least a few sentences
 
 
-def test_registry_has_all_eight():
+def test_registry_has_five_active_personas():
     expected = {n for n, _ in _ALL_PERSONAS}
     assert set(PERSONA_REGISTRY.keys()) == expected
 
@@ -89,9 +83,6 @@ def test_personas_signature_keywords():
     """Spot-check each persona references its signature analytical concepts.
     Catches accidental prompt swaps."""
     expectations = {
-        "munger":        ["roic", "capital", "predictable"],
-        "graham":        ["net-net", "graham number", "margin of safety"],
-        "fisher":        ["scuttlebutt", "r&d", "long-term"],
         "lynch":         ["garp", "peg", "categor"],   # six-category framework
         "wood":          ["disruptive", "innovation", "exponential"],
         "burry":         ["fcf yield", "deep value", "contrarian"],

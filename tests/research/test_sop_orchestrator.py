@@ -192,7 +192,7 @@ def test_router_runs_when_personas_on_and_assignments_stashed(
         t_stat=None, significant=False, verdict="x",
     )
     mock_router.return_value = {
-        "fundamentals": "buffett", "valuation": "graham",
+        "fundamentals": "buffett", "valuation": "burry",
         "risk_position": None, "debate": ["wood", "burry"],
         "_rationale": "tech growth tension",
     }

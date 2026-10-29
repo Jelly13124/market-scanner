@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { analyzeFlowService } from '@/services/analyze-flow-service';
 import type { AnalyzeFlowResponse } from '@/types/analyze-flow';
+import type { CanvasConfig } from './flow-canvas';
 import { FileX, FolderOpen, Plus, Save, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,10 +14,7 @@ import { toast } from 'sonner';
 
 export interface FlowListProps {
   /** Current canvas serialized — what `Save current as...` posts. */
-  getCurrentConfig: () => {
-    included_sections: string[];
-    persona_overrides: Record<string, string>;
-  };
+  getCurrentConfig: () => CanvasConfig;
   /** Called when user picks a saved flow to load. */
   onLoad: (flow: AnalyzeFlowResponse) => void;
   /** Called when user picks New blank → clear canvas. */
@@ -78,7 +76,8 @@ export function FlowList({
         persona_overrides: Object.keys(cfg.persona_overrides).length
           ? cfg.persona_overrides
           : null,
-        use_personas: Object.keys(cfg.persona_overrides).length > 0,
+        use_personas: cfg.use_personas,
+        debate_rounds: cfg.debate_rounds,
       });
       toast.success(`Saved "${created.name}"`);
       setSavingName('');
@@ -97,6 +96,8 @@ export function FlowList({
     try {
       await analyzeFlowService.update(loadedFlowId, {
         included_sections: cfg.included_sections,
+        use_personas: cfg.use_personas,
+        debate_rounds: cfg.debate_rounds,
         persona_overrides: Object.keys(cfg.persona_overrides).length
           ? cfg.persona_overrides
           : null,

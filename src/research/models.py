@@ -172,8 +172,8 @@ class AnalyzeRequest:
     off). ``None`` means "no overrides at all" — Phase 4 behavior.
 
     ``debate_rounds`` (Phase 5E) controls how many back-and-forth rounds
-    the Debate section's single LLM call simulates. Clamped to 1..5;
-    default 3. Only consumed by Debate section when ``use_personas=True``.
+    the Debate section executes, with two statement calls per round and
+    one final verdict. Clamped to 1..5; default 1. Only consumed by Debate section when ``use_personas=True``.
     Kept at the END of the dataclass so existing positional-construction
     call sites keep working.
     """
@@ -187,7 +187,7 @@ class AnalyzeRequest:
     use_personas: bool
     included_sections: set[str] = field(default_factory=lambda: set(SECTION_ORDER))
     persona_overrides: dict[str, str] | None = None
-    debate_rounds: int = 3
+    debate_rounds: int = 1
     # Phase 7 i18n: output language for the generated report. "en" (default)
     # keeps Phase 4-6 behavior; "zh" prepends a "respond in 中文" instruction
     # to every section's LLM prompt + switches HEADING_MAP to Chinese.
@@ -202,7 +202,7 @@ class AnalyzeRequest:
         # Clamp to a sane window — guards against the API schema being
         # bypassed (direct dataclass construction from tests / CLI).
         if not isinstance(self.debate_rounds, int):
-            self.debate_rounds = 3
+            self.debate_rounds = 1
         self.debate_rounds = max(1, min(5, self.debate_rounds))
 
 

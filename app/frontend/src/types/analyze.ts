@@ -19,7 +19,7 @@ export interface AnalyzeRunRequest {
   cost_basis_usd?: number | null;
   risk_tolerance?: RiskBand;
   use_personas?: boolean;
-  // Phase 5E — number of debate rounds the LLM simulates (1..5, default 3).
+  // Independent debate rounds (1..5, default 1); two statements per round + one verdict.
   // Sourced from the Debate node on the canvas; ignored by the backend's
   // debate section when use_personas=false.
   debate_rounds?: number;
@@ -130,8 +130,8 @@ export const REQUIRED_SECTIONS: string[] = [
 // SectionNode shows these (plus an "objective" entry meaning "no
 // override / objective mode").
 export const SECTION_PERSONAS: Record<string, string[]> = {
-  company_fundamentals: ['buffett', 'munger', 'fisher'],
-  valuation:            ['buffett', 'graham', 'munger', 'fisher'],
+  company_fundamentals: ['buffett', 'lynch'],
+  valuation:            ['buffett', 'burry'],
   risk_position:        ['druckenmiller', 'burry'],
   macro:                ['druckenmiller'],
 };

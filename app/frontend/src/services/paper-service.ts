@@ -1,36 +1,18 @@
-// paper-service.ts — REST wrapper for the read-only /paper/* backend endpoints.
-// Mirrors services/research-service.ts. Auth is attached automatically by the
-// global fetch interceptor (auth-context.tsx) for any URL under VITE_API_URL,
-// so these are plain fetch calls with no manual Authorization header.
-
-import type { PaperPerformance } from '@/types/paper';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-async function _toError(res: Response, op: string): Promise<Error> {
-  let detail = '';
-  try {
-    const body = await res.json();
-    detail = body?.detail || body?.message || JSON.stringify(body);
-  } catch {
-    try { detail = await res.text(); } catch { /* swallow */ }
+import type { PaperAccount } from '@/types/paper';
+const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+async function request(path: string, body?: object): Promise<PaperAccount | null> {
+  const r = await fetch(`${BASE}/paper/${path}`, body ? {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  } : undefined);
+  if (!r.ok) {
+    const payload = await r.json().catch(() => ({}));
+    throw new Error(typeof payload.detail === 'string' ? payload.detail : `Paper request failed (${r.status})`);
   }
-  return new Error(
-    `${op} failed (HTTP ${res.status}${res.statusText ? ' ' + res.statusText : ''})${detail ? `: ${detail}` : ''}`,
-  );
+  return r.json();
 }
-
 export const paperService = {
-  async getPerformance(): Promise<PaperPerformance> {
-    const r = await fetch(`${API_BASE_URL}/paper/performance`);
-    if (!r.ok) throw await _toError(r, 'getPerformance');
-    return r.json();
-  },
-
-  // The equity-chart PNG endpoint is open-read (an <img src> cannot carry the
-  // Bearer header, and the chart alone is not sensitive — the numbers stay
-  // behind the superuser gate on /paper/performance). Return a plain URL string.
-  equityChartUrl(): string {
-    return `${API_BASE_URL}/paper/equity-chart.png`;
-  },
+  getAccount: () => request('account'),
+  createAccount: (initial_cash: string) => request('account', { initial_cash }),
+  order: (ticker: string, side: 'buy' | 'sell', quantity: string, price: string) => request('orders', { ticker, side, quantity, price }),
+  mark: (ticker: string, price: string) => request('marks', { ticker, price }),
 };

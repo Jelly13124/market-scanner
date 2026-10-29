@@ -42,11 +42,11 @@ Acceptable substitutions for the Bull and Bear slots from the persona skill suit
 
 | Slot | Persona swaps |
 |---|---|
-| Bull | `modules/investors/wood.md` (disruptive growth), `modules/investors/druckenmiller.md` (macro tailwind growth), `modules/investors/lynch.md` (GARP), `modules/investors/fisher.md` (long-term quality growth) |
-| Bear | `modules/investors/burry.md` (deep-value short-side discipline), `modules/investors/graham.md` (defensive quantitative), `modules/investors/buffett.md` (when valuation is stretched), `modules/investors/munger.md` (when business quality is questionable) |
+| Bull | `modules/investors/wood.md` (disruptive growth), `modules/investors/druckenmiller.md` (macro tailwind growth), `modules/investors/lynch.md` (GARP) |
+| Bear | `modules/investors/burry.md` (deep-value short-side discipline), `modules/investors/buffett.md` (when valuation is stretched) |
 | Quant | usually unchanged — generic quant role; no ai-hedge-fund-style quant persona in the suite |
 | Risk Manager | usually unchanged |
-| Moderator | usually unchanged, or `modules/investors/munger.md` for opinionated synthesis |
+| Moderator | usually unchanged, or `modules/investors/buffett.md` for opinionated synthesis |
 
 Other patterns the user may request:
 

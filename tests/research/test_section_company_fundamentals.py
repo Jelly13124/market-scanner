@@ -46,9 +46,20 @@ def test_supports_personas(mock_llm):
     from src.research.sections.company_fundamentals import (
         CompanyFundamentalsSection, _Narrative)
     mock_llm.return_value = _Narrative(narrative="ok")
-    for persona in ("buffett", "munger", "fisher"):
+    for persona in ("buffett", "lynch"):
         out = CompanyFundamentalsSection().run(_ctx(persona=persona))
         assert out.persona_used == persona
+
+
+@patch("src.research.sections._llm_runner.call_research_llm")
+def test_saved_retired_persona_falls_back_to_objective(mock_llm):
+    from src.research.sections.company_fundamentals import (
+        CompanyFundamentalsSection, _Narrative)
+    mock_llm.return_value = _Narrative(narrative="Objective analysis.")
+    for retired in ("munger", "graham", "fisher"):
+        out = CompanyFundamentalsSection().run(_ctx(persona=retired))
+        assert out.persona_used is None
+        assert out.skipped is False
 
 
 @patch("src.research.sections._llm_runner.call_research_llm")

@@ -2,15 +2,19 @@
 
 Python 要求 >=3.11，使用项目隔离环境；不要沿用旧电脑的绝对解释器路径。Python 依赖见 pyproject.toml/poetry.lock，前端依赖见 app/frontend/package.json。
 
+应用的 SQL 存储使用 PostgreSQL；离线单元测试可显式指定临时 SQLite，不代表应用默认退回 SQLite。
+
 ## 启动和检查
 
-后端：`poetry run python -m uvicorn app.backend.main:app --host 127.0.0.1 --port 8001`。
-前端：在 app/frontend 下运行 `npm install`、`npm run dev`。URL 以启动日志为准。
+完整安装、密钥配置和 PostgreSQL 初始化见 [本地部署指南](LOCAL_DEPLOY.md)。
+
+后端：`MONGODB_URI='' poetry run python -m uvicorn app.backend.main:app --env-file .env --host 127.0.0.1 --port 8001`。
+前端：在 app/frontend 下运行 `npm ci`，再执行 `VITE_API_URL=/api npm run dev -- --host 127.0.0.1 --port 5173 --strictPort`。
 健康检查：GET /health。只结束本项目的进程，不批量结束其他 Python/Node 进程。
 
 ```bash
-poetry run pytest v2/scanner v2/self_evolve src/paper_trading -q
-poetry run pytest tests/test_detector_invariants.py -q
+DATABASE_URL=sqlite:///:memory: poetry run pytest v2/scanner v2/self_evolve src/paper_trading -q
+DATABASE_URL=sqlite:///:memory: poetry run pytest tests/test_detector_invariants.py -q
 ```
 
 前端在其目录运行 `npm run build`、`npm run lint`。数据适配器、报告/鉴权及图改造需另运行相应测试；上述命令不是完整验收。
@@ -49,6 +53,6 @@ poetry run python -m scripts.mongo_history verify
 
 迁移先预览，应用后校验数量并抽样核对 owner、正文、HTML 和策略/回测；SQL 继续保留作为回滚读路径。不得将 `legacy_topn_only` 当成全量扫描历史。
 
-无 MongoDB 回归可显式运行 `MONGODB_URI='' poetry run pytest tests/test_mongo_fallback.py tests/research tests/test_scanner_service.py -q`。该存储测试仅使用进程内模拟 MongoDB，不连接 Docker。
+无 MongoDB 回归可显式运行 `DATABASE_URL=sqlite:///:memory: MONGODB_URI='' poetry run pytest tests/test_mongo_fallback.py tests/research tests/test_scanner_service.py -q`。该存储测试仅使用进程内模拟 MongoDB，不连接 Docker。
 
 完整无 MongoDB API smoke：`MONGODB_URI='' poetry run python -m scripts.smoke_no_mongo`。该命令显式读取少量真实 Yahoo 数据，使用临时 SQL、禁用调度，只运行数据健康/缺失数据章节，断言模型调用为 0；不测试真实 AI 质量，不连接 Docker MongoDB。

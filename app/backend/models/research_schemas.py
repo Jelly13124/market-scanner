@@ -123,12 +123,12 @@ class AnalyzeRunRequest(BaseModel):
     risk_tolerance: _RiskBand = "balanced"
     use_personas: bool = False
     debate_rounds: int = Field(
-        default=3,
+        default=1,
         ge=1,
         le=5,
         description=(
-            "Phase 5E — number of debate rounds the Debate section's LLM "
-            "simulates. Only consumed when use_personas=True. Default 3."
+            "Number of debate rounds (two independent statements per round, "
+            "then one verdict). Used when use_personas=True. Default 1."
         ),
     )
     included_sections: list[str] | None = Field(

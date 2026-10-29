@@ -34,6 +34,7 @@ class AnalyzeFlowRepository:
         name: str,
         included_sections: list[str],
         use_personas: bool = False,
+        debate_rounds: int = 1,
         persona_overrides: dict[str, str] | None = None,
         user_id: int,
     ) -> AnalyzeFlow:
@@ -41,6 +42,7 @@ class AnalyzeFlowRepository:
             name=name,
             included_sections=list(included_sections),
             use_personas=bool(use_personas),
+            debate_rounds=debate_rounds,
             persona_overrides=dict(persona_overrides) if persona_overrides else None,
             user_id=user_id,
         )
@@ -85,6 +87,7 @@ class AnalyzeFlowRepository:
         name: str | None = None,
         included_sections: list[str] | None = None,
         use_personas: bool | None = None,
+        debate_rounds: int | None = None,
         persona_overrides: dict[str, str] | None = None,
         clear_overrides: bool = False,
     ) -> Optional[AnalyzeFlow]:
@@ -102,6 +105,8 @@ class AnalyzeFlowRepository:
             row.included_sections = list(included_sections)
         if use_personas is not None:
             row.use_personas = bool(use_personas)
+        if debate_rounds is not None:
+            row.debate_rounds = debate_rounds
         if clear_overrides:
             row.persona_overrides = None
         elif persona_overrides is not None:

@@ -32,6 +32,7 @@ class TestAnalyzeFlowRepository:
             name="quick-screen",
             included_sections=["data_health", "executive_summary"],
             use_personas=True,
+            debate_rounds=4,
             persona_overrides={"valuation": "graham"},
             user_id=UID,
         )
@@ -40,10 +41,15 @@ class TestAnalyzeFlowRepository:
         assert row.included_sections == ["data_health", "executive_summary"]
         assert row.persona_overrides == {"valuation": "graham"}
         assert row.use_personas is True
+        assert row.debate_rounds == 4
 
         fetched = repo.get(row.id, user_id=UID)
         assert fetched is not None
         assert fetched.name == "quick-screen"
+        updated = repo.update(row.id, user_id=UID, debate_rounds=5)
+        assert updated.debate_rounds == 5
+        renamed = repo.update(row.id, user_id=UID, name="renamed")
+        assert renamed.debate_rounds == 5
 
     def test_get_missing_returns_none(self, db_session):
         repo = AnalyzeFlowRepository(db_session)

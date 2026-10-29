@@ -61,7 +61,7 @@ export function StrategyList({ selectedId, onSelect }: Props) {
     <div className="border-r h-full min-h-0 min-w-0 flex flex-col">
       <div className="px-3 py-2 border-b flex items-center justify-between">
         <span className="text-xs font-medium uppercase">{t('lab.strategies')}</span>
-        <Button variant="ghost" size="sm" onClick={() => setCreateOpen(true)}>
+        <Button aria-label={t("backtest.newStrategy")} title={t("backtest.newStrategy")} variant="ghost" size="sm" onClick={() => setCreateOpen(true)}>
           <Plus className="size-3" />
         </Button>
       </div>

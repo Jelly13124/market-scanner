@@ -12,10 +12,12 @@
 
 ## 接手
 
-- [2026-10-24 Handoff](handoffs/2026-10-24-market-scanner-handoff.md)：当前工作区、已完成设计、每日扫描入库要求、待实现与接手顺序。
+- [2026-10-28 Handoff](handoffs/2026-10-28-postgres-local.md)：课程 PostgreSQL 要求、本地实库启动与验收、人物精简及自定义辩论保存。
+- [2026-10-25 Handoff](handoffs/2026-10-25-local-validation.md)：最新本地验收结果、未完成项与接手顺序。
 
 ## 当前运行与开发
 
+- [本地部署指南](LOCAL_DEPLOY.md)：无 MongoDB 启动、用户模型配置、PostgreSQL 和前端构建托管。
 - [开发与验证](development.md)
 - [部署说明](DEPLOY.md)
 - [应用开发](../app/README.md)

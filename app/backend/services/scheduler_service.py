@@ -23,6 +23,7 @@ Concurrency safety:
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from typing import Callable
 
@@ -129,7 +130,8 @@ class SchedulerService:
         # daily marks). Both bodies are zero-arg callables in
         # src.paper_trading.run and are idempotent, so retries are safe.
         try:
-            self._register_paper_trading_jobs()
+            if os.getenv("ENABLE_HOST_PAPER_JOBS", "false").lower() == "true":
+                self._register_paper_trading_jobs()
         except Exception as e:
             logger.warning("Failed to register paper-trading jobs: %s", e)
 

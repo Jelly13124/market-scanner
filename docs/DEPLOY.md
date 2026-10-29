@@ -2,13 +2,17 @@
 
 本页描述仓库已有部署实现；MongoDB 与新 Analyze LangGraph 尚未部署。目标和验收见 [需求基线](requirements/market-data-and-analyze.md)。
 
+本机安装和无 MongoDB 验收请使用 [本地部署指南](LOCAL_DEPLOY.md)，包括开发模式和由 FastAPI 托管构建后前端的方式。
+
 ## 运行结构
 
 根 Dockerfile 构建前端与 Python 后端。docker/entrypoint.sh 在挂载卷上调用 docker/db_init.py，然后启动 uvicorn app.backend.main:app。
 
 db_init.py 按数据库状态选择 ORM 初始化并 stamp，或执行现有 Alembic 增量迁移。已有数据库升级前必须备份；不要直接用 create_all 代替迁移。
 
-fly.toml 当前记录 app=quantlab、region=nrt、同源前端与 API、SQLite 卷 /data、单实例及 GET /health 健康检查。这是仓库配置，不是已核验的线上资源状态。部署前检查目标 app、卷和域名，禁止无意新建或覆盖项目。
+fly.toml 当前记录 app=quantlab、region=nrt、同源前端与 API、遗留 /data 卷、单实例及 GET /health 健康检查。这是仓库配置，不是已核验的线上资源状态。部署前检查目标 app、卷和域名，禁止无意新建或覆盖项目。
+
+应用 SQL 默认使用 PostgreSQL，通过 `DATABASE_URL` 配置。Fly 的硬编码 SQLite 地址已移除，发布前必须用平台 secrets 设置可连接的 PostgreSQL URL；本次只启动本地 Docker PostgreSQL，未修改线上数据库或迁移线上数据。遗留 SQLite 卷保留用于已有文件和备份。
 
 ## 配置与发布
 
@@ -23,6 +27,6 @@ fly.toml 当前记录 app=quantlab、region=nrt、同源前端与 API、SQLite �
 
 ## 运维边界
 
-现有 SQLite 文件和进程内 APScheduler 要求单实例；仅增加 MongoDB 并不会自动解除这一限制。多实例需要单独迁移调度与事务存储。
+SQL 已切换 PostgreSQL，仍因进程内 APScheduler 按单实例运行；仅增加 MongoDB 并不会自动解除这一限制。多实例需要独立的调度协调与并发验证。
 
 容量、成本与快照保留期以部署平台实际账户为准，不沿用旧笔记中的估计。数据库升级和报告迁移均需独立的备份与回滚方案。

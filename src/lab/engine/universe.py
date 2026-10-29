@@ -17,7 +17,7 @@ class UniverseError(ValueError):
     """Raised when a UniverseSpec cannot be resolved to a non-empty ticker list."""
 
 
-def load_universe_tickers(spec: UniverseSpec, db: Any) -> list[str]:
+def load_universe_tickers(spec: UniverseSpec, db: Any, *, user_id: int | None = None) -> list[str]:
     """Return list of uppercased ticker symbols for the spec's universe.
 
     For ``kind='watchlist'``, ``db`` must be a SQLAlchemy Session.
@@ -25,7 +25,9 @@ def load_universe_tickers(spec: UniverseSpec, db: Any) -> list[str]:
     """
     if spec.kind == "watchlist":
         repo = UserWatchlistRepository(db)
-        row = repo.get_by_id_unscoped(spec.watchlist_id)
+        if user_id is None:
+            raise UniverseError("A user is required for a private watchlist")
+        row = repo.get(spec.watchlist_id, user_id=user_id)
         if row is None:
             raise UniverseError(f"UserWatchlist id={spec.watchlist_id} not found")
         tickers = list(row.tickers or [])

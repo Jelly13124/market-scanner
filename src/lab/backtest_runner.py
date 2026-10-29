@@ -53,7 +53,7 @@ class BacktestRunResult:
     error_message: str | None = None
 
 
-def run_backtest(spec: StrategySpec, db: Any) -> BacktestRunResult:
+def run_backtest(spec: StrategySpec, db: Any, *, user_id: int | None = None) -> BacktestRunResult:
     """End-to-end runner. Returns BacktestRunResult; caller persists it."""
     t0 = time.monotonic()
     cfg = spec.backtest_config
@@ -77,7 +77,7 @@ def run_backtest(spec: StrategySpec, db: Any) -> BacktestRunResult:
 
     # 1. Universe
     try:
-        tickers = load_universe_tickers(spec.universe, db)
+        tickers = load_universe_tickers(spec.universe, db, user_id=user_id)
     except UniverseError as e:
         result.error_message = f"Universe error: {e}"
         result.duration_seconds = time.monotonic() - t0
@@ -104,7 +104,12 @@ def run_backtest(spec: StrategySpec, db: Any) -> BacktestRunResult:
 
     # 5. Simulate both halves
     is_sim = run_simulation(spec, is_matrix)
-    oos_sim = run_simulation(spec, oos_matrix)
+    # Start the OOS segment with the equity used as its metric baseline.
+    # Otherwise the simulator resets to the original cash while metrics use
+    # IS-ending equity, creating a fictitious gain/loss at the split.
+    oos_capital = is_sim.equity_curve[-1] if is_sim.equity_curve else cfg.starting_capital_usd
+    oos_spec = spec.model_copy(update={"backtest_config": cfg.model_copy(update={"starting_capital_usd": oos_capital})})
+    oos_sim = run_simulation(oos_spec, oos_matrix)
 
     # 6. Metrics
     is_m = compute_metrics(
@@ -113,7 +118,7 @@ def run_backtest(spec: StrategySpec, db: Any) -> BacktestRunResult:
     )
     oos_m = compute_metrics(
         oos_sim.equity_curve, oos_sim.trades,
-        starting_capital=is_sim.equity_curve[-1] if is_sim.equity_curve else cfg.starting_capital_usd,
+        starting_capital=oos_capital,
     )
 
     # 7. Benchmark CAGR (rough — fetch SPY closes and compute on the same window)

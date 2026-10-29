@@ -66,17 +66,17 @@ class TestValuationModule:
 
 class TestValuationPersonaPath:
     @patch("src.research.modules.valuation.call_research_llm")
-    def test_graham_persona_records_and_prepends(self, mock_llm):
+    def test_buffett_persona_records_and_prepends(self, mock_llm):
         from src.research.modules.valuation import _ValuationNarrative
         captured = {}
         def _capture(prompt, model, **kw):
             captured["prompt"] = prompt
-            return _ValuationNarrative(narrative="Graham number says cheap.")
+            return _ValuationNarrative(narrative="Owner earnings suggest fair value.")
         mock_llm.side_effect = _capture
-        out = ValuationModule().run(_req(), "graham", _shared())
-        assert out.persona_used == "graham"
+        out = ValuationModule().run(_req(), "buffett", _shared())
+        assert out.persona_used == "buffett"
         assert any(kw in captured["prompt"].lower()
-                   for kw in ("graham", "net-net", "margin of safety"))
+                   for kw in ("buffett", "owner earnings", "margin of safety"))
 
     @patch("src.research.modules.valuation.call_research_llm")
     def test_unsupported_persona_coerced_to_none(self, mock_llm):

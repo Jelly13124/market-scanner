@@ -3,10 +3,13 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 BACKEND_DIR = Path(__file__).parent.parent
-_DEFAULT_SQLITE = f"sqlite:///{BACKEND_DIR / 'hedge_fund.db'}"
-DATABASE_URL = os.getenv("DATABASE_URL", _DEFAULT_SQLITE)
+# Load before constructing the engine, including CLI/migration imports.
+load_dotenv(BACKEND_DIR.parent.parent / ".env")
+_DEFAULT_POSTGRES = "postgresql+psycopg2://market_scanner@127.0.0.1:5433/market_scanner"
+DATABASE_URL = os.getenv("DATABASE_URL") or _DEFAULT_POSTGRES
 
 _IS_SQLITE = DATABASE_URL.startswith("sqlite")
 # check_same_thread is a SQLite-only arg; Postgres rejects it.
@@ -34,4 +37,4 @@ def get_db():
     try:
         yield db
     finally:
-        db.close() 
+        db.close()

@@ -1,5 +1,4 @@
-"""Debate module: simulate a two-round transcript between two router-picked
-personas. Single LLM call producing the full transcript."""
+"""Bounded debate: independent statement calls and one final verdict."""
 
 from __future__ import annotations
 
@@ -91,11 +90,11 @@ class TestDebate:
         assert "Round 2:" not in prompt
 
     @patch("src.research.modules.debate.call_research_llm")
-    def test_default_rounds_is_two_phase2_back_compat(self, mock_llm):
-        """Legacy callers (Phase 2 pipeline) don't pass debate_rounds —
-        the default must remain 2 to preserve current LLM prompt cost."""
+    def test_default_round_has_two_statements_and_one_verdict(self, mock_llm):
+        """The inexpensive default still includes both perspectives and a verdict."""
         mock_llm.return_value = _DebateTranscript(transcript="x", verdict="y")
         run_debate(_req(), _shared(), ["wood", "burry"])
         prompt = mock_llm.call_args[0][0]
-        assert "2-round" in prompt
-        assert "Round 3:" not in prompt
+        assert "1-round" in prompt
+        assert mock_llm.call_count == 3
+        assert "Round 2)" not in prompt

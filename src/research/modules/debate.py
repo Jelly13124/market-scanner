@@ -1,18 +1,8 @@
-"""Debate module — simulate an N-round transcript between two router-picked
-investor personas.
+"""Bounded LangGraph debate between two router-picked investor personas.
 
-NOT an AnalysisModule subclass — the signature differs (consumes a list
-of persona names, not a single persona). Pipeline calls run_debate()
-directly when router.persona_assignments['debate'] has exactly 2 entries.
-
-Phase 2 v1: single LLM call that simulates the full debate. Cheaper
-than dispatching one call per persona per round. Phase 3 or later may
-expand to true multi-agent dispatch if outputs disappoint.
-
-Phase 5E: rounds is now parameterised (1..5). Default stays 2 here so
-Phase 2 callers (src/research/pipeline.py + Phase 2 tests) keep their
-original behavior; the Phase 4+ section runner passes the user-chosen
-value from AnalyzeRequest.debate_rounds.
+Each round makes two independent statement calls, followed by one final
+verdict call. Rounds are configurable from 1 to 5, defaulting to 1;
+Analyze passes the user's chosen value through explicitly.
 """
 
 from __future__ import annotations
@@ -118,16 +108,15 @@ def run_debate(
     shared_data: SharedData,
     personas: list[str],
     *,
-    debate_rounds: int = 2,
+    debate_rounds: int = 1,
     api_keys: dict | None = None,
 ) -> ModuleResult:
     """Run a two-persona debate over ``debate_rounds`` rounds (1..5).
 
     ``personas`` must be a list of exactly two persona names present in
     PERSONA_REGISTRY; otherwise returns a skipped ModuleResult. The
-    ``debate_rounds`` kwarg is clamped to [1, 5]; default 2 preserves
-    Phase 2 behavior for legacy callers (Phase 4+ passes
-    ``ctx.request.debate_rounds`` explicitly).
+    ``debate_rounds`` is clamped to [1, 5], with a one-round default.
+    The Analyze section passes its configured round count explicitly.
     """
     if len(personas) != 2 or not all(p in PERSONA_REGISTRY for p in personas):
         return ModuleResult(

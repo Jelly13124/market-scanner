@@ -1,7 +1,7 @@
 """Valuation - prose section (450-700 words).
 
 Packs PE/PB/PS/EV-EBITDA/FCF-yield from ctx.shared.financials[0] into
-the prompt. Persona-aware: buffett/graham/munger/fisher shade the
+the prompt. Persona-aware: buffett/burry shade the
 valuation lens per Phase 2.
 """
 
@@ -53,7 +53,7 @@ def _metrics_block(ctx: SectionContext) -> str:
 
 class ValuationSection(Section):
     name = "valuation"
-    supports_personas = ["buffett", "graham", "munger", "fisher"]
+    supports_personas = ["buffett", "burry"]
 
     def run(self, ctx: SectionContext) -> SectionPayload:
         user_prompt = (

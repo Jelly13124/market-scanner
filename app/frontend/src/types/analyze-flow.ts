@@ -5,6 +5,7 @@ export interface AnalyzeFlowCreate {
   name: string;
   included_sections: string[];
   use_personas?: boolean;
+  debate_rounds?: number;
   persona_overrides?: Record<string, string> | null;
 }
 
@@ -12,6 +13,7 @@ export interface AnalyzeFlowUpdate {
   name?: string;
   included_sections?: string[];
   use_personas?: boolean;
+  debate_rounds?: number;
   persona_overrides?: Record<string, string> | null;
 }
 
@@ -20,6 +22,7 @@ export interface AnalyzeFlowResponse {
   name: string;
   included_sections: string[];
   use_personas: boolean;
+  debate_rounds: number;
   persona_overrides: Record<string, string> | null;
   created_at: string;
   updated_at: string | null;

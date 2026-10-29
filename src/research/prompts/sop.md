@@ -120,14 +120,14 @@ This table is **internal** — the user is asked only the on/off toggle (Request
 
 | Ticker profile | Suggest | Reasoning |
 |---|---|---|
-| Mature dividend payer (utilities, consumer staples, telecoms) | `graham` | Defensive value, dividend record, P/E and P/B discipline |
+| Mature dividend payer (utilities, consumer staples, telecoms) | `buffett` | Quality, dividend sustainability and valuation discipline |
 | Compounder with durable moat (premium consumer brand, fortress balance sheet) | `buffett` | Owner earnings, circle of competence, long-term hold |
-| Disruptive innovator with R&D > 15% (AI, biotech, EV, fintech) | `wood` or `fisher` | Disruptive growth + exponential model (Wood) or 15-point growth quality (Fisher) |
+| Disruptive innovator with R&D > 15% (AI, biotech, EV, fintech) | `wood` | Disruptive growth and exponential models |
 | Quality growth at GARP price (mid-cap with 15–25% earnings growth, PEG ≤ 1) | `lynch` | GARP, 6-category classification |
 | Deep value / cheap on hard numbers (FCF yield ≥ 15%, P/B < 1.5) | `burry` | FCF yield, balance sheet, contrarian |
 | Macro-sensitive cyclical (commodity, bank, autos, industrial) | `druckenmiller` | Macro regime overlay, momentum, asymmetric R:R |
-| Complex / multi-business conglomerate, capital allocator | `munger` | ROIC, capital allocation, multidisciplinary |
-| Long-duration quality growth with patient management | `fisher` | 15-point checklist, scuttlebutt, R&D depth |
+| Complex / multi-business conglomerate, capital allocator | `buffett` | ROIC, capital allocation and business quality |
+| Long-duration quality growth with patient management | `lynch` | Growth quality, earnings and valuation discipline |
 | Pre-revenue biotech or true unproven concept | none (suggest skip) | Most personas explicitly refuse pre-profit; respect Conflict Rules |
 
 For ambiguous tickers, pick two contrasting personas (e.g. Buffett for the moat take vs Burry for the value-trap check) so the debate has genuine tension rather than forcing a single pick.
@@ -195,15 +195,12 @@ Persona modules are NOT loaded by depth, and the user is never asked to pick one
 | Persona | Module |
 |---|---|
 | Warren Buffett | `modules/investors/buffett.md` |
-| Charlie Munger | `modules/investors/munger.md` |
-| Benjamin Graham | `modules/investors/graham.md` |
 | Peter Lynch | `modules/investors/lynch.md` |
-| Phil Fisher | `modules/investors/fisher.md` |
 | Cathie Wood | `modules/investors/wood.md` |
 | Stanley Druckenmiller | `modules/investors/druckenmiller.md` |
 | Michael Burry | `modules/investors/burry.md` |
 
-All eight personas share the structural contract in `references/persona-skill-template.md` — Read that first if it has not already been consumed in this session.
+All five personas share the structural contract in `references/persona-skill-template.md` — Read that first if it has not already been consumed in this session.
 
 When a persona is dispatched as a debate subagent per the Subagent Dispatch Protocol in `modules/debate-panel.md`, copy the FULL content of that persona's module inline into the subagent prompt. Do NOT rely on the subagent loading the file itself.
 

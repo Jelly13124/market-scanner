@@ -10,7 +10,7 @@ set -euo pipefail
 # source of truth — the alembic chain is an incomplete legacy overlay that can't
 # build an empty DB on its own.) Run from /app with the repo on PYTHONPATH so the
 # `app.backend...` imports resolve; connection.py + env.py honor DATABASE_URL
-# (prod: sqlite:////data/app.db on the mounted volume).
+# (PostgreSQL connection URL provided by the deployment environment).
 cd /app
 PYTHONPATH=/app python docker/db_init.py
 

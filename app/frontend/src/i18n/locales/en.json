@@ -65,7 +65,9 @@
     "scanner": "Scanner",
     "lab": "Lab",
     "settings": "Settings",
-    "flow": "Institutional"
+    "flow": "Institutional",
+    "backtest": "Backtest",
+    "paper": "Paper"
   },
   "sidebar": {
     "home": "Home",
@@ -93,7 +95,9 @@
     "apiKeysHint": "Keys are saved to backend .env. Click + to get a key.",
     "apiKeysGetKey": "Sign up / get key",
     "apiKeysShow": "Show key",
-    "apiKeysHide": "Hide key"
+    "apiKeysHide": "Hide key",
+    "backtest": "Backtest",
+    "backtestTooltip": "Configure and run historical strategy backtests"
   },
   "topBar": {
     "toggleLeft": "Toggle Left Side Bar",
@@ -183,7 +187,7 @@
       "persona": "Persona",
       "objective_persona": "objective",
       "rounds": "Rounds",
-      "roundsHint": "(max 5, recommended 3)",
+      "roundsHint": "(1–5; default 1; more rounds use more calls)",
       "usePersonas": "Use investor personas",
       "deleteNode": "Delete node"
     },
@@ -292,6 +296,10 @@
         "lab": {
           "title": "Strategy Lab",
           "desc": "Build + backtest a strategy"
+        },
+        "backtest": {
+          "title": "Backtest",
+          "desc": "Test rules on historical prices"
         }
       }
     },
@@ -676,26 +684,41 @@
     }
   },
   "paper": {
+    "title": "My paper account",
+    "openTooltip": "Open your simulated trading account",
+    "subtitle": "Your own virtual USD portfolio, positions and trade history.",
+    "manualNote": "Simulation only. Fill / valuation prices are entered manually, not live quotes or broker executions. Long-only USD shares, no leverage or fees. Each position uses its latest manually entered price.",
+    "initialCash": "Initial virtual cash (USD)",
+    "createAccount": "Create my paper account",
+    "cash": "Virtual cash",
+    "equity": "Marked equity",
+    "total_pnl": "Total P&L",
+    "realized_pnl": "Realized P&L",
+    "unrealized_pnl": "Unrealized P&L",
+    "action": "Action",
+    "buy": "Simulated buy",
+    "sell": "Simulated sell",
+    "mark": "Update valuation",
+    "ticker": "Ticker",
+    "quantity": "Shares",
+    "price": "Manual price (USD)",
+    "lastPrice": "Last manual price",
+    "averageCost": "Average cost",
+    "marketValue": "Position value",
+    "submitOrder": "Record simulated trade",
+    "updateMark": "Update manual valuation",
+    "positions": "My positions",
+    "trades": "Recent trades (up to 200)",
+    "noPositions": "No open positions. Record a simulated buy to get started.",
+    "noTrades": "No simulated trades yet.",
+    "time": "Time",
+    "cashAfter": "Cash after trade",
     "tab": {
       "title": "Paper"
     },
-    "title": "Paper Trading",
-    "openTooltip": "Open paper-trading panel",
-    "empty": "No paper-trading data yet.",
-    "baseline": "baseline",
-    "graduation": "Graduation verdict",
-    "pass": "PASS",
-    "fail": "FAIL",
-    "noClauses": "No clauses evaluated.",
-    "equityCurve": "Equity curve",
-    "equityCurveAlt": "Paper sleeves equity curve",
-    "colSleeve": "Sleeve",
-    "colFinalEquity": "Final equity",
-    "colTotalReturn": "Total return",
-    "colSharpe": "Sharpe",
-    "colMaxDrawdown": "Max drawdown",
-    "colNTrades": "# Trades",
-    "colNMarks": "# Marks"
+    "status": "In development",
+    "limitations": "Automatic quotes, pending order matching, equity history and automated strategies are not available yet.",
+    "unavailable": "Paper trading is not available yet. The prototype uses manually entered prices and does not automatically mark positions to market."
   },
   "flow": {
     "title": "Institutional Positioning",
@@ -728,5 +751,34 @@
       "trend": "trend",
       "none": "No short-volume data."
     }
+  },
+  "backtest": {
+    "title": "Backtest",
+    "subtitle": "Test rule-based strategies on historical prices. No AI model key is required.",
+    "empty": "Create a strategy on the left, then configure its universe, dates and rules.",
+    "advanced": "Advanced strategy configuration / JSON",
+    "universe": "Stock universe",
+    "rule": "Entry rule",
+    "maRule": "Moving-average golden cross",
+    "rsiRule": "RSI oversold",
+    "keepAdvanced": "Keep advanced entry rules",
+    "fast": "Fast MA period",
+    "slow": "Slow MA period",
+    "rsiLevel": "RSI threshold",
+    "start": "Start date",
+    "end": "End date",
+    "cash": "Initial capital (USD)",
+    "commission": "Commission (bps)",
+    "slippage": "Slippage (bps)",
+    "stop": "Stop loss (%)",
+    "save": "Save parameters",
+    "saveHint": "Save changed parameters before running. The advanced editor supports additional rules.",
+    "dataHint": "Full-index history can take time. Use a small saved watchlist for your first run. Results include in-sample and out-of-sample periods.",
+    "dateError": "Start date must be earlier than end date.",
+    "maError": "Fast MA must be shorter than slow MA.",
+    "chartError": "Could not load the authenticated backtest chart.",
+    "newStrategy": "New strategy",
+    "status": "Basic",
+    "limitations": "Analyze strategy integration, run progress, cancellation and parameter comparison are not available yet."
   }
 }

@@ -109,13 +109,8 @@ _Objective = _Literal[
 _RiskBand = _Literal["conservative", "balanced", "aggressive"]
 
 
-class AnalyzeRunRequest(BaseModel):
-    """POST /research/analyze body."""
-
-    resume_run_id: str | None = None
-    force_rerun: bool = False
-    source_scan_result_id: str | None = None
-    ticker: str
+class AnalyzeConfig(BaseModel):
+    """Reusable analysis settings, also persisted in scheduled snapshots."""
     objective: _Objective = "general_research"
     position_budget_usd: float | None = Field(default=None, ge=0.0)
     already_holds: bool = False
@@ -133,7 +128,8 @@ class AnalyzeRunRequest(BaseModel):
     )
     included_sections: list[str] | None = Field(
         default=None,
-        description="If null, all 16 SOP sections run. Otherwise restrict to listed.",
+        min_length=1,
+        description="If null, all sections run. An explicit list must contain at least one valid section.",
     )
     persona_overrides: dict[str, str] | None = Field(
         default=None,
@@ -158,6 +154,22 @@ class AnalyzeRunRequest(BaseModel):
             "000300.SH (沪深300) + SW1 (申万一级) sector indices."
         ),
     )
+
+    @field_validator("included_sections")
+    @classmethod
+    def _known_sections(cls, value):
+        from src.research.models import SECTION_ORDER
+        if value is not None and set(value) - set(SECTION_ORDER):
+            raise ValueError("Unknown analysis section")
+        return value
+
+
+class AnalyzeRunRequest(AnalyzeConfig):
+    """POST /research/analyze body."""
+    resume_run_id: str | None = None
+    force_rerun: bool = False
+    source_scan_result_id: str | None = None
+    ticker: str
 
     @field_validator("ticker")
     @classmethod

@@ -203,7 +203,7 @@ export function AnalyzeToolbar({
       {onSchedule && (
         <Button
           onClick={onSchedule}
-          disabled={!canRun}
+          disabled={!canRun || sectionCount === 0}
           size="sm"
           variant="outline"
           className="h-7"
@@ -227,7 +227,7 @@ export function AnalyzeToolbar({
       )}
       <Button
         onClick={onRun}
-        disabled={running || !canRun || !hasKeys}
+        disabled={running || !canRun || !hasKeys || sectionCount === 0}
         size="sm"
         className="h-7"
         title={!hasKeys ? t('onboarding.gate.tooltip') : (canRun ? t('analyze.toolbar.run') : t('analyze.errors.noInput'))}

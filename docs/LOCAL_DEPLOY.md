@@ -207,7 +207,7 @@ poetry install
 MONGODB_URI='' poetry run python -c 'from dotenv import load_dotenv; load_dotenv(); from docker.db_init import main; main()'
 ```
 
-本次更新包含辩论轮数字段与个人 Paper 账户三张表。初始化命令会升级已有带 Alembic 版本的 PostgreSQL；没有迁移记录的旧业务库需要单独核对 schema，不能直接当作空库初始化。
+本次更新包含辩论轮数字段、个人 Paper 账户三张表与 `report_schedules.analysis_config` 调度配置快照字段（迁移 `d7e3f901b625`）。初始化命令会升级已有带 Alembic 版本的 PostgreSQL；没有迁移记录的旧业务库需要单独核对 schema，不能直接当作空库初始化。
 
 前端有依赖变更时执行 `npm ci`，随后按开发或构建方式重新启动。保留原 `APP_ENCRYPTION_KEY` 和数据库凭据，不要重新复制 `.env.example` 覆盖现有配置。
 
@@ -255,7 +255,7 @@ docker compose -f compose.local.yml exec -T postgres sh -c 'pg_restore -U "$POST
 
 左侧保留 Home、Watchlist、Screener、Scanner、Analyze、Reports、Paper、Backtest。独立 Sectors 和 Institutional 页面已移除；原 Lab 标签会在重新加载后迁移为 Backtest。
 
-- **Backtest（基础版）**：创建策略，选择自己的 watchlist 或指数股票池，设置历史区间、入场规则、止损、初始资金、手续费和滑点；保存参数后运行。无需模型 key，历史行情仍需网络。高级 JSON 编辑器保留额外策略规则。图表通过带登录鉴权的请求获取。尚未连接 Analyze 策略，不支持运行进度、取消任务或参数对比。
+- **Backtest（基础版）**：创建策略，选择自己的 watchlist 或指数股票池，设置历史区间、入场规则、止损、初始资金、手续费和滑点；保存参数后运行。无需模型 key，历史行情仍需网络。高级 JSON 编辑器保留额外策略规则。图表通过带登录鉴权的请求获取。收盘信号在下一有效交易日开盘成交，计入双边成本，样本外基准使用相同区间；旧结果需重新运行。尚未连接 Analyze 策略，不支持运行进度、取消任务或参数对比。
 - **Paper（开发中，暂不开放）**：侧栏仅显示状态，不可进入；个人 Paper API 未挂载。以下为保留原型的能力，不能作为当前用户操作步骤：创建自己的虚拟 USD 账户，设置初始资金，再记录模拟买入/卖出、更新手动估值、查看持仓和成交。每个用户独立，拒绝资金不足、超卖和非有限数值。首版使用**手动输入的模拟价格**，不自动下单，不声称是实时行情或真实券商成交；不计手续费、无杠杆和卖空。尚无自动报价、挂单撮合、资金曲线和策略自动执行。
 
 个人 Paper 表为 `user_paper_accounts`、`user_paper_positions`、`user_paper_trades`，迁移版本 `c6d9e2f4a810`。旧全局 `paper_*` 历史保留，不会显示给普通用户，也不会转换成任意用户的账户。旧 host book 定时任务默认关闭，仅显式设置 `ENABLE_HOST_PAPER_JOBS=true` 才启用，与个人 Paper 账户无关。
@@ -269,3 +269,11 @@ docker compose -f compose.local.yml exec -T postgres sh -c 'pg_restore -U "$POST
 5. 配置用户模型后单独测试 Analyze；没有模型时不把完整 AI 报告算作已验收。
 
 本地已验证 PostgreSQL 登录与个人 Paper、真实 Yahoo 历史回测及无 MongoDB 路径。真实模型报告质量和生产部署仍需各自验收，详见 [当前交接记录](handoffs/2026-10-28-postgres-local.md)。
+
+### 分析调度与刷新权限
+
+Analyze 不接受空章节或未知章节；画布中的 Run / Schedule 在零章节时禁用。保存流程时清空人物会一并持久化。
+
+在 Analyze 画布创建定时任务，会冻结当前市场、章节、人物覆盖、辩论开关/轮数、目标、预算、持仓与风险设置；输出语言取调度窗口选择。之后编辑画布不会改变已保存任务，修改后需重新创建调度。旧任务和 Settings 中未配置流程快照的任务仍运行默认 US 完整报告。
+
+Screener 的快照更新需要登录，并使用现有重型接口限流。共享或公网运行时设置 `RATE_LIMIT_ENABLED=true`，额度由 `RATE_LIMIT_HEAVY` 控制；已有后台并发锁继续生效。

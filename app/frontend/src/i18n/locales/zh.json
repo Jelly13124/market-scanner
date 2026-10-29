@@ -237,7 +237,8 @@
     },
     "errors": {
       "noInput": "请先在画布添加一个 Input 节点。",
-      "noTicker": "请在 Input 节点输入股票代码。"
+      "noTicker": "请在 Input 节点输入股票代码。",
+      "noSections": "请至少选择一个分析模块。"
     },
     "toasts": {
       "complete": "分析完成: {{ticker}} (id {{id}})",

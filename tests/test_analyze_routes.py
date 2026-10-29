@@ -158,14 +158,14 @@ class TestAnalyzeEndpoint:
 
     @patch("app.backend.routes.research.run_sop")
     @patch("app.backend.routes.research.render_sop")
-    def test_debate_rounds_defaults_to_three(self, mock_render, mock_run, client):
-        """When the field is omitted, backend defaults to 3."""
+    def test_debate_rounds_defaults_to_one(self, mock_render, mock_run, client):
+        """When the field is omitted, backend defaults to 1."""
         mock_run.return_value = _fake_report("NVDA")
         mock_render.return_value = "<html></html>"
         resp = client.post("/research/analyze", json={"ticker": "NVDA"})
         assert resp.status_code == 200, resp.text
         called_with = mock_run.call_args[0][0]
-        assert called_with.debate_rounds == 3
+        assert called_with.debate_rounds == 1
 
     @patch("app.backend.routes.research.run_sop")
     @patch("app.backend.routes.research.render_sop")
@@ -178,3 +178,17 @@ class TestAnalyzeEndpoint:
                 "ticker": "NVDA", "debate_rounds": bad,
             })
             assert resp.status_code == 422, f"expected 422 for {bad}, got {resp.status_code}"
+
+
+@pytest.mark.parametrize('sections', [[], ['not_a_section']])
+def test_invalid_sections_rejected_before_model_call(client, sections):
+    with patch('app.backend.routes.research.run_sop') as run:
+        response = client.post('/research/analyze', json={'ticker': 'AAPL', 'included_sections': sections})
+    assert response.status_code == 422
+    run.assert_not_called()
+
+
+def test_omitted_sections_still_mean_all():
+    from app.backend.routes.research import _to_analyze_request
+    from app.backend.models.research_schemas import AnalyzeRunRequest
+    assert _to_analyze_request(AnalyzeRunRequest(ticker='AAPL')).included_sections == set(SECTION_ORDER)

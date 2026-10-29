@@ -25,6 +25,7 @@ class Position:
     entry_price: float
     shares: int
     highest_close: float  # for trailing_stop
+    entry_cost: float = 0.0
 
 
 @dataclass
@@ -49,115 +50,95 @@ class SimulationOutput:
 
 
 def run_simulation(spec: StrategySpec, matrix: IndicatorMatrix) -> SimulationOutput:
-    """Single-pass per-bar simulation."""
+    """Evaluate at the close, fill at the next available bar's open.
+
+    Unfilled signals at the end of the window expire. Open positions remain
+    marked to the last available close; they are not implicitly liquidated.
+    """
     cfg = spec.backtest_config
     cash = float(cfg.starting_capital_usd)
     positions: dict[str, Position] = {}
     trades: list[Trade] = []
     equity_curve: list[float] = []
     out_dates: list[datetime] = []
+    pending_entries: dict[str, float] = {}  # signal-day ATR for sizing
+    pending_exits: dict[str, str] = {}
+    last_closes: dict[str, float] = {}
 
     if not matrix.indicators:
-        return SimulationOutput(
-            trades=[], equity_curve=[cash], dates=[],
-            final_cash=cash, final_positions={},
-        )
+        return SimulationOutput(equity_curve=[cash], final_cash=cash)
 
-    # Build unified date index from union of all tickers
-    all_dates = sorted(set().union(*[
-        df.index for df in matrix.indicators.values()
-    ]))
-
+    all_dates = sorted(set().union(*[df.index for df in matrix.indicators.values()]))
     cost_pct = (cfg.commission_bps + cfg.slippage_bps) / 10000.0
 
     for date in all_dates:
-        # 1. EXITS
-        for ticker, pos in list(positions.items()):
-            df = matrix.indicators.get(ticker)
-            if df is None or date not in df.index:
+        # Fill yesterday's exits first, using today's open (including gaps).
+        for ticker, reason in list(pending_exits.items()):
+            df = matrix.indicators[ticker]
+            if date not in df.index:
                 continue
-            current_close = float(df.loc[date, "close"])
-            current_atr = float(df.loc[date, "atr_14"]) if "atr_14" in df.columns else 0.0
-            bars_held = df.index.get_loc(date) - df.index.get_loc(pos.entry_date)
-            # Update highest close for trailing stop
-            if current_close > pos.highest_close:
-                pos.highest_close = current_close
-            exit_reason = None
-            for exit_block in spec.exit:
-                try:
-                    if eval_exit(exit_block, ticker, matrix,
-                                  position=pos, current_close=current_close,
-                                  current_atr=current_atr, bars_held=bars_held):
-                        exit_reason = exit_block.type
+            pos = positions.pop(ticker)
+            price = float(df.loc[date, "open"])
+            cost = price * pos.shares * cost_pct
+            cash += price * pos.shares - cost
+            trades.append(Trade(
+                ticker=ticker, entry_date=pos.entry_date, exit_date=date,
+                entry_price=pos.entry_price, exit_price=price, shares=pos.shares,
+                pnl=(price - pos.entry_price) * pos.shares - pos.entry_cost - cost,
+                exit_reason=reason,
+            ))
+            del pending_exits[ticker]
+
+        for ticker, signal_atr in list(pending_entries.items()):
+            df = matrix.indicators[ticker]
+            if date not in df.index:
+                continue
+            del pending_entries[ticker]
+            if len(positions) >= cfg.max_concurrent_positions:
+                continue
+            price = float(df.loc[date, "open"])
+            # No current-day close is known at execution time.
+            equity_at_open = cash + sum(
+                pos.shares * (float(matrix.indicators[t].loc[date, "open"])
+                              if date in matrix.indicators[t].index else last_closes[t])
+                for t, pos in positions.items()
+            )
+            dollars = compute_position_dollars(
+                spec.sizing, cash=cash, total_equity=equity_at_open,
+                current_positions=len(positions), current_atr=signal_atr,
+            )
+            shares = int(min(dollars, cash / (1 + cost_pct)) // price)
+            if shares <= 0:
+                continue
+            cost = price * shares * cost_pct
+            cash -= price * shares + cost
+            positions[ticker] = Position(
+                ticker=ticker, entry_date=date, entry_price=price,
+                shares=shares, highest_close=price, entry_cost=cost,
+            )
+
+        # Signals are evaluated only after this bar closes.
+        for ticker, df in matrix.indicators.items():
+            if date not in df.index:
+                continue
+            close = float(df.loc[date, "close"])
+            last_closes[ticker] = close
+            atr = float(df.loc[date, "atr_14"]) if "atr_14" in df.columns else 0.0
+            if ticker in positions:
+                pos = positions[ticker]
+                pos.highest_close = max(pos.highest_close, close)
+                bars_held = df.index.get_loc(date) - df.index.get_loc(pos.entry_date)
+                for block in spec.exit:
+                    if eval_exit(block, ticker, matrix, position=pos,
+                                 current_close=close, current_atr=atr, bars_held=bars_held):
+                        pending_exits[ticker] = block.type
                         break
-                except Exception:
-                    continue
-            # Reverse-signal-as-exit
-            if exit_reason is None and cfg.reverse_signal_as_exit:
-                if not _entry_fires(spec, ticker, date, matrix):
-                    exit_reason = "reverse_signal"
-            if exit_reason:
-                cost = current_close * pos.shares * cost_pct
-                proceeds = current_close * pos.shares - cost
-                cash += proceeds
-                pnl = (current_close - pos.entry_price) * pos.shares - cost
-                trades.append(Trade(
-                    ticker=ticker, entry_date=pos.entry_date, exit_date=date,
-                    entry_price=pos.entry_price, exit_price=current_close,
-                    shares=pos.shares, pnl=pnl, exit_reason=exit_reason,
-                ))
-                del positions[ticker]
+                if ticker not in pending_exits and cfg.reverse_signal_as_exit and not _entry_fires(spec, ticker, date, matrix):
+                    pending_exits[ticker] = "reverse_signal"
+            elif _filters_pass(spec, ticker, date, matrix) and _entry_fires(spec, ticker, date, matrix):
+                pending_entries[ticker] = atr if atr > 0 else 1.0
 
-        # 2. ENTRIES
-        if len(positions) < cfg.max_concurrent_positions:
-            for ticker, df in matrix.indicators.items():
-                if ticker in positions:
-                    continue
-                if date not in df.index:
-                    continue
-                if not _filters_pass(spec, ticker, date, matrix):
-                    continue
-                if not _entry_fires(spec, ticker, date, matrix):
-                    continue
-                # Compute sizing
-                cur_atr = float(df.loc[date, "atr_14"]) if "atr_14" in df.columns else 1.0
-                total_equity = cash + sum(
-                    p.shares * matrix.indicators[t].loc[date, "close"]
-                    if (date in matrix.indicators[t].index) else 0
-                    for t, p in positions.items()
-                )
-                dollars = compute_position_dollars(
-                    spec.sizing,
-                    cash=cash, total_equity=total_equity,
-                    current_positions=len(positions),
-                    current_atr=cur_atr if cur_atr > 0 else 1.0,
-                )
-                if dollars <= 0:
-                    continue
-                price = float(df.loc[date, "close"])
-                shares = int(dollars // price)
-                if shares <= 0:
-                    continue
-                cost = price * shares * cost_pct
-                if cash < price * shares + cost:
-                    continue
-                cash -= price * shares + cost
-                positions[ticker] = Position(
-                    ticker=ticker, entry_date=date, entry_price=price,
-                    shares=shares, highest_close=price,
-                )
-                if len(positions) >= cfg.max_concurrent_positions:
-                    break
-
-        # 3. Mark-to-market
-        portfolio = cash
-        for t, pos in positions.items():
-            df = matrix.indicators.get(t)
-            if df is not None and date in df.index:
-                portfolio += pos.shares * float(df.loc[date, "close"])
-            else:
-                portfolio += pos.shares * pos.entry_price
-        equity_curve.append(portfolio)
+        equity_curve.append(cash + sum(pos.shares * last_closes[t] for t, pos in positions.items()))
         out_dates.append(date)
 
     return SimulationOutput(

@@ -269,7 +269,7 @@ def _to_analyze_request(req: AnalyzeRunRequest) -> AnalyzeRequest:
         risk_tolerance=req.risk_tolerance,
         use_personas=req.use_personas,
         included_sections=(
-            set(req.included_sections) if req.included_sections
+            set(req.included_sections) if req.included_sections is not None
             else set(SECTION_ORDER)
         ),
         persona_overrides=req.persona_overrides,

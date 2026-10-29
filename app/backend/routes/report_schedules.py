@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
 from app.backend.auth.dependencies import get_current_user
+from app.backend.models.research_schemas import AnalyzeConfig
 from app.backend.database import get_db
 from app.backend.database.models import ReportSchedule, User
 from app.backend.services.scheduler_service import SchedulerService, get_scheduler_service
@@ -51,12 +52,14 @@ def _norm_lang(lang: str | None) -> str:
 
 class ScheduleCreate(BaseModel):
     tickers: list[str]
+    analysis_config: AnalyzeConfig | None = None
     cron_expr: str
     report_language: str = "en"
     is_enabled: bool = True
 
 
 class ScheduleUpdate(BaseModel):
+    analysis_config: AnalyzeConfig | None = None
     tickers: list[str] | None = None
     cron_expr: str | None = None
     report_language: str | None = None
@@ -68,6 +71,7 @@ class ScheduleOut(BaseModel):
 
     id: int
     tickers: list[str]
+    analysis_config: AnalyzeConfig | None = None
     cron_expr: str
     report_language: str
     is_enabled: bool
@@ -102,6 +106,7 @@ def create_schedule(
     sched = ReportSchedule(
         user_id=current_user.id,
         tickers=tickers,
+        analysis_config=body.analysis_config.model_dump() if body.analysis_config is not None else None,
         cron_expr=body.cron_expr,
         report_language=_norm_lang(body.report_language),
         is_enabled=body.is_enabled,
@@ -129,6 +134,8 @@ def update_schedule(
     ).first()
     if not sched:
         raise HTTPException(404, "Schedule not found")
+    if "analysis_config" in body.model_fields_set:
+        sched.analysis_config = body.analysis_config.model_dump() if body.analysis_config is not None else None
     if body.cron_expr is not None:
         _validate_cron(body.cron_expr)
         sched.cron_expr = body.cron_expr

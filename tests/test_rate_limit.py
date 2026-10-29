@@ -87,6 +87,8 @@ def _reload_rate_limit_stack():
     importlib.reload(auth_module)
     importlib.reload(research_module)
     importlib.reload(scanner_module)
+    import app.backend.routes.screener as screener_module
+    importlib.reload(screener_module)
     import app.backend.routes as routes_pkg
 
     importlib.reload(routes_pkg)
@@ -197,6 +199,23 @@ def test_main_app_has_limiter_wired(monkeypatch):
     assert getattr(main.app.state, "limiter", None) is not None
     mw_names = {m.cls.__name__ for m in main.app.user_middleware}
     assert "SlowAPIMiddleware" in mw_names, mw_names
+
+
+
+def test_snapshot_refresh_is_rate_limited(monkeypatch):
+    from unittest.mock import Mock
+    from app.backend.auth.dependencies import get_current_user
+    from app.backend.database.models import User
+    monkeypatch.setenv('RATE_LIMIT_ENABLED', 'true')
+    monkeypatch.setenv('RATE_LIMIT_HEAVY', '2/minute')
+    main = _reload_main_with_env()
+    main.app.dependency_overrides[get_current_user] = lambda: User(id=1)
+    import app.backend.routes.screener as screener
+    start = Mock(return_value=(True, screener.get_refresh_state()))
+    monkeypatch.setattr(screener, 'start_refresh', start)
+    client = TestClient(main.app)
+    assert [client.post('/screener/snapshot/refresh').status_code for _ in range(3)] == [200, 200, 429]
+    assert start.call_count == 2
 
 
 def teardown_module(module):

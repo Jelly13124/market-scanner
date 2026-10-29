@@ -1,3 +1,7 @@
+import type { AnalyzeRunRequest } from '@/types/analyze';
+
+export type ScheduledAnalysisConfig = Omit<AnalyzeRunRequest, 'ticker' | 'report_language'>;
+
 // report-schedules-api.ts — REST wrapper for /report-schedules/* (Stage 3).
 // Auth header injected by the global fetch interceptor. Trailing-slash collection
 // URLs avoid the proxy 307-redirect that can drop auth (see api-keys-api.ts).
@@ -7,6 +11,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 export interface ReportSchedule {
   id: number;
   tickers: string[];
+  analysis_config?: ScheduledAnalysisConfig | null;
   cron_expr: string;
   report_language: string;
   is_enabled: boolean;
@@ -16,6 +21,7 @@ export interface ReportSchedule {
 
 export interface ScheduleCreate {
   tickers: string[];
+  analysis_config?: ScheduledAnalysisConfig | null;
   cron_expr: string;
   report_language?: string;
   is_enabled?: boolean;
@@ -23,6 +29,7 @@ export interface ScheduleCreate {
 
 export interface ScheduleUpdate {
   tickers?: string[];
+  analysis_config?: ScheduledAnalysisConfig | null;
   cron_expr?: string;
   report_language?: string;
   is_enabled?: boolean;

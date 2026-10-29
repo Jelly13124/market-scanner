@@ -115,3 +115,16 @@ class TestAnalyzeFlowRoutes:
         assert d.status_code == 204
         g = client.get(f"/analyze-flows/{flow_id}", headers=_hdr(tok))
         assert g.status_code == 404
+
+
+def test_clear_persona_override_and_reload(client):
+    token = _token(client)
+    headers = _hdr(token)
+    created = client.post('/analyze-flows', headers=headers, json={
+        'name': 'clear-test', 'included_sections': ['valuation'],
+        'persona_overrides': {'valuation': 'buffett'},
+    }).json()
+    url = f"/analyze-flows/{created['id']}"
+    assert client.patch(url, headers=headers, json={'name': 'renamed'}).json()['persona_overrides'] == {'valuation': 'buffett'}
+    assert client.patch(url, headers=headers, json={'persona_overrides': None}).json()['persona_overrides'] is None
+    assert client.get(url, headers=headers).json()['persona_overrides'] is None

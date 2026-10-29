@@ -104,3 +104,19 @@ def test_oos_simulation_and_metrics_use_same_starting_equity(universe, loader, s
     assert simulation.call_args_list[1].args[0].backtest_config.starting_capital_usd == 120000
     assert abs(result.oos_metrics.total_return - 0.05) < 1e-9
     assert spec.backtest_config.starting_capital_usd == 100000
+
+
+@patch('src.lab.backtest_runner._compute_benchmark_cagr', return_value=0.15)
+@patch('src.lab.backtest_runner.DataLoader')
+@patch('src.lab.backtest_runner.load_universe_tickers', return_value=['AAPL'])
+def test_benchmark_uses_oos_dates(universe, loader, benchmark):
+    from datetime import date
+    from src.lab.engine.data import DataLoadResult
+    spec = _minimal_spec()
+    spec.backtest_config.start_date = '2020-01-01'
+    spec.backtest_config.end_date = '2021-01-01'
+    spec.backtest_config.benchmark = 'spy'
+    loader.return_value.load.return_value = DataLoadResult(bars={'AAPL': _df_uptrend()}, failed={})
+    result = run_backtest(spec, db=MagicMock())
+    benchmark.assert_called_once_with(date.fromisoformat(result.midpoint_date), date(2021, 1, 1))
+    assert result.benchmark_cagr == 0.15

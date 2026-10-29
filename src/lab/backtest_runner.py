@@ -121,10 +121,10 @@ def run_backtest(spec: StrategySpec, db: Any, *, user_id: int | None = None) -> 
         starting_capital=oos_capital,
     )
 
-    # 7. Benchmark CAGR (rough — fetch SPY closes and compute on the same window)
+    # 7. Compare OOS strategy and benchmark over the same evaluation window.
     benchmark_cagr = None
     if cfg.benchmark == "spy":
-        benchmark_cagr = _compute_benchmark_cagr(start, end)
+        benchmark_cagr = _compute_benchmark_cagr(midpoint, end)
 
     # 8. Verdict
     verdict = make_verdict(is_m, oos_m, benchmark_cagr=benchmark_cagr)

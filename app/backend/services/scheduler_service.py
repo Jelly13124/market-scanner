@@ -515,22 +515,17 @@ def _run_report_schedule_job(schedule_id: int) -> None:
 
         from app.backend.services.api_key_service import ApiKeyService
         from src.research.html_render import render_sop
-        from src.research.models import AnalyzeRequest
         from src.research.sop_orchestrator import run_sop
 
+        from app.backend.models.research_schemas import AnalyzeConfig, AnalyzeRunRequest
+        from app.backend.routes.research import _to_analyze_request
+
         api_keys = ApiKeyService(db, user_id).get_api_keys_dict()
+        config = AnalyzeConfig.model_validate(sched.analysis_config or {}).model_dump()
+        config["report_language"] = sched.report_language or "en"
         for ticker in tickers:
             try:
-                req = AnalyzeRequest(
-                    ticker=ticker,
-                    objective="general_research",
-                    position_budget_usd=None,
-                    already_holds=False,
-                    cost_basis_usd=None,
-                    risk_tolerance="balanced",
-                    use_personas=False,
-                    report_language=(sched.report_language or "en"),
-                )
+                req = _to_analyze_request(AnalyzeRunRequest(ticker=ticker, **config))
                 report = run_sop(req, api_keys=api_keys, owner_id=user_id)
                 html = render_sop(report)
                 res = email_report_html(db, user_id, ticker=ticker, html=html)

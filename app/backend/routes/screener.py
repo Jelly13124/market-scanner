@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.backend.auth.dependencies import get_current_user
+from app.backend.rate_limit import heavy_limit, rate_limited
 from app.backend.database import get_db
 from app.backend.database.models import TickerSnapshot, User
 from app.backend.models.screener_schemas import (
@@ -149,7 +150,10 @@ def get_sector_summary(
 
 
 @router.post("/snapshot/refresh", response_model=SnapshotRefreshOut)
+@rate_limited(heavy_limit())
 def refresh_snapshot(
+    request: Request,
+    current_user: User = Depends(get_current_user),
     market: Annotated[str, Query(pattern="^(US|CN)$")] = "US",
 ) -> SnapshotRefreshOut:
     """Trigger a single-market snapshot rebuild on a background thread.

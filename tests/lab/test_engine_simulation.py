@@ -105,3 +105,47 @@ def test_simulation_stop_loss_closes_position():
     exit_reasons = {t.exit_reason for t in result.trades}
     # In this contrived series, stop_loss should be among the reasons
     assert len(result.trades) > 0
+
+
+def test_signals_fill_on_next_open_and_round_trip_pnl_includes_both_costs(monkeypatch):
+    from src.lab.engine.indicators import IndicatorMatrix
+    dates = pd.date_range('2024-01-02', periods=4, freq='B')
+    df = pd.DataFrame({'open': [90, 100, 120, 101.5], 'close': [100, 100, 100, 101.5], 'atr_14': [1]*4}, index=dates)
+    monkeypatch.setattr('src.lab.engine.simulation.eval_entry', lambda *args: pd.Series([True, False, False, False], index=dates))
+    spec = _minimal_spec()
+    spec.exit = [TimeStopExit(bars=1)]
+    spec.sizing = FixedPctSizing(pct=0.5)
+    spec.backtest_config = BacktestConfig(starting_capital_usd=10000, commission_bps=100, slippage_bps=0, reverse_signal_as_exit=False)
+    result = run_simulation(spec, IndicatorMatrix(indicators={'AAPL': df}))
+    trade, = result.trades
+    assert trade.entry_date == dates[1]
+    assert trade.entry_price == 100
+    assert trade.exit_date == dates[3]  # signal at day-3 close, not day-3 open=120
+    assert trade.exit_price == 101.5
+    assert abs(trade.pnl - (-25.75)) < 1e-8
+    assert abs(result.final_cash - 10000 - trade.pnl) < 1e-8
+
+
+def test_final_bar_signal_is_not_filled(monkeypatch):
+    from src.lab.engine.indicators import IndicatorMatrix
+    dates = pd.date_range('2024-01-02', periods=2, freq='B')
+    df = pd.DataFrame({'open': [100, 120], 'close': [100, 110]}, index=dates)
+    monkeypatch.setattr('src.lab.engine.simulation.eval_entry', lambda *args: pd.Series([False, True], index=dates))
+    result = run_simulation(_minimal_spec(), IndicatorMatrix(indicators={'AAPL': df}))
+    assert result.final_positions == {}
+    assert result.trades == []
+    assert result.final_cash == 100000
+
+
+def test_next_available_open_handles_missing_ticker_days(monkeypatch):
+    from src.lab.engine.indicators import IndicatorMatrix
+    dates = pd.date_range('2024-01-02', periods=3, freq='B')
+    a = pd.DataFrame({'open': [100, 125], 'close': [100, 130]}, index=dates[[0, 2]])
+    b = pd.DataFrame({'open': [50]*3, 'close': [50]*3}, index=dates)
+    def entry(block, ticker, matrix):
+        return pd.Series([True, False], index=a.index) if ticker == 'AAPL' else pd.Series(False, index=b.index)
+    monkeypatch.setattr('src.lab.engine.simulation.eval_entry', entry)
+    spec = _minimal_spec(); spec.backtest_config.reverse_signal_as_exit = False
+    result = run_simulation(spec, IndicatorMatrix(indicators={'AAPL': a, 'B': b}))
+    assert result.final_positions['AAPL'].entry_date == dates[2]
+    assert result.final_positions['AAPL'].entry_price == 125

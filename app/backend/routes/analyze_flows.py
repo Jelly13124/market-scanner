@@ -100,6 +100,7 @@ def update_flow(
         use_personas=req.use_personas,
         debate_rounds=req.debate_rounds,
         persona_overrides=req.persona_overrides,
+        clear_overrides="persona_overrides" in req.model_fields_set and req.persona_overrides is None,
     )
     return AnalyzeFlowResponse.model_validate(row)
 

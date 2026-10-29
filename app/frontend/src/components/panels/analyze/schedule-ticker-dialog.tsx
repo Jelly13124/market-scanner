@@ -16,6 +16,7 @@ import {
   describeCron,
   reportSchedulesService,
   type Frequency,
+  type ScheduledAnalysisConfig,
 } from '@/services/report-schedules-api';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +24,7 @@ import { toast } from 'sonner';
 
 export interface ScheduleTickerContext {
   ticker: string;
+  analysisConfig: ScheduledAnalysisConfig;
   /** 'en' | 'zh' — seeds the dialog's language select. */
   reportLanguage: string;
 }
@@ -53,6 +55,7 @@ export function ScheduleTickerDialog({ ctx, onClose }: ScheduleTickerDialogProps
     try {
       await reportSchedulesService.create({
         tickers: [ticker],
+        analysis_config: ctx!.analysisConfig,
         cron_expr: buildCron(freq, time),
         report_language: lang,
       });

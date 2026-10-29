@@ -185,3 +185,13 @@ def test_get_sectors_invalid_market_returns_422(client_and_db):
     client, _ = client_and_db
     r = client.get("/screener/sectors?market=XX")
     assert r.status_code == 422
+
+
+def test_refresh_requires_login_and_does_not_start_for_anonymous(client_and_db, monkeypatch):
+    from unittest.mock import Mock
+    import app.backend.routes.screener as routes
+    client, _ = client_and_db
+    start = Mock()
+    monkeypatch.setattr(routes, 'start_refresh', start)
+    assert client.post('/screener/snapshot/refresh').status_code == 401
+    start.assert_not_called()

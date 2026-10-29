@@ -76,7 +76,20 @@ export function AnalyzePanel() {
       toast.error(t('analyze.scheduleDialog.noTicker'));
       return;
     }
-    setScheduleCtx({ ticker, reportLanguage: input?.report_language ?? uiReportLanguage() });
+    const cfg = canvasRef.current!.getConfig();
+    if (!cfg.included_sections.length) {
+      toast.error(t('analyze.errors.noSections'));
+      return;
+    }
+    setScheduleCtx({ ticker, reportLanguage: input!.report_language ?? uiReportLanguage(), analysisConfig: {
+      ...cfg,
+      market: input!.market ?? 'us',
+      objective: input!.objective,
+      position_budget_usd: input!.budget_usd ? parseFloat(input!.budget_usd) : null,
+      already_holds: input!.already_holds,
+      cost_basis_usd: input!.already_holds && input!.cost_basis_usd ? parseFloat(input!.cost_basis_usd) : null,
+      risk_tolerance: input!.risk_tolerance,
+    } });
   }, [t]);
 
   const getConfig = useCallback(
@@ -97,6 +110,10 @@ export function AnalyzePanel() {
       ? override
       : undefined;
     const cfg = getConfig();
+    if (!cfg.included_sections.length) {
+      toast.error(t('analyze.errors.noSections'));
+      return;
+    }
     const input = canvasRef.current?.getInputData();
     if (!input) {
       toast.error(t('analyze.errors.noInput'));

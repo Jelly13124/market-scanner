@@ -237,7 +237,8 @@
     },
     "errors": {
       "noInput": "Add an Input node to the canvas first.",
-      "noTicker": "Enter a ticker in the Input node."
+      "noTicker": "Enter a ticker in the Input node.",
+      "noSections": "Select at least one analysis section."
     },
     "toasts": {
       "complete": "Analyze complete: {{ticker}} (id {{id}})",

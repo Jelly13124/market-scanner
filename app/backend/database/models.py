@@ -59,7 +59,8 @@ class ReportSchedule(Base):
     id = Column(BigInteger().with_variant(Integer(), "sqlite"), primary_key=True, index=True)
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
     tickers = Column(JSON, nullable=False, default=list)  # list[str]
-    cron_expr = Column(String(120), nullable=False)  # interpreted in America/New_York
+    analysis_config = Column(JSON, nullable=True)  # frozen Analyze settings; null = legacy defaults
+    cron_expr = Column(String(120), nullable=False)  # interpreted in user timezone
     report_language = Column(String(4), nullable=False, default="en")  # "en" | "zh"
     is_enabled = Column(Boolean, nullable=False, default=True)
     last_run_at = Column(DateTime(timezone=True), nullable=True)

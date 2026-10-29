@@ -292,30 +292,6 @@ Stop any existing backend process, then start it again using the command in step
 
 The API address is embedded **at build time**. Rebuild the frontend after changing that address. The development `/api` proxy belongs to Vite; use the absolute backend address above for this backend-served build.
 
-### Let teammates connect without installing the project
-
-You can run one shared instance on your computer. Teammates on the same local network only need a browser; they do not need Python, Docker, or their own PostgreSQL installation.
-
-1. Find your computer's LAN IP address, for example `192.168.1.20`.
-2. Build the frontend using that address instead of loopback:
-
-   ```bash
-   cd app/frontend
-   VITE_API_URL=http://192.168.1.20:8001 npm run build
-   cd ../..
-   ```
-
-3. Stop the old backend and start it listening on the network:
-
-   ```bash
-   MONGODB_URI='' poetry run python -m uvicorn app.backend.main:app \
-     --env-file .env --host 0.0.0.0 --port 8001
-   ```
-
-4. Allow application port `8001` through your local firewall if prompted. Teammates open `http://192.168.1.20:8001` and register their own accounts.
-
-Replace the example IP in both places with your actual LAN address. Your computer must remain awake with the backend and database running. PostgreSQL stays bound to loopback through Compose; teammates access the application, not the database port. Different networks require a separate networking setup; these instructions cover the same LAN.
-
 ## Back up and update an existing installation
 
 Stop the application processes while leaving PostgreSQL running. Back up the database before applying migrations:
@@ -361,7 +337,6 @@ An older SQLite database is not automatically imported into PostgreSQL. An exist
 | Analyze says a model key is missing | Save the configured provider's key in Settings, or verify the Ollama service and model tag. |
 | Current quotes or other evidence are missing | Check Finnhub configuration, internet access, and provider permissions. Yahoo daily bars do not supply every evidence type. |
 | Saved model keys cannot be decrypted | Restore the original `APP_ENCRYPTION_KEY`, or save the keys again in Settings. |
-| Teammates cannot connect | Use the host's LAN IP, build with that IP, bind the backend to `0.0.0.0`, and check the firewall and network. |
 
 ## Current feature status
 

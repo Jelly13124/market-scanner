@@ -1,64 +1,181 @@
-# Market Scanner / Quant Lab
+# Market Scanner
 
-股票事件扫描、研究报告、策略实验与模拟交易项目。后端为 Python/FastAPI，前端为 React/Vite。默认分支 `main`。
+A stock screening, event scanning, AI research, and historical backtesting application. The backend uses Python/FastAPI; the frontend uses React/Vite. AI analysis uses **LangChain for model calls and structured output**, with **LangGraph for workflow orchestration**.
 
-## 当前实现
+This guide walks through running the application locally with **PostgreSQL and no MongoDB**. You do not need to rent a server or install PostgreSQL directly on your operating system: Docker runs the database, while Python and Node.js run the application.
 
-- 默认行情链路：优先 MongoDB 有效缓存，缺失或不可用时回退 Yahoo 日线和 Finnhub 当前数据；MongoDB 不是启动或分析的必需依赖。
-- Analyze 使用 LangChain 调用模型、LangGraph 编排流程，并行章节显式汇合后生成策略、证据和摘要；辩论按有界的独立发言与裁决节点执行。
-- 投资人物保留 Buffett、Lynch、Wood、Burry、Druckenmiller 五位；每次辩论选两位。画布 Debate 节点支持自定义 1–5 轮，默认 1 轮；辩论模型调用数为 `2 × 轮数 + 1`（另有路由与报告章节调用），保存及加载流程会保留轮数和开关。
-- 模型支持用户自带 key / Ollama；包括 owner 和后台任务在内，默认不使用主机付费 key。
-- 扫描器输出完整 universe 的 detector outcome。启用 MongoDB 后保存完整扫描历史、冻结数据集、报告、节点缓存和 checkpoint；数据库不可用时继续在线执行并明确显示未保存。
-- PostgreSQL 保存账户、配置、流程模板、调度、watchlist 和报告兼容副本；应用不再默认使用 SQLite。旧 LangGraph 执行入口和旧付费行情适配器已删除，FD 显式兼容入口保留。
+## What you need
 
-本地验证与部署验收是不同阶段。MongoDB 的真实 validator/索引、生产迁移和真实模型报告仍需在对应环境验收；本轮先测试完全不连接 MongoDB 的路径。
-
-详细契约见 [需求基线](docs/requirements/market-data-and-analyze.md)，字段关系见 [MongoDB ERD](docs/design/mongodb-market-data-erd.md)，当前工作记录见 [handoff](docs/handoffs/2026-10-28-postgres-local.md)。
-
-## 功能入口
-
-| 入口 | 当前能力 | 状态与边界 |
+| Component | Requirement | Purpose |
 | --- | --- | --- |
-| Watchlist / Screener / Scanner | 自选股、股票筛选、事件扫描 | 行情依赖网络与数据源权限 |
-| Analyze / Reports | 组合预置分析模块、人物辩论、报告、按当前配置快照调度 | 需要可用模型；画布连线暂不改变执行顺序，不支持任意自定义 agent / 工具 |
-| Backtest | 股票池、日期、规则、成本、样本内/外结果与图表 | **基础版**：无需模型 key；尚未连接 Analyze 策略，缺少进度、取消任务及参数对比 |
-| Paper | 手动模拟账本原型，代码与已有数据保留 | **开发中，暂不开放**：入口不可点击，个人 Paper API 未挂载；尚无市场价格自动估值 |
+| Git | Installed | Download and update the source |
+| Python | 3.11 or newer; the examples use 3.12 | Run the backend |
+| Poetry | Installed and available in your terminal | Manage Python dependencies |
+| Node.js / npm | Node.js 22 or newer | Install and run the frontend |
+| Docker with Compose v2 | Running; Docker Desktop works for local development | Run PostgreSQL 16 |
+| Internet access | Required for dependency downloads and online market data | Fetch historical bars and other evidence |
+| Model access | Your own provider API key, or a running Ollama model | Generate AI research reports |
 
-Analyze 至少选择一个有效章节才可运行。画布调度会保存当时的市场、章节、人物、轮数和输入参数；旧调度保留默认报告行为。
+**PostgreSQL is required by the course version. MongoDB is optional.** Without MongoDB, the application retrieves market data online and keeps supported application records in PostgreSQL. There is no automatic SQLite fallback for normal application use.
 
-回测以收盘信号在下一有效交易日开盘成交，统计双边手续费与滑点成本，样本外策略和 SPY 按相同区间比较。旧回测结果不会自动重算，需要重新运行。
+You can start the application, register, manage watchlists, and run historical backtests before configuring an AI model. Full AI reports require model access. Paper trading is under development and unavailable to users.
 
-独立 Sectors、Institutional 页面已移除，原 Lab 页面替换为 Backtest。Analyze、Backtest、Paper 目前是独立功能，尚未形成自动执行闭环。
+## 1. Install the development tools
 
-## 数据库和登录
+The commands below use **Bash or Zsh**. On Windows, use WSL2 with Docker Desktop's WSL integration; run the project commands inside WSL rather than copying them directly into PowerShell.
 
-PostgreSQL（PG）是课程版的必需组件，保存账号、配置、流程、回测和个人模拟账户。MongoDB 只负责可选缓存与历史数据；关闭 MongoDB 不会关闭 PostgreSQL。
-
-本地使用 Docker 运行 PostgreSQL，**不需要在系统手动安装 PostgreSQL 服务**。首次打开页面自行注册普通账户即可，目前没有预设管理员账号。新增管理员入口仍然需要数据库保存账号与权限，不能用来省掉 PG；当前功能不需要额外管理员登录页面。
-
-## 本地启动（先不连接 MongoDB）
-
-准备 Python >=3.11、Poetry、Node.js 22 / npm 和 Docker Desktop。完整配置、PostgreSQL 初始化、Ollama 和前端构建部署步骤见 [本地部署指南](docs/LOCAL_DEPLOY.md)。
-
-已有 SQL 数据库先按指南备份并执行迁移，新增的 `analyze_flows.debate_rounds` 字段用于保存自定义轮数；新库由初始化流程建立。
-
-从仓库根目录安装后端依赖，已有 `.env` 时保留原文件：
+On macOS, if Homebrew is already installed, you can install the tools with:
 
 ```bash
+brew install git python@3.12 node@22 pipx
+pipx ensurepath
+pipx install poetry
+brew install --cask docker
+```
+
+Skip any tools you already have. Open Docker Desktop and wait for its engine to start. After installing tools, open a new terminal so PATH changes take effect. If Homebrew's `node@22` is not on PATH, follow the instructions shown by `brew info node@22`.
+
+On Linux or WSL, install the same tools using your distribution's package manager or their installers, including the Docker Compose v2 plugin. The remaining project setup is the same.
+
+Check that the tools are available:
+
+```bash
+git --version
+python3.12 --version
+poetry --version
+node --version
+npm --version
+docker compose version
+docker info --format '{{.ServerVersion}}'
+```
+
+If your Python executable has a different name, replace `python3.12` in the commands below with your installed Python 3.11+ executable. Do not use an older system Python such as 3.9.
+
+## 2. Download the project and install backend dependencies
+
+```bash
+git clone https://github.com/Jelly13124/market-scanner.git
+cd market-scanner
+poetry env use python3.12
 poetry install
+poetry run python --version
+```
+
+Run subsequent backend and Docker commands from this **repository root**. Frontend commands explicitly change into `app/frontend`.
+
+If you already have the repository, use your existing checkout rather than cloning another copy. For an existing database, follow [Updating an existing installation](#updating-an-existing-installation) before starting the new version.
+
+## 3. Create your local configuration
+
+Copy the example only if you do not already have a `.env` file:
+
+```bash
 [ -f .env ] || cp .env.example .env
 ```
 
-按指南设置 `.env` 中的 PostgreSQL 密码、`DATABASE_URL`、`JWT_SECRET` 和 `APP_ENCRYPTION_KEY`，先启动 PostgreSQL 并初始化表，再启动后端。命令中的空 URI 强制禁用 MongoDB，即使 Docker 中已有 MongoDB 也不会连接：
+Generate three separate values:
+
+```bash
+# PostgreSQL password: copy this output into both password locations below.
+poetry run python -c 'import secrets; print(secrets.token_hex(24))'
+
+# JWT signing secret.
+poetry run python -c 'import secrets; print(secrets.token_urlsafe(48))'
+
+# Encryption key for model API keys saved through Settings.
+poetry run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+```
+
+Open `.env` in your editor and set the following fields. Replace the uppercase placeholders with the generated values; do not leave the placeholder text in the file.
+
+```dotenv
+ENVIRONMENT=development
+REQUIRE_EMAIL_VERIFICATION=false
+
+POSTGRES_DB=market_scanner
+POSTGRES_USER=market_scanner
+POSTGRES_PASSWORD=PASTE_DATABASE_PASSWORD
+DATABASE_URL=postgresql+psycopg2://market_scanner:PASTE_DATABASE_PASSWORD@127.0.0.1:5433/market_scanner
+
+JWT_SECRET=PASTE_JWT_SECRET
+APP_ENCRYPTION_KEY=PASTE_FERNET_KEY
+
+SCANNER_DATA_PROVIDER=hybrid
+MONGODB_URI=
+FINNHUB_API_KEY=
+
+RESEARCH_MODEL_PROVIDER=DeepSeek
+RESEARCH_MODEL_NAME=deepseek-chat
+ENABLE_HOST_PAPER_JOBS=false
+```
+
+Important configuration details:
+
+- Use the **same database password** in `POSTGRES_PASSWORD` and `DATABASE_URL`. The hexadecimal password generated above is suitable for direct use in the URL.
+- `5433` is the database port on your computer; Docker maps it to PostgreSQL's internal port `5432`.
+- Keep `APP_ENCRYPTION_KEY` stable. Changing it prevents previously saved model keys from being decrypted. Changing `JWT_SECRET` invalidates existing login tokens.
+- Keep your existing secrets when restarting or upgrading. `.env` is ignored by Git.
+- Leave `MONGODB_URI` empty for this installation. The startup commands also explicitly disable MongoDB, even if you already have a MongoDB container running.
+- Yahoo historical daily bars require no API key. `FINNHUB_API_KEY` is optional for current quotes and additional evidence; missing keys or insufficient permissions leave the affected evidence unavailable.
+- You do not need a Financial Datasets key for the default data path. Paid model key placeholders elsewhere in `.env.example` are for legacy CLI or explicit integrations; the web analysis uses keys saved in Settings.
+
+## 4. Start PostgreSQL and initialize the database
+
+With Docker running, execute from the repository root:
 
 ```bash
 docker compose -f compose.local.yml up -d --wait postgres
+docker compose -f compose.local.yml ps
+```
+
+Wait for PostgreSQL to be healthy, then initialize the application tables:
+
+```bash
 MONGODB_URI='' poetry run python -c 'from dotenv import load_dotenv; load_dotenv(); from docker.db_init import main; main()'
+```
+
+For a new database, the initializer creates the ORM tables and records the current Alembic version. For an existing versioned database, it applies incremental migrations. Use this initializer for a fresh installation: the legacy Alembic history is not a complete empty-database bootstrap.
+
+Successful initialization ends with:
+
+```text
+[db_init] done
+```
+
+PostgreSQL stores accounts, password hashes, encrypted model keys, watchlists, configurations, analysis templates, schedules, SQL report copies, and backtest strategies/results. Data lives in the Compose `postgres_data` named volume and persists when the container stops.
+
+**An empty MongoDB is not an error. An unavailable PostgreSQL is an error**, because PostgreSQL stores the application data needed for login and normal use.
+
+## 5. Start the backend
+
+Keep this terminal open:
+
+```bash
 MONGODB_URI='' poetry run python -m uvicorn app.backend.main:app \
   --env-file .env --host 127.0.0.1 --port 8001
 ```
 
-前端在另一个终端运行：
+`--env-file .env` loads your configuration before the application is imported. The empty `MONGODB_URI` supplied on the command line takes precedence over the file.
+
+Use a single backend process for this local setup; scheduled jobs currently use an in-process scheduler.
+
+In another terminal, check the backend:
+
+```bash
+curl --fail http://127.0.0.1:8001/health
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+Interactive API documentation: [http://127.0.0.1:8001/docs](http://127.0.0.1:8001/docs).
+
+## 6. Start the frontend and create an account
+
+In a new terminal, navigate to your repository root, then run:
 
 ```bash
 cd app/frontend
@@ -66,17 +183,208 @@ npm ci
 VITE_API_URL=/api npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-打开 [本地应用](http://127.0.0.1:5173)，在页面注册并登录。后端健康检查为 [GET /health](http://127.0.0.1:8001/health)，接口文档为 [Swagger UI](http://127.0.0.1:8001/docs)。两个终端均用 `Ctrl+C` 停止。
+Open [http://127.0.0.1:5173](http://127.0.0.1:5173).
 
-无需安装 MongoDB 或配置付费行情 key 即可启动；默认 Yahoo 日线在线获取，Finnhub 当前数据需配置 `FINNHUB_API_KEY`，缺失时标记对应证据不足。完整 AI 报告需要在 Settings 保存用户自己的模型 key，或显式选择可用的 Ollama。主机 `.env` 中的付费模型 key 不会自动用于用户分析。账户、设置和报告兼容副本保存在本地 Docker PostgreSQL（端口 5433，命名卷持久化）。
+1. Register with your own email address and password.
+2. Sign in to the account you created.
+3. Open Settings to configure model access when you are ready to run AI analysis.
 
-## 文档
+There is **no default administrator account or shared password**. With `REQUIRE_EMAIL_VERIFICATION=false`, local registration does not require email verification or a configured email service. An unconfigured mail service may log a delivery failure without preventing registration.
 
-- [接手文档](docs/handoffs/2026-10-28-postgres-local.md)
-- [本地部署指南](docs/LOCAL_DEPLOY.md)
-- [文档索引](docs/README.md)
-- [开发与验证](docs/development.md)
-- [当前部署说明](docs/DEPLOY.md)
-- [Scanner 行为](v2/scanner/README.md)
+Keep using `127.0.0.1` consistently in this setup. The `/api` value tells Vite to proxy requests to the backend on port `8001`, so browser requests use the frontend origin. Do not omit `VITE_API_URL`; older services have different fallback addresses.
 
-研究结果用于分析与研究，不构成收益承诺。
+## 7. Configure AI analysis
+
+Choose one of these options.
+
+### Option A: Use your own provider API key
+
+The default configuration is:
+
+```dotenv
+RESEARCH_MODEL_PROVIDER=DeepSeek
+RESEARCH_MODEL_NAME=deepseek-chat
+```
+
+Save your own DeepSeek key in the application's Settings. Then open Analyze, enter a ticker, select at least one section, and run a small report first. Provider usage may be billed to the key you supplied.
+
+To use another supported provider, update both the provider and model name in `.env`, restart the backend, and save that provider's key in Settings. User analyses and scheduled reports do not automatically consume paid model keys from the host environment.
+
+### Option B: Use a local Ollama model
+
+Install and start Ollama, download a suitable model, and inspect your installed tags:
+
+```bash
+ollama list
+```
+
+Then update `.env`:
+
+```dotenv
+RESEARCH_MODEL_PROVIDER=Ollama
+RESEARCH_MODEL_NAME=YOUR_INSTALLED_MODEL_TAG
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+```
+
+Replace `YOUR_INSTALLED_MODEL_TAG` with the exact tag shown by `ollama list`, then restart the backend. The model must support the structured output required by analysis. An unavailable Ollama model does not automatically fall back to a paid provider.
+
+The Debate node supports 1–5 rounds, with a default of 1. Two speakers are selected from Buffett, Lynch, Wood, Burry, and Druckenmiller. Debate uses `2 × rounds + 1` model calls, in addition to routing and other report sections.
+
+## 8. Check your installation
+
+| Check | Expected result |
+| --- | --- |
+| Backend health | `/health` returns `{"status":"ok"}` |
+| Account | Registration and sign-in work |
+| Persistence | A saved watchlist remains after a page refresh |
+| Backtest | A small watchlist and saved historical date range produce results and charts |
+| AI analysis | A configured model can run a small report; missing evidence is identified |
+| Paper | The sidebar shows “In development” with no trading controls |
+
+Start with a small watchlist to keep market-data downloads manageable. A successful health check confirms the server is running; it does not verify external data permissions or AI report quality.
+
+An optional developer smoke test checks the no-MongoDB data path without model calls:
+
+```bash
+# Run from the repository root.
+MONGODB_URI='' poetry run python -m scripts.smoke_no_mongo
+```
+
+This script deliberately uses an isolated temporary SQLite database for testing and requests a small amount of online Yahoo data. It does not replace the application's PostgreSQL database or validate full AI reports.
+
+## Daily startup and shutdown
+
+After the first installation, keep your existing `.env` and database volume. Start Docker, then run:
+
+```bash
+# Terminal 1: repository root.
+docker compose -f compose.local.yml up -d --wait postgres
+MONGODB_URI='' poetry run python -m uvicorn app.backend.main:app \
+  --env-file .env --host 127.0.0.1 --port 8001
+```
+
+```bash
+# Terminal 2: repository root, then frontend directory.
+cd app/frontend
+VITE_API_URL=/api npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+You do not need to reinstall dependencies every time. Stop each application terminal with `Ctrl+C`. To stop the database while retaining its data:
+
+```bash
+docker compose -f compose.local.yml stop postgres
+```
+
+Do not use `down -v` for routine shutdown: it deletes the database volume.
+
+## Run with one application server
+
+For everyday use, you can build the frontend and let FastAPI serve it, eliminating the separate Vite process:
+
+```bash
+# From the repository root.
+cd app/frontend
+VITE_API_URL=http://127.0.0.1:8001 npm run build
+cd ../..
+```
+
+Stop any existing backend process, then start it again using the command in step 5. Open [http://127.0.0.1:8001](http://127.0.0.1:8001) and stop Vite. PostgreSQL must remain running.
+
+The API address is embedded **at build time**. Rebuild the frontend after changing that address. The development `/api` proxy belongs to Vite; use the absolute backend address above for this backend-served build.
+
+### Let teammates connect without installing the project
+
+You can run one shared instance on your computer. Teammates on the same local network only need a browser; they do not need Python, Docker, or their own PostgreSQL installation.
+
+1. Find your computer's LAN IP address, for example `192.168.1.20`.
+2. Build the frontend using that address instead of loopback:
+
+   ```bash
+   cd app/frontend
+   VITE_API_URL=http://192.168.1.20:8001 npm run build
+   cd ../..
+   ```
+
+3. Stop the old backend and start it listening on the network:
+
+   ```bash
+   MONGODB_URI='' poetry run python -m uvicorn app.backend.main:app \
+     --env-file .env --host 0.0.0.0 --port 8001
+   ```
+
+4. Allow application port `8001` through your local firewall if prompted. Teammates open `http://192.168.1.20:8001` and register their own accounts.
+
+Replace the example IP in both places with your actual LAN address. Your computer must remain awake with the backend and database running. PostgreSQL stays bound to loopback through Compose; teammates access the application, not the database port. Different networks require a separate networking setup; these instructions cover the same LAN.
+
+## Back up and update an existing installation
+
+Stop the application processes while leaving PostgreSQL running. Back up the database before applying migrations:
+
+```bash
+# Repository root.
+mkdir -p outputs/local-backups
+docker compose -f compose.local.yml exec -T postgres \
+  sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' \
+  > "outputs/local-backups/postgres-$(date +%Y%m%d-%H%M%S).dump"
+```
+
+Keep your original encryption key separately with your local configuration. A database backup alone does not recover encrypted model keys without `APP_ENCRYPTION_KEY`.
+
+Save any local source changes before pulling, then update:
+
+```bash
+git pull --ff-only origin main
+poetry install
+MONGODB_URI='' poetry run python -c 'from dotenv import load_dotenv; load_dotenv(); from docker.db_init import main; main()'
+cd app/frontend
+npm ci
+cd ../..
+```
+
+Restart the backend and Vite, or rebuild the frontend for the backend-served setup. Do not overwrite your `.env` or regenerate existing secrets.
+
+The current migrations include debate rounds, personal Paper prototype tables, and `report_schedules.analysis_config` for scheduled workflow snapshots. Old schedules retain their default behavior. Old backtest records are retained and must be rerun to use the corrected execution and cost calculations.
+
+An older SQLite database is not automatically imported into PostgreSQL. An existing business database without Alembic version history needs a separate schema/migration review before using the initializer.
+
+## Troubleshooting
+
+| Problem | What to check |
+| --- | --- |
+| `poetry`, Python, or Node is not found | Reopen the terminal and check PATH. Select the installed Python with `poetry env use`. |
+| Docker connection fails | Start Docker Desktop or your Docker engine, then retry `docker info`. |
+| PostgreSQL fails to start | Check `docker compose -f compose.local.yml ps` and `docker compose -f compose.local.yml logs postgres`; ensure host port `5433` is free. |
+| Database authentication fails | Match the password in `POSTGRES_PASSWORD` and `DATABASE_URL`. Changing `.env` does not change the password in an already initialized database volume. |
+| A database column is missing after updating | Stop the app, back up PostgreSQL, and run the initializer to apply migrations. |
+| The page loads but requests fail | Confirm the backend is on `8001` and Vite started with `VITE_API_URL=/api`. For a static build, rebuild with the correct absolute backend URL. |
+| Frontend port `5173` is occupied | Stop the old project frontend. If you change ports, update `FRONTEND_ORIGINS` in `.env` and restart the backend. |
+| Analyze says a model key is missing | Save the configured provider's key in Settings, or verify the Ollama service and model tag. |
+| Current quotes or other evidence are missing | Check Finnhub configuration, internet access, and provider permissions. Yahoo daily bars do not supply every evidence type. |
+| Saved model keys cannot be decrypted | Restore the original `APP_ENCRYPTION_KEY`, or save the keys again in Settings. |
+| Teammates cannot connect | Use the host's LAN IP, build with that IP, bind the backend to `0.0.0.0`, and check the firewall and network. |
+
+## Current feature status
+
+| Area | Available | Current limits |
+| --- | --- | --- |
+| Watchlist / Screener / Scanner | Watchlists, screening, event scans | Online data and provider permissions required; snapshot refresh requires login |
+| Analyze / Reports | Predefined analysis sections, personas, debate, saved templates, scheduled configuration snapshots | Canvas edges do not define arbitrary execution graphs; at least one valid section is required |
+| Backtest | Historical rule strategies, costs, IS/OOS metrics and charts | Basic version; no Analyze strategy integration, progress display, cancellation, or parameter comparison |
+| Paper | Prototype code and stored records retained | **In development; unavailable to users.** No automatic market-price valuation |
+
+Backtests evaluate signals at the close and execute at the next available trading day's open. Trade P&L includes entry and exit costs; the OOS benchmark uses the OOS evaluation window. Analyze and Backtest currently operate independently.
+
+When enabled, MongoDB provides additional cache/history storage, datasets, node caches, and checkpoints. Without it, online analysis continues, but SQL report copies do not replace full MongoDB history or checkpoint-based recovery.
+
+## Further documentation
+
+- [Detailed local deployment guide (Chinese)](docs/LOCAL_DEPLOY.md)
+- [Development and validation](docs/development.md)
+- [Deployment notes](docs/DEPLOY.md)
+- [Requirements](docs/requirements/market-data-and-analyze.md)
+- [MongoDB data model](docs/design/mongodb-market-data-erd.md)
+- [Current handoff](docs/handoffs/2026-10-28-postgres-local.md)
+- [Code review and fixes](docs/reviews/2026-10-29-main-review.md)
+- [Documentation index](docs/README.md)
+
+Research output is intended for analysis and does not promise investment returns.

@@ -288,8 +288,7 @@ class TestRunStatus:
 
 
 class TestRunQuotes:
-    """The /quotes endpoint batch-fetches live quotes via the configured
-    DataClient. We monkey-patch ``make_data_client`` so no real HTTP fires."""
+    """Run quotes share the owner-scoped quote service; no real HTTP fires."""
 
     def _seed_run(self, SessionLocal, tickers: list[str]) -> int:
         with SessionLocal() as s:
@@ -317,43 +316,24 @@ class TestRunQuotes:
         assert r.status_code == 200
         assert r.json() == {}
 
-    def test_returns_all_none_when_client_lacks_get_quote(self, setup, monkeypatch):
+    @pytest.mark.parametrize("saved_key", [None, "test-owner-key"])
+    def test_quotes_use_owner_key_without_environment_fallback(self, setup, monkeypatch, saved_key):
         client, SessionLocal, _, _ = setup
-        run_id = self._seed_run(SessionLocal, ["AAPL", "MSFT"])
-        # Stub client WITHOUT get_quote.
-        class _NoQuote:
-            pass
-        import importlib
+        run_id = self._seed_run(SessionLocal, ["AAPL", "FAIL"])
         scanner_mod = sys.modules["_scanner_routes_under_test"]
-        monkeypatch.setattr(scanner_mod, "make_data_client", lambda: _NoQuote())
-        r = client.get(f"/scanner/runs/{run_id}/quotes")
-        assert r.status_code == 200
-        body = r.json()
-        assert body == {"AAPL": None, "MSFT": None}
-
-    def test_returns_quotes_when_client_provides_them(self, setup, monkeypatch):
-        client, SessionLocal, _, _ = setup
-        run_id = self._seed_run(SessionLocal, ["AAPL", "MSFT", "FAIL"])
-        from v2.data.models import Quote
-
-        class _Client:
-            def get_quote(self, ticker):
-                if ticker == "FAIL":
-                    raise RuntimeError("quote provider down")
-                return Quote(
-                    ticker=ticker, current_price=100.0 + len(ticker),
-                    prev_close=99.0, percent_change=1.0, asof_timestamp=1000,
-                )
-            def close(self):
-                pass
-
-        scanner_mod = sys.modules["_scanner_routes_under_test"]
-        monkeypatch.setattr(scanner_mod, "make_data_client", lambda: _Client())
-        r = client.get(f"/scanner/runs/{run_id}/quotes")
-        assert r.status_code == 200
-        body = r.json()
-        assert body["AAPL"]["current_price"] == 104.0  # 100 + len("AAPL")
-        assert body["MSFT"]["current_price"] == 104.0  # 100 + len("MSFT")
-        assert body["MSFT"]["percent_change"] == 1.0
-        # FAIL ticker's exception isolated — entry is None, not 500.
-        assert body["FAIL"] is None
+        monkeypatch.setenv("FINNHUB_API_KEY", "test-host-key")
+        service = MagicMock()
+        service.return_value.get_api_key.return_value = saved_key
+        monkeypatch.setattr(scanner_mod, "ApiKeyService", service)
+        fetch = MagicMock(return_value=[
+            {"ticker": "AAPL", "price": 104.0, "prev_close": 99.0,
+             "change_pct": 1.0, "source_timestamp": 1000},
+            {"ticker": "FAIL", "price": None},
+        ])
+        monkeypatch.setattr(scanner_mod, "fetch_live_quotes", fetch)
+        response = client.get(f"/scanner/runs/{run_id}/quotes")
+        assert response.status_code == 200
+        assert response.json()["AAPL"]["current_price"] == 104.0
+        assert response.json()["FAIL"] is None
+        fetch.assert_called_once_with(["AAPL", "FAIL"], finnhub_api_key=saved_key or "", user_id=1)
+        assert service.call_args.args[1] == 1

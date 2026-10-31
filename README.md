@@ -116,7 +116,7 @@ Important configuration details:
 - Keep `APP_ENCRYPTION_KEY` stable. Changing it prevents previously saved model keys from being decrypted. Changing `JWT_SECRET` invalidates existing login tokens.
 - Keep your existing secrets when restarting or upgrading. `.env` is ignored by Git.
 - Leave `MONGODB_URI` empty for this installation. The startup commands also explicitly disable MongoDB, even if you already have a MongoDB container running.
-- Yahoo historical daily bars require no API key. For Watchlist quotes and Analyze evidence, save a Finnhub key in Settings → API Keys → Finnhub API. Your saved key takes precedence for those requests; `FINNHUB_API_KEY` in `.env` remains an optional shared server configuration. Missing keys or insufficient permissions leave the affected evidence unavailable.
+- Yahoo historical daily bars require no API key. For Watchlist quotes, Scanner, and Analyze evidence, save a Finnhub key in Settings → API Keys → Finnhub API. These user-owned workflows use the acting user's saved key and do not fall back to a Finnhub key in `.env`; environment keys remain available to standalone CLI tools. Missing keys or insufficient permissions leave the affected evidence unavailable.
 - You do not need a Financial Datasets key for the default data path. Paid model key placeholders elsewhere in `.env.example` are for legacy CLI or explicit integrations; the web analysis uses keys saved in Settings.
 
 ## 4. Start PostgreSQL and initialize the database
@@ -350,6 +350,20 @@ An older SQLite database is not automatically imported into PostgreSQL. An exist
 Backtests evaluate signals at the close and execute at the next available trading day's open. Trade P&L includes entry and exit costs; the OOS benchmark uses the OOS evaluation window. Analyze and Backtest currently operate independently.
 
 When enabled, MongoDB provides additional cache/history storage, datasets, node caches, and checkpoints. Without it, online analysis continues, but SQL report copies do not replace full MongoDB history or checkpoint-based recovery.
+
+## Scanner daily-bar detectors
+
+Scanner configurations now offer three additional detectors. Open the Scanner configuration dialog and enable them in the detector list. Existing configurations with an explicit detector selection keep that selection; configurations using all detectors include the new ones.
+
+| Detector | Default condition | Data |
+| --- | --- | --- |
+| Relative Volume | Latest volume ≥2× the mean of the preceding 20 bars, excluding the latest bar. Direction follows the daily close-to-close return. | Yahoo daily volume and adjusted closes |
+| 20-Day Closing Breakout | Latest adjusted close strictly above or below the preceding 20 closing prices. A tie does not trigger. | Yahoo adjusted closes |
+| Relative Strength vs SPY | 20-session return exceeds or trails SPY by at least 5 percentage points, using matching dates. | Yahoo adjusted closes for the stock and SPY |
+
+These detectors work without a Finnhub key or MongoDB. MongoDB remains an optional cache/history layer. Missing or insufficient bars produce a no-data outcome; relative strength also requires matching SPY sessions. During market hours, the latest daily bar can still change and its volume is incomplete; use an after-close scan for daily results.
+
+Each qualifying day can trigger again. These rules do not yet implement first-hit alerts, cooldowns, or AND/OR combinations. The dialog's severity multiplier controls ranking, not the trigger threshold; custom window/threshold parameters currently exist only in the Python detector constructors. Breakouts have fixed signed severity 2; relative-volume severity is capped at 5× (zero directional severity for a flat close); relative strength uses 2 severity units per 5-point spread, capped at 5. These scales are ranking heuristics, not probabilities or statistical z-scores. Relative strength describes performance against SPY and can be bullish even when both prices fell.
 
 ## Roadmap: connect screening, scanning, research, and backtesting
 

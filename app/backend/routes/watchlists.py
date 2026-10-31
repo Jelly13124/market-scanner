@@ -134,4 +134,4 @@ def get_watchlist_quotes(watchlist_id: int, db: Session = Depends(get_db), curre
     wl = UserWatchlistRepository(db).get(watchlist_id, user_id=current_user.id)
     if wl is None:
         raise HTTPException(404, f"no watchlist with id {watchlist_id}")
-    return [LiveQuoteRow(**q) for q in fetch_live_quotes(list(wl.tickers or []), finnhub_api_key=ApiKeyService(db, current_user.id).get_api_key("FINNHUB_API_KEY"), user_id=current_user.id)]
+    return [LiveQuoteRow(**q) for q in fetch_live_quotes(list(wl.tickers or []), finnhub_api_key=ApiKeyService(db, current_user.id).get_api_key("FINNHUB_API_KEY") or "", user_id=current_user.id)]

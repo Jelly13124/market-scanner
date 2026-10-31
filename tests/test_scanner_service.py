@@ -241,3 +241,26 @@ class TestScannerServiceExecute:
         det_names = sorted(d.name for d in captured["detectors"])
         expected = sorted(c().name for c in ALL_DETECTORS)
         assert det_names == expected
+
+
+@pytest.mark.parametrize('stored_key', ['', 'test-owner-key'])
+def test_scanner_uses_owner_key_for_workers_and_calendar(session_factory, config, monkeypatch, stored_key):
+    from unittest.mock import Mock, patch
+    from app.backend.database.models import ApiKey
+    monkeypatch.setenv('FINNHUB_API_KEY', 'test-host-key-must-not-be-used')
+    if stored_key:
+        with session_factory() as session:
+            session.add(ApiKey(user_id=1, provider='FINNHUB_API_KEY', key_value=stored_key, is_active=True))
+            session.commit()
+    service = ScannerService(session_factory)
+    factory = Mock(return_value=Mock())
+    calendar = Mock(return_value={})
+    monkeypatch.setattr(service, '_refresh_target_snapshots', Mock(return_value={}))
+    monkeypatch.setattr(service, '_load_earnings_calendar', calendar)
+    runner = Mock(return_value=[])
+    monkeypatch.setattr('app.backend.services.scanner_service.run_scan', runner)
+    with patch('v2.data.factory.get_provider_factory', return_value=factory) as build:
+        service.execute(config, deliver_emails=False)
+    build.assert_called_once_with(finnhub_api_key=stored_key)
+    assert runner.call_args.kwargs['provider_factory'] is factory
+    assert calendar.call_args.kwargs['finnhub_api_key'] == stored_key

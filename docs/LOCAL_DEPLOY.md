@@ -277,3 +277,7 @@ Analyze 不接受空章节或未知章节；画布中的 Run / Schedule 在零�
 在 Analyze 画布创建定时任务，会冻结当前市场、章节、人物覆盖、辩论开关/轮数、目标、预算、持仓与风险设置；输出语言取调度窗口选择。之后编辑画布不会改变已保存任务，修改后需重新创建调度。旧任务和 Settings 中未配置流程快照的任务仍运行默认 US 完整报告。
 
 Screener 的快照更新需要登录，并使用现有重型接口限流。共享或公网运行时设置 `RATE_LIMIT_ENABLED=true`，额度由 `RATE_LIMIT_HEAVY` 控制；已有后台并发锁继续生效。
+
+### Web Finnhub key 的保存与读取
+
+Watchlist、Scanner（含后台任务与财报日历）和 Analyze 使用当前账号在 Settings → API Keys → Finnhub API 保存的 key。key 加密保存在 PostgreSQL，后续新请求读取，不需要为保存或更换 key 重启服务。没有保存 key 时对应 Finnhub 数据不可用，不会自动使用主机 `.env` 中的 Finnhub key。命令行工具仍可使用显式环境配置。

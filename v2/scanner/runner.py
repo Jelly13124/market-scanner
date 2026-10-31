@@ -1,6 +1,6 @@
 """Scanner orchestrator.
 
-Runs the 4 event detectors across a universe of tickers, optionally evaluates
+Runs the registered event detectors across a universe of tickers, optionally evaluates
 quant signals on tickers that triggered at least one event, computes a
 composite score, and returns the Top-N ranked ``ScoredEntry`` list.
 
@@ -157,7 +157,7 @@ def run_scan(
         end_date:         As-of date in YYYY-MM-DD.
         top_n:            Maximum entries to return (sorted by composite desc).
         weights:          ScannerWeights override; defaults to ``ScannerWeights()``.
-        detectors:        Override the default 4 detectors (useful for tests).
+        detectors:        Override the registered detectors (useful for tests).
         quant_signals:    Optional iterable of v2.signals.BaseSignal instances to
                           evaluate on triggered tickers.
         max_workers:      Thread-pool size; also the number of DataClient instances created.

@@ -194,6 +194,11 @@ class ScannerService:
             self._publish(run_id, {"event": "start", "run_id": run_id, "universe_size": len(tickers)})
 
             weights = self._build_weights(config_payload["weights"])
+            from app.backend.services.api_key_service import ApiKeyService
+            from v2.data.factory import get_provider_factory
+            with self._session_factory() as key_session:
+                finnhub_key = ApiKeyService(key_session, config_payload.get("owner_user_id")).get_api_key("FINNHUB_API_KEY") or ""
+            provider_factory = get_provider_factory(finnhub_api_key=finnhub_key)
 
             # Per-universe benchmark for IDAY's SPY-relative adjustment.
             # NDX-100 is best matched against QQQ (~95% beta); broader US
@@ -232,6 +237,7 @@ class ScannerService:
             upcoming_earnings = self._load_earnings_calendar(
                 tickers,
                 end_date,
+                finnhub_api_key=finnhub_key,
             )
 
             # Build the per-config detector list. None = all (preserves
@@ -259,6 +265,7 @@ class ScannerService:
                 top_n=config_payload["top_n"],
                 weights=weights,
                 detectors=det_instances,
+                provider_factory=provider_factory,
                 quant_signals=[cls() for cls in ALL_SIGNALS],
                 max_workers=max_workers,
                 progress_cb=lambda p: self._publish_progress(run_id, p),
@@ -551,6 +558,7 @@ class ScannerService:
         end_date: str,
         *,
         lookahead_days: int = 5,
+        finnhub_api_key: str | None = None,
     ) -> dict[str, int] | None:
         """Pull the upcoming earnings calendar once and build a
         {ticker → days_to_earnings} dict bounded by lookahead.
@@ -576,7 +584,7 @@ class ScannerService:
         cal_start = scan_day.isoformat()
         cal_end = (scan_day + _td(days=lookahead_days)).isoformat()
 
-        provider_factory = get_provider_factory()
+        provider_factory = get_provider_factory(finnhub_api_key=finnhub_api_key) if finnhub_api_key is not None else get_provider_factory()
         client = provider_factory()
         try:
             entries = client.get_earnings_calendar(

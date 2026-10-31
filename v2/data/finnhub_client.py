@@ -131,7 +131,7 @@ class FinnhubClient:
         timeout: float = 30.0,
         min_call_interval: float = 1.05,
     ) -> None:
-        self._api_key = api_key or os.environ.get("FINNHUB_API_KEY", "")
+        self._api_key = os.environ.get("FINNHUB_API_KEY", "") if api_key is None else api_key
         self.last_status = "not_requested"
         self._timeout = timeout
         self._session = requests.Session()

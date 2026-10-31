@@ -14,6 +14,11 @@ Scanner 是事件预筛选器，用于找出值得进一步分析的标的；触
 - bollinger_squeeze：布林带收窄。
 - rsi_divergence：价格与 RSI 背离。
 - ma_cross：均线交叉。
+- relative_volume：当日成交量 ≥ 此前 20 根日线均量的 2 倍；方向取决于当日涨跌，平盘为中性且方向分为 0。
+- range_breakout：复权收盘价严格突破/跌破此前 20 根日线收盘价区间，不含当日；固定带符号 severity 为 ±2。
+- relative_strength：相同 20 个交易日内相对 SPY 涨幅差达到 ±5 个百分点；每达到阈值一倍计 2 分，绝对值上限 5。
+
+新增三个检测器只依赖 Yahoo 日线，可无 Finnhub key、无 MongoDB 运行。缺数据返回 None；相对强弱要求两边日期匹配。盘中最新日线和成交量尚未完成，建议收盘后运行。每天满足条件都会触发，暂无冷却或 AND/OR 组合。UI 的倍率用于排序，不改变触发阈值；窗口/阈值目前仅支持 Python 构造参数。新增 severity 是排序量尺而非统计 z-score。显式选择检测器的旧配置需手动勾选新增项；选择全部的配置自动包含它们。
 
 部分旧类仍可导入，但没有注册；不要把文件存在等同于默认启用。LEGACY_DETECTOR_ALIASES 和 RETIRED_DETECTORS 用于读取旧保存配置，不应随文档清理删除。
 

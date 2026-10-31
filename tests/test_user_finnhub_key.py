@@ -34,3 +34,16 @@ def test_quotes_do_not_share_user_credentials_or_cached_results():
         assert client.call_count == 2
         assert [call.kwargs['api_key'] for call in client.call_args_list] == ['test-user-a', 'test-user-b']
     _QUOTE_CACHE.clear()
+
+
+def test_explicit_empty_key_never_uses_host_key(monkeypatch):
+    from v2.data.finnhub_client import FinnhubClient
+    from v2.data.factory import get_provider_factory
+    monkeypatch.setenv('FINNHUB_API_KEY', 'test-host-key')
+    with FinnhubClient(api_key='') as client:
+        assert client._api_key == ''
+        with patch.object(client._session, 'get') as get:
+            assert client.get_quote('AAPL') is None
+            get.assert_not_called()
+    with get_provider_factory('finnhub', finnhub_api_key='')() as client:
+        assert client._api_key == ''

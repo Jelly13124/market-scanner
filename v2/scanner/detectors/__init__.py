@@ -5,6 +5,9 @@ Each detector implements ``EventDetector`` and produces an ``EventTrigger``
 hands them to ``v2.scanner.scoring.compute_composite``.
 """
 
+from v2.scanner.detectors.daily_momentum import (
+    RelativeVolumeDetector, RangeBreakoutDetector, RelativeStrengthDetector,
+)
 from v2.scanner.detectors.analyst_rating import AnalystRatingDetector
 from v2.scanner.detectors.base import EventDetector, EventTrigger
 from v2.scanner.detectors.bollinger_squeeze import BollingerSqueezeDetector
@@ -31,6 +34,9 @@ ALL_DETECTORS: tuple[type[EventDetector], ...] = (
     BollingerSqueezeDetector,
     RsiDivergenceDetector,
     MaCrossDetector,
+    RelativeVolumeDetector,
+    RangeBreakoutDetector,
+    RelativeStrengthDetector,
     # Other imported classes remain available for compatibility but are not
     # enabled by default. Retired names below preserve saved configurations.
 )
@@ -38,6 +44,21 @@ ALL_DETECTORS: tuple[type[EventDetector], ...] = (
 
 # UI labels and configurable default severity multipliers for active detectors.
 DETECTOR_METADATA: dict[str, dict] = {
+    "relative_volume": {
+        "label": "Relative Volume",
+        "default_mult": 1.0,
+        "description": "Latest daily volume ≥2x the preceding 20-bar mean (today excluded). Direction follows daily return; flat return is neutral. Intraday volume is incomplete.",
+    },
+    "range_breakout": {
+        "label": "20-Day Closing Breakout",
+        "default_mult": 1.0,
+        "description": "Adjusted close strictly above/below the preceding 20 daily closes (today excluded). Bullish breakout / bearish breakdown; fixed severity 2.",
+    },
+    "relative_strength": {
+        "label": "Relative Strength vs SPY",
+        "default_mult": 1.0,
+        "description": "20-session return leads/lags SPY by at least 5 percentage points on matching dates. Relative performance, not RSI. Fires each qualifying day.",
+    },
     "earnings_event": {
         "label": "Earnings Event",
         "default_mult": 1.20,
@@ -143,6 +164,9 @@ __all__ = [
     "OBVDivergenceDetector",
     "RsiDivergenceDetector",
     "MaCrossDetector",
+    "RelativeVolumeDetector",
+    "RangeBreakoutDetector",
+    "RelativeStrengthDetector",
     "ALL_DETECTORS",
     "DETECTOR_METADATA",
     "LEGACY_DETECTOR_ALIASES",

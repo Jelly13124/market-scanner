@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -58,7 +57,8 @@ from app.backend.services.scheduler_service import (
     SchedulerService,
     get_scheduler_service,
 )
-from v2.data.factory import make_data_client, recommend_max_workers
+from app.backend.services.api_key_service import ApiKeyService
+from app.backend.services.live_quotes import fetch_live_quotes
 from v2.scanner.detectors import ALL_DETECTORS, DETECTOR_METADATA
 
 logger = logging.getLogger(__name__)
@@ -314,9 +314,8 @@ def get_run_quotes(
 
     Returns a dict keyed by ticker; value is ``None`` for tickers whose quote
     fetch failed (unknown symbol, 429-exhausted, etc.) — frontend renders
-    these as em-dash placeholders. The whole batch is serialized through
-    Finnhub's global rate-limit bucket (~57 req/min), so Top-N=20 takes
-    roughly 20-25 seconds end-to-end.
+    these as em-dash placeholders. Uses the acting user's saved Finnhub key and the shared user-scoped
+    quote service. Provider requests respect its rate limiter.
     """
     run = ScanRunRepository(db).get_by_id_for_user(run_id, user_id=current_user.id)
     if not run:
@@ -327,42 +326,16 @@ def get_run_quotes(
     if not tickers:
         return {}
 
-    client = make_data_client()
-    if not hasattr(client, "get_quote"):
-        # Configured provider doesn't expose quotes (e.g. FD-only). Frontend
-        # treats all-None the same as missing data and shows em-dashes.
-        return {t: None for t in tickers}
-
-    out: dict[str, QuoteResponse | None] = {}
-    try:
-        with ThreadPoolExecutor(max_workers=recommend_max_workers()) as pool:
-            futures = {pool.submit(client.get_quote, t): t for t in tickers}
-            for fut in as_completed(futures):
-                t = futures[fut]
-                try:
-                    q = fut.result()
-                except Exception as e:
-                    logger.warning("get_quote failed for %s: %s", t, e)
-                    out[t] = None
-                    continue
-                if q is None:
-                    out[t] = None
-                else:
-                    out[t] = QuoteResponse(
-                        ticker=q.ticker,
-                        current_price=q.current_price,
-                        prev_close=q.prev_close,
-                        percent_change=q.percent_change,
-                        asof_timestamp=q.asof_timestamp,
-                    )
-    finally:
-        closer = getattr(client, "close", None)
-        if callable(closer):
-            try:
-                closer()
-            except Exception:
-                pass
-    return out
+    key = ApiKeyService(db, current_user.id).get_api_key("FINNHUB_API_KEY") or ""
+    rows = fetch_live_quotes(tickers, finnhub_api_key=key, user_id=current_user.id)
+    return {
+        row["ticker"]: QuoteResponse(
+            ticker=row["ticker"], current_price=row["price"],
+            prev_close=row.get("prev_close"), percent_change=row.get("change_pct"),
+            asof_timestamp=row.get("source_timestamp"),
+        ) if row["price"] is not None else None
+        for row in rows
+    }
 
 
 @router.get("/runs/{run_id}/stream")

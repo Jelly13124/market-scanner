@@ -79,7 +79,7 @@ def _fetch_raw(ticker: str, scan_date: str, market: str = "us", *, finnhub_api_k
     """
     from v2.data.factory import get_provider_factory
 
-    factory = get_provider_factory(finnhub_api_key=finnhub_api_key) if finnhub_api_key else get_provider_factory()
+    factory = get_provider_factory(finnhub_api_key=finnhub_api_key) if finnhub_api_key is not None else get_provider_factory()
     client = factory()
 
     end_dt = datetime.strptime(scan_date, "%Y-%m-%d").date()
@@ -193,6 +193,6 @@ def fetch_shared_data(
     """
     # Mongo read-through enforces freshness; do not hide it behind an
     # unbounded, day-long process cache shared by concurrent requests.
-    if finnhub_api_key:
+    if finnhub_api_key is not None:
         return _fetch_raw(ticker, scan_date, market=market, finnhub_api_key=finnhub_api_key)
     return _fetch_raw(ticker, scan_date, market=market)

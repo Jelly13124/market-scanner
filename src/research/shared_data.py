@@ -69,7 +69,7 @@ _SECTOR_ETF = {
 }
 
 
-def _fetch_raw(ticker: str, scan_date: str, market: str = "us") -> SharedData:
+def _fetch_raw(ticker: str, scan_date: str, market: str = "us", *, finnhub_api_key: str | None = None) -> SharedData:
     """Hit the v2 data layer for every field. Best-effort: each subfetch
     is wrapped so a single source failing doesn't kill the whole bundle.
 
@@ -79,7 +79,7 @@ def _fetch_raw(ticker: str, scan_date: str, market: str = "us") -> SharedData:
     """
     from v2.data.factory import get_provider_factory
 
-    factory = get_provider_factory()
+    factory = get_provider_factory(finnhub_api_key=finnhub_api_key) if finnhub_api_key else get_provider_factory()
     client = factory()
 
     end_dt = datetime.strptime(scan_date, "%Y-%m-%d").date()
@@ -181,7 +181,7 @@ def _fetch_raw(ticker: str, scan_date: str, market: str = "us") -> SharedData:
 
 
 def fetch_shared_data(
-    ticker: str, scan_date: str, market: str = "us",
+    ticker: str, scan_date: str, market: str = "us", *, finnhub_api_key: str | None = None,
 ) -> SharedData:
     """Cached fetch — returns the same SharedData instance for repeated
     calls with the same (ticker, scan_date, market) within a single
@@ -193,4 +193,6 @@ def fetch_shared_data(
     """
     # Mongo read-through enforces freshness; do not hide it behind an
     # unbounded, day-long process cache shared by concurrent requests.
+    if finnhub_api_key:
+        return _fetch_raw(ticker, scan_date, market=market, finnhub_api_key=finnhub_api_key)
     return _fetch_raw(ticker, scan_date, market=market)

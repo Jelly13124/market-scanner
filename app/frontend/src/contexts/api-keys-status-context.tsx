@@ -8,7 +8,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 
 // LLM-provider keys — the UPPERCASE env-var names from LLM_API_KEYS in
 // settings/api-keys.tsx. Analysis needs one of these; a data-only key
-// (FINANCIAL_DATASETS_API_KEY) does NOT satisfy the gate.
+// (FINNHUB_API_KEY) does NOT satisfy the gate.
 const LLM_PROVIDERS = new Set<string>([
   'ANTHROPIC_API_KEY', 'DEEPSEEK_API_KEY', 'GROQ_API_KEY', 'GOOGLE_API_KEY',
   'OPENAI_API_KEY', 'MOONSHOT_API_KEY', 'OPENROUTER_API_KEY', 'GIGACHAT_API_KEY',

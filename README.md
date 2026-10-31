@@ -116,7 +116,7 @@ Important configuration details:
 - Keep `APP_ENCRYPTION_KEY` stable. Changing it prevents previously saved model keys from being decrypted. Changing `JWT_SECRET` invalidates existing login tokens.
 - Keep your existing secrets when restarting or upgrading. `.env` is ignored by Git.
 - Leave `MONGODB_URI` empty for this installation. The startup commands also explicitly disable MongoDB, even if you already have a MongoDB container running.
-- Yahoo historical daily bars require no API key. `FINNHUB_API_KEY` is optional for current quotes and additional evidence; missing keys or insufficient permissions leave the affected evidence unavailable.
+- Yahoo historical daily bars require no API key. For Watchlist quotes and Analyze evidence, save a Finnhub key in Settings → API Keys → Finnhub API. Your saved key takes precedence for those requests; `FINNHUB_API_KEY` in `.env` remains an optional shared server configuration. Missing keys or insufficient permissions leave the affected evidence unavailable.
 - You do not need a Financial Datasets key for the default data path. Paid model key placeholders elsewhere in `.env.example` are for legacy CLI or explicit integrations; the web analysis uses keys saved in Settings.
 
 ## 4. Start PostgreSQL and initialize the database
@@ -350,6 +350,35 @@ An older SQLite database is not automatically imported into PostgreSQL. An exist
 Backtests evaluate signals at the close and execute at the next available trading day's open. Trade P&L includes entry and exit costs; the OOS benchmark uses the OOS evaluation window. Analyze and Backtest currently operate independently.
 
 When enabled, MongoDB provides additional cache/history storage, datasets, node caches, and checkpoints. Without it, online analysis continues, but SQL report copies do not replace full MongoDB history or checkpoint-based recovery.
+
+## Roadmap: connect screening, scanning, research, and backtesting
+
+The stages below are **planned work**, not a description of an already integrated product. Existing modules provide parts of this workflow, but the end-to-end links and shared rule definitions still need implementation. No delivery dates are committed.
+
+Target workflow:
+
+```text
+Screener → saved stock universe → Scanner signal configuration
+                                      ├→ Backtest with explicit trading rules
+                                      └→ Scan hits → user-selected Analyze → linked report
+```
+
+| Stage | Planned work | Completion criteria |
+| --- | --- | --- |
+| 1. Share stock universes | Save selected Screener results to a Watchlist and use that list to create a Scanner configuration. Freeze the selected tickers first; dynamic re-screening comes later. | The user can trace a scan's exact ticker universe back to its saved selection. |
+| 2. Carry scan evidence into Analyze | Pass the triggering scan ID, timestamp, detector values, and evidence alongside the ticker. Keep scan-time observations separate from data fetched for analysis. | The report explains why analysis was started and links back to the triggering scan. |
+| 3. Link reports back to results | Show the latest report, its timestamp, and triggering signal on Scanner results and Watchlist rows. | Users can open the relevant report and see whether newer signals have arrived since it was generated. |
+| 4. Validate Scanner rules with Backtest | Share supported detector definitions between scanning and backtesting. Ask users to specify entry/exit timing, holding limits, sizing, and costs before running. | A supported rule has matching signal semantics in historical and current-data execution; the saved result contains its rule version, universe, parameters, and data window. |
+| 5. Use historical results in research | Link the appropriate backtest results to Analyze as evidence; offer rule-based section templates for different scan triggers. | Reports identify the tested rule, sample size, IS/OOS periods, costs, and limitations instead of treating backtest performance as a promise. |
+| 6. Add advanced workflows | Consider dynamic Screener universes, historical event studies, parameter comparison, and translating Analyze suggestions into user-reviewed strategy rules. | Each workflow preserves its configuration and evidence, makes model costs visible, and can be reproduced before automation is expanded. |
+
+Implementation principles:
+
+- Keep analysis user-triggered initially. Add batch or automatic model execution only with explicit scope and usage controls.
+- A detector signal is not a complete trading strategy. Backtest must collect the missing trade rules rather than silently inventing them.
+- Reusing today's selected stocks for past periods is a **current-universe historical test**, not a point-in-time Screener strategy backtest. Label selection/survivorship bias; historical universe and publication-time data are required for stronger claims.
+- Use only data actually available from the configured providers or MongoDB history. Stored history cannot supply missing historical constituents, filings, or timestamps that were never collected.
+- Paper remains under development and closed to users. Reopening it is a separate decision after market-price valuation and execution behavior are defined and tested.
 
 ## Further documentation
 

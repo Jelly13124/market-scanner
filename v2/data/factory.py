@@ -52,7 +52,7 @@ def make_data_client(provider: str | None = None) -> DataClient:
     raise _bad_provider(p)
 
 
-def get_provider_factory(provider: str | None = None) -> Callable[[], DataClient]:
+def get_provider_factory(provider: str | None = None, *, finnhub_api_key: str | None = None) -> Callable[[], DataClient]:
     """Return a zero-arg callable that builds fresh clients (one per worker)."""
     override = _CLIENT_OVERRIDE.get()
     if override is not None:
@@ -62,10 +62,10 @@ def get_provider_factory(provider: str | None = None) -> Callable[[], DataClient
         return FDClient
     if p == "finnhub":
         from v2.data.finnhub_client import FinnhubClient
-        return FinnhubClient
+        return (lambda: FinnhubClient(api_key=finnhub_api_key)) if finnhub_api_key else FinnhubClient
     if p == "hybrid":
         from v2.data.composite_client import make_hybrid_client
-        return make_hybrid_client
+        return (lambda: make_hybrid_client(finnhub_api_key=finnhub_api_key)) if finnhub_api_key else make_hybrid_client
     raise _bad_provider(p)
 
 

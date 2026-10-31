@@ -28,7 +28,7 @@ def test_route_returns_quotes(full_client, two_users, monkeypatch):
     # Patch at the route module boundary (where the name is imported).
     monkeypatch.setattr(
         "app.backend.routes.watchlists.fetch_live_quotes",
-        lambda tickers: [dict(_CANNED)],
+        lambda tickers, **kwargs: [dict(_CANNED)],
     )
     wid = full_client.post("/watchlists", json={"name": "Live"}, headers=auth_header(a)).json()["id"]
     full_client.post(f"/watchlists/{wid}/tickers", json={"ticker": "NVDA"}, headers=auth_header(a))
@@ -47,7 +47,7 @@ def test_route_cross_user_404(full_client, two_users, monkeypatch):
     a, b = two_users
     monkeypatch.setattr(
         "app.backend.routes.watchlists.fetch_live_quotes",
-        lambda tickers: [dict(_CANNED)],
+        lambda tickers, **kwargs: [dict(_CANNED)],
     )
     wid = full_client.post("/watchlists", json={"name": "A's"}, headers=auth_header(a)).json()["id"]
     # B cannot read A's watchlist quotes.
@@ -58,7 +58,21 @@ def test_route_requires_auth(full_client, two_users, monkeypatch):
     a, _ = two_users
     monkeypatch.setattr(
         "app.backend.routes.watchlists.fetch_live_quotes",
-        lambda tickers: [dict(_CANNED)],
+        lambda tickers, **kwargs: [dict(_CANNED)],
     )
     wid = full_client.post("/watchlists", json={"name": "A's"}, headers=auth_header(a)).json()["id"]
     assert full_client.get(f"/watchlists/{wid}/quotes").status_code == 401
+
+
+def test_quote_route_uses_only_acting_users_finnhub_key(full_client, two_users, monkeypatch):
+    from unittest.mock import Mock
+    a, b = two_users
+    ha, hb = auth_header(a), auth_header(b)
+    for headers, key in [(ha, 'test-finnhub-a'), (hb, 'test-finnhub-b')]:
+        response = full_client.post('/api-keys/', json={'provider': 'FINNHUB_API_KEY', 'key_value': key}, headers=headers)
+        assert response.status_code in (200, 201), response.text
+    fetch = Mock(return_value=[dict(_CANNED)])
+    monkeypatch.setattr('app.backend.routes.watchlists.fetch_live_quotes', fetch)
+    wid = full_client.post('/watchlists', json={'name': 'Own quotes'}, headers=ha).json()['id']
+    assert full_client.get(f'/watchlists/{wid}/quotes', headers=ha).status_code == 200
+    assert fetch.call_args.kwargs['finnhub_api_key'] == 'test-finnhub-a'

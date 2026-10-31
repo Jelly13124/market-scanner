@@ -162,7 +162,7 @@ def test_us_quotes_use_finnhub_and_memory_cache(monkeypatch):
     client.__enter__.return_value = client
     client.get_quote.return_value = Quote(ticker='AAPL', current_price=100, prev_close=90, percent_change=11.1,
         asof_timestamp=123, received_at='2026-10-25T12:00:00+00:00')
-    monkeypatch.setattr(quotes, 'FinnhubClient', lambda: client)
+    monkeypatch.setattr(quotes, 'FinnhubClient', lambda **kwargs: client)
     first = quotes.fetch_live_quotes(['AAPL'])[0]
     second = quotes.fetch_live_quotes(['AAPL'])[0]
     assert first == second

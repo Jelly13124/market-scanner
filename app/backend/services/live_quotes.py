@@ -166,14 +166,15 @@ _QUOTE_CACHE = OrderedDict()
 _QUOTE_LOCK = threading.Lock()
 
 
-def fetch_live_quotes(tickers: list[str]) -> list[dict]:
+def fetch_live_quotes(tickers: list[str], *, finnhub_api_key: str | None = None, user_id: int | None = None) -> list[dict]:
     if not tickers:
         return []
     unique = list(dict.fromkeys(tickers))
     def fetch(ticker):
+        cache_key = (user_id, ticker)
         now = time.monotonic()
         with _QUOTE_LOCK:
-            cached = _QUOTE_CACHE.get(ticker)
+            cached = _QUOTE_CACHE.get(cache_key)
             if cached and cached[0] > now:
                 return dict(cached[1])
         if is_ashare(ticker):
@@ -183,7 +184,7 @@ def fetch_live_quotes(tickers: list[str]) -> list[dict]:
             row = _row_from_frame(ticker, None)
             row.update(source='finnhub', source_timestamp=None, received_at=None)
             try:
-                with FinnhubClient() as client:
+                with FinnhubClient(api_key=finnhub_api_key) as client:
                     quote = client.get_quote(ticker)
                     if quote is not None:
                         row.update(price=quote.current_price, prev_close=quote.prev_close, change_pct=quote.percent_change,
@@ -195,8 +196,8 @@ def fetch_live_quotes(tickers: list[str]) -> list[dict]:
                 logger.warning('Live quote unavailable for %s (%s)', ticker, type(error).__name__)
         if row['price'] is not None:
             with _QUOTE_LOCK:
-                _QUOTE_CACHE[ticker] = (time.monotonic() + max(1, int(os.getenv('QUOTE_CACHE_TTL_SECONDS', '15'))), dict(row))
-                _QUOTE_CACHE.move_to_end(ticker)
+                _QUOTE_CACHE[cache_key] = (time.monotonic() + max(1, int(os.getenv('QUOTE_CACHE_TTL_SECONDS', '15'))), dict(row))
+                _QUOTE_CACHE.move_to_end(cache_key)
                 while len(_QUOTE_CACHE) > 4096:
                     _QUOTE_CACHE.popitem(last=False)
         return row

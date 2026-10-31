@@ -248,11 +248,11 @@ class CompositeClient:
         return self._quotes.get_quote(ticker)
 
 
-def make_hybrid_client(*, include_ashare: bool = True) -> DataClient:
+def make_hybrid_client(*, include_ashare: bool = True, finnhub_api_key: str | None = None) -> DataClient:
     """MongoDB cache first; Yahoo daily prices and Finnhub snapshots on miss."""
     from v2.data.yfinance_client import YFinanceClient
     from v2.data.cached_client import CachedDataClient
-    finnhub, yahoo = FinnhubClient(), YFinanceClient()
+    finnhub, yahoo = FinnhubClient(api_key=finnhub_api_key), YFinanceClient()
     ashare = None
     if include_ashare:
         try:

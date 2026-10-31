@@ -126,7 +126,8 @@ def _run_sop(request: AnalyzeRequest, api_keys: dict | None = None, *, owner_id=
         if checkpoint is None and not ticket['cached']:
             raise ValueError('Checkpoint is unavailable')
     else:
-        shared = fetch_shared_data(request.ticker, scan_date, market=request.market)
+        data_keys = {"finnhub_api_key": api_keys["FINNHUB_API_KEY"]} if (api_keys or {}).get("FINNHUB_API_KEY") else {}
+        shared = fetch_shared_data(request.ticker, scan_date, market=request.market, **data_keys)
         ticket = history.start(owner_id=owner_id, request=request, shared=shared,
                                force=force_rerun, source_scan_result_id=source_scan_result_id, model_route=model_route)
     if ticket and ticket['cached']:

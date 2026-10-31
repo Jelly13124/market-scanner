@@ -17,11 +17,11 @@ interface ApiKey {
 
 const FINANCIAL_API_KEYS: ApiKey[] = [
   {
-    key: 'FINANCIAL_DATASETS_API_KEY',
-    label: 'Financial Datasets API',
-    description: 'For getting financial data to power the hedge fund',
-    url: 'https://financialdatasets.ai/',
-    placeholder: 'your-financial-datasets-api-key'
+    key: 'FINNHUB_API_KEY',
+    label: 'Finnhub API',
+    description: 'Current quotes and market evidence from Finnhub',
+    url: 'https://finnhub.io/',
+    placeholder: 'your-finnhub-api-key'
   }
 ];
 
@@ -320,7 +320,7 @@ export function ApiKeysSettings() {
       {/* Financial Data API Keys */}
       {renderApiKeySection(
         'Financial Data',
-        'API keys for accessing financial market data and datasets.',
+        'Finnhub provides current quotes and market evidence. Yahoo historical daily bars do not require a key.',
         FINANCIAL_API_KEYS,
         <Key className="h-4 w-4" />
       )}

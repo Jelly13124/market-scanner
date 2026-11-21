@@ -33,8 +33,11 @@ from v2.data.protocol import DataClient
 from v2.models import SignalResult
 from v2.scanner.detectors import ALL_DETECTORS
 from v2.scanner.detectors.base import EventDetector
+from v2.scanner.detectors.daily_momentum import load_daily_bars
 from v2.scanner.models import ScanContext, ScannerWeights, ScoredEntry, ScanOutcome
 from v2.scanner.scoring import compute_composite
+from v2.rules.daily import combine_matches, match_condition
+from v2.rules.spec import RuleGroup
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +55,21 @@ class ScanProgress(BaseModel):
     eta_seconds: float | None = None
 
 
+def rule_detector_definitions(group: RuleGroup) -> list[dict]:
+    """Freeze the per-operand constructor parameters and direction for inspection."""
+    return [
+        {"name": rule.type, "version": rule.version, "direction": rule.direction,
+         "parameters": rule.model_dump(include={"window", "threshold"})}
+        for rule in group.signals
+    ]
+
+
 def _resolve_detectors(
-    detectors: Iterable[EventDetector] | None,
+    detectors: Iterable[EventDetector] | None, group: RuleGroup | None,
 ) -> list[EventDetector]:
+    if group is not None:
+        registry = {cls.name: cls for cls in ALL_DETECTORS}
+        return [registry[d["name"]](**d["parameters"]) for d in rule_detector_definitions(group)]
     if detectors is not None:
         return list(detectors)
     return [cls() for cls in ALL_DETECTORS]
@@ -93,6 +108,8 @@ def _scan_one_ticker(
     benchmark_cvo_gap_by_date: dict[str, tuple[float, float]] | None = None,
     target_snapshots: list | None = None,
     upcoming_earnings_days_to: dict[str, int] | None = None,
+    group_window: int | None = None,
+    group_spy_prices: tuple | None = None,
 ) -> ScanOutcome:
     """Return one explicit outcome, including every enabled detector."""
     fd = fd_pool.get()
@@ -102,13 +119,18 @@ def _scan_one_ticker(
         ctx = ScanContext(ticker=ticker, end_date=end_date, benchmark_prices=benchmark_prices,
             benchmark_cvo_gap_by_date=benchmark_cvo_gap_by_date, target_snapshots=target_snapshots,
             upcoming_earnings_days_to=upcoming_earnings_days_to)
-        triggers, results = [], []
+        if group_window is not None:
+            observations = {"SPY": group_spy_prices} if group_spy_prices is not None else {}
+            if ticker not in observations:
+                observations[ticker] = tuple(load_daily_bars(fd, ticker, end_date, group_window))
+            ctx.daily_price_observations = observations
+        observed, results = {}, []
         for det in detectors:
             item = {'detector': det.name, 'version': det.version, 'status': 'no_data'}
             try:
                 trigger = det.detect(ticker, end_date, fd, ctx=ctx)
                 if trigger is not None:
-                    triggers.append(trigger)
+                    observed[det.name] = trigger
                     item.update(status='triggered' if trigger.triggered else 'no_event',
                         severity=float(trigger.severity_z), direction=trigger.direction,
                         reason=trigger.reason, components=trigger.components,
@@ -117,16 +139,27 @@ def _scan_one_ticker(
                 logger.warning('Detector %s failed for %s (%s)', det.name, ticker, type(error).__name__)
                 item.update(status='error', reason=type(error).__name__)
             results.append(item)
-        valid = any(item['status'] in ('triggered', 'no_event') for item in results)
+        partial = any(item['status'] in ('error', 'no_data') for item in results)
+        group = weights.rule_group
+        group_quality = {}
+        if group is not None:
+            matches = {rule.type: match_condition(rule, observed.get(rule.type)) for rule in group.signals}
+            match = combine_matches(group.combiner, list(matches.values()))
+            group_quality["rule_group"] = {"matches": matches, "match": match, "incomplete": partial}
+            valid = match is not None
+            triggers = [observed[name] for name, matched in matches.items() if matched] if match else []
+        else:
+            valid = bool(observed)
+            triggers = [trigger for trigger in observed.values() if trigger.triggered]
         outcome = 'evaluated' if valid else ('error' if any(item['status'] == 'error' for item in results) else 'no_data')
         entry = None
-        if any(trigger.triggered for trigger in triggers):
+        if triggers:
             quant = _evaluate_quant(ticker, end_date, fd, quant_signals) if quant_signals else {}
             entry = compute_composite(ticker, triggers, quant, weights)
         return ScanOutcome(ticker=ticker, outcome=outcome, entry=entry, detector_results=results,
             evidence=getattr(fd, 'evidence', [])[evidence_start:],
-            quality={'inputs': getattr(fd, 'quality', [])[quality_start:],
-                     'partial': any(item['status'] in ('error', 'no_data') for item in results),
+            quality={**group_quality, 'inputs': getattr(fd, 'quality', [])[quality_start:],
+                     'partial': partial,
                      'target_snapshots': [{k: getattr(x, k, None) for k in ('asof_date', 'target_median', 'target_mean', 'target_high', 'target_low')} for x in (target_snapshots or [])],
                      'upcoming_earnings_days_to': (upcoming_earnings_days_to or {}).get(ticker)})
     finally:
@@ -185,8 +218,9 @@ def run_scan(
         provider_factory = get_provider_factory()
 
     weights = weights or ScannerWeights()
-    det_list = _resolve_detectors(detectors)
-    quant_list = list(quant_signals) if quant_signals else []
+    group = weights.rule_group
+    det_list = _resolve_detectors(detectors, group)
+    quant_list = list(quant_signals) if group is None and quant_signals else []
     universe = list(dict.fromkeys(tickers))
     total = len(universe)
     if total == 0:
@@ -213,7 +247,23 @@ def run_scan(
         # use raw values).
         benchmark_prices: list | None = None
         benchmark_cvo_gap_by_date: dict[str, tuple[float, float]] = {}
-        if benchmark_ticker is not None:
+        group_window = None
+        group_spy_prices = None
+        benchmark_quality = []
+        evidence_start = 0
+        if group is not None:
+            group_window = max(rule.window for rule in group.signals)
+            bench_client = clients[0]
+            evidence_start = len(getattr(bench_client, "evidence", []))
+            strength = next((rule for rule in group.signals if rule.type == "relative_strength"), None)
+            if strength is not None:
+                # As a universe member SPY supplies every operand, including
+                # operands with longer windows than relative strength.
+                spy_window = group_window if "SPY" in universe else strength.window
+                quality_start = len(getattr(bench_client, "quality", []))
+                group_spy_prices = tuple(load_daily_bars(bench_client, "SPY", end_date, spy_window))
+                benchmark_quality = getattr(bench_client, "quality", [])[quality_start:]
+        if group is None and benchmark_ticker is not None:
             try:
                 bench_client = clients[0]
                 bench_lookback_days = 90
@@ -260,7 +310,7 @@ def run_scan(
                 benchmark_cvo_gap_by_date[p.time[:10]] = (bcvo, bgap)
                 prev = p
 
-        benchmark_evidence = list(getattr(clients[0], 'evidence', []))
+        benchmark_evidence = list(getattr(clients[0], 'evidence', []))[evidence_start:]
         scored: list[ScoredEntry] = []
         outcomes: list[ScanOutcome] = []
         processed = 0
@@ -302,6 +352,8 @@ def run_scan(
                     benchmark_cvo_gap_by_date,
                     ts_map.get(t),
                     upcoming_earnings,
+                    group_window,
+                    group_spy_prices,
                 ): t
                 for t in universe
             }
@@ -327,21 +379,23 @@ def run_scan(
                 _emit_progress(current=ticker)
         _emit_progress(force=True)
 
-        # Sort by composite first, then by raw severity. The secondary key
-        # breaks ties at composite=100 (where the 5σ clip flattens
-        # everything from z=5 to z=43 to the same score) so MRVL's
-        # z=-43 outranks PAYX's z=-3 even though both are "100".
-        scored.sort(key=lambda e: (e.composite_score, e.event_severity), reverse=True)
+        if group is not None:
+            scored.sort(key=lambda e: (-e.composite_score, e.ticker))
+        else:
+            # Legacy scans favor higher raw severity when event scores reach the cap.
+            scored.sort(key=lambda e: (e.composite_score, e.event_severity), reverse=True)
         for i, entry in enumerate(scored, start=1):
             entry.rank = i
         top = scored[:max(0, top_n)]
         selected = {entry.ticker for entry in top}
         if outcome_cb:
             from v2.scanner.detectors import RETIRED_DETECTORS
-            retired = set(weights.enabled_detectors or []) & RETIRED_DETECTORS
+            retired = set(weights.enabled_detectors or []) & RETIRED_DETECTORS if group is None else set()
             for outcome in outcomes:
                 outcome.detector_results.extend({'detector': name, 'version': 'retired', 'status': 'retired'} for name in sorted(retired))
                 outcome.evidence = benchmark_evidence + outcome.evidence
+                if benchmark_quality:
+                    outcome.quality["inputs"] = benchmark_quality + outcome.quality.get("inputs", [])
                 outcome.selected = outcome.ticker in selected
                 outcome_cb(outcome)
         return top

@@ -1,15 +1,15 @@
-"""Phase 6A: CATALOG dict + JSON schema export for all 18 blocks."""
+"""Phase 6A: CATALOG dict + JSON schema export for strategy blocks."""
 
 from __future__ import annotations
 
 from src.lab.catalog import CATALOG, get_llm_prompt_text
 
 
-def test_catalog_has_all_18_blocks():
-    assert len(CATALOG) == 18
+def test_catalog_has_legacy_and_shared_blocks():
     expected_types = {
         "rsi", "rsi_cross", "ma_cross", "price_vs_ma", "macd",
         "bollinger_break", "donchian_break", "volume_spike",
+        "relative_volume", "range_breakout", "relative_strength",
         "stop_loss", "take_profit", "trailing_stop", "time_stop",
         "fixed_pct", "equal_weight", "vol_targeted",
         "trend", "volatility", "liquidity",

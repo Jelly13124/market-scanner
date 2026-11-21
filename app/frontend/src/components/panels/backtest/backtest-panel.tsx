@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { scannerService } from '@/services/scanner-service';
 import { strategyService } from '@/services/strategy-service';
 import { watchlistService } from '@/services/watchlist-service';
 import type { StrategyResponse, StrategySpec } from '@/types/strategy';
@@ -8,6 +9,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StrategyList } from '../lab/strategy-list';
 import { SpecViewer } from '../lab/spec-viewer';
+import { DailyRuleEditor } from '../shared/daily-rule-editor';
+import { defaultDailyGroup, editableDailyGroup, type DailyRuleGroup } from '@/types/daily-rule';
 import { BacktestHistory } from '../lab/backtest-history';
 import { BacktestResult } from '../lab/backtest-result';
 import { BacktestRunner } from '../lab/backtest-runner';
@@ -56,7 +59,9 @@ function BacktestSetup({ strategy, onSaved, onDirty }: { strategy: StrategyRespo
   const [lists, setLists] = useState<UserWatchlist[]>([]);
   const [universe, setUniverse] = useState(spec.universe.kind === 'watchlist' ? `watchlist:${spec.universe.watchlist_id}` : spec.universe.kind);
   const first = spec.entry.signals[0];
-  const [rule, setRule] = useState(spec.entry.signals.length === 1 && ['ma_cross', 'rsi'].includes(String(first?.type)) ? String(first.type) : 'custom');
+  const savedDaily = editableDailyGroup(spec.entry) ? spec.entry : null;
+  const [dailyGroup, setDailyGroup] = useState(savedDaily ?? defaultDailyGroup());
+  const [rule, setRule] = useState(savedDaily ? 'daily' : spec.entry.signals.length === 1 && ['ma_cross', 'rsi'].includes(String(first?.type)) ? String(first.type) : 'custom');
   const [fast, setFast] = useState(String(first?.fast ?? 20));
   const [slow, setSlow] = useState(String(first?.slow ?? 50));
   const [level, setLevel] = useState(String(first?.level ?? 30));
@@ -65,7 +70,9 @@ function BacktestSetup({ strategy, onSaved, onDirty }: { strategy: StrategyRespo
   const [cash, setCash] = useState(String(spec.backtest_config.starting_capital_usd ?? 100000));
   const [commission, setCommission] = useState(String(spec.backtest_config.commission_bps ?? 5));
   const [slippage, setSlippage] = useState(String(spec.backtest_config.slippage_bps ?? 5));
-  const [stop, setStop] = useState(String(Number(spec.exit.find((e) => e.type === 'stop_loss' && e.mode === 'pct')?.value ?? 0.05) * 100));
+  const pctStopIndex = spec.exit.findIndex(e => e.type === 'stop_loss' && e.mode === 'pct');
+  const savedStop = pctStopIndex < 0 ? '' : String(Number(spec.exit[pctStopIndex].value) * 100);
+  const [stop, setStop] = useState(savedStop);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { watchlistService.list().then(setLists).catch((e) => setError((e as Error).message)); }, []);
@@ -75,20 +82,26 @@ function BacktestSetup({ strategy, onSaved, onDirty }: { strategy: StrategyRespo
     if (rule === 'ma_cross' && Number(fast) >= Number(slow)) { setError(t('backtest.maError')); return; }
     setBusy(true);
     try {
+      const exits = [...spec.exit];
+      if (stop !== savedStop) {
+        const replacement = stop ? [{type: 'stop_loss', mode: 'pct', value: Number(stop) / 100}] : [];
+        if (pctStopIndex < 0) exits.push(...replacement);
+        else exits.splice(pctStopIndex, 1, ...replacement);
+      }
       const next: StrategySpec = { ...spec,
         universe: universe.startsWith('watchlist:') ? { kind: 'watchlist', watchlist_id: Number(universe.split(':')[1]) } : { kind: universe as 'sp500' | 'nasdaq100' },
-        entry: rule === 'custom' ? spec.entry : { combiner: 'and', signals: [rule === 'ma_cross'
+        entry: rule === 'custom' ? spec.entry : rule === 'daily' ? dailyGroup : { combiner: 'and', signals: [rule === 'ma_cross'
           ? { type: 'ma_cross', fast: Number(fast), slow: Number(slow), direction: 'golden' }
           : { type: 'rsi', period: 14, level: Number(level), direction: 'oversold_buy' }] },
-        exit: [{ type: 'stop_loss', mode: 'pct', value: Number(stop) / 100 }, ...spec.exit.filter((e) => e.type !== 'stop_loss')],
+        exit: exits,
         backtest_config: { ...spec.backtest_config, start_date: start, end_date: end, starting_capital_usd: Number(cash), commission_bps: Number(commission), slippage_bps: Number(slippage) },
       };
       await strategyService.update(strategy.id, { spec_json: next }); await onSaved();
     } catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
-  const field = (key: string, value: string, set: (v: string) => void, type = 'number', min = '0', max?: string) =>
-    <label className="text-xs space-y-1" key={key}><span className="block">{t(`backtest.${key}`)}</span><Input aria-label={t(`backtest.${key}`)} type={type} value={value} min={min} max={max} step={type === 'number' ? (['fast', 'slow'].includes(key) ? '1' : 'any') : undefined} required onChange={(e) => set(e.target.value)} /></label>;
+  const field = (key: string, value: string, set: (v: string) => void, type = 'number', min = '0', max?: string, required = true) =>
+    <label className="text-xs space-y-1" key={key}><span className="block">{t(`backtest.${key}`)}</span><Input aria-label={t(`backtest.${key}`)} type={type} value={value} min={min} max={max} step={type === 'number' ? (['fast', 'slow'].includes(key) ? '1' : 'any') : undefined} required={required} onChange={(e) => set(e.target.value)} /></label>;
   return <form onSubmit={save} onChange={onDirty} className="border rounded p-4 space-y-3">
     <h3 className="font-medium">{strategy.name}</h3>
     <p className="text-xs text-muted-foreground">{t('backtest.saveHint')}</p>
@@ -97,16 +110,47 @@ function BacktestSetup({ strategy, onSaved, onDirty }: { strategy: StrategyRespo
         <option value="sp500">S&amp;P 500</option><option value="nasdaq100">Nasdaq 100</option>
         {lists.map((list) => <option key={list.id} value={`watchlist:${list.id}`}>{list.name} ({list.tickers.length})</option>)}
       </select></label>
-      <label className="text-xs space-y-1"><span className="block">{t('backtest.rule')}</span><select aria-label={t('backtest.rule')} className="w-full border rounded h-9 bg-background px-2" value={rule} onChange={(e) => setRule(e.target.value)}><option value="ma_cross">{t('backtest.maRule')}</option><option value="rsi">{t('backtest.rsiRule')}</option><option value="custom">{t('backtest.keepAdvanced')}</option></select></label>
+      <label className="text-xs space-y-1"><span className="block">{t('backtest.rule')}</span><select aria-label={t('backtest.rule')} className="w-full border rounded h-9 bg-background px-2" value={rule} onChange={(e) => setRule(e.target.value)}><option value="ma_cross">{t('backtest.maRule')}</option><option value="rsi">{t('backtest.rsiRule')}</option><option value="daily">{t('dailyRules.title')}</option><option value="custom">{t('backtest.keepAdvanced')}</option></select></label>
+      {rule === 'daily' && <div className="col-span-full space-y-2">
+        <ScannerRulePicker onSelect={setDailyGroup} />
+        <DailyRuleEditor group={dailyGroup} onChange={setDailyGroup} />
+      </div>}
       {rule === 'ma_cross' && <>{field('fast', fast, setFast, 'number', '2', '500')}{field('slow', slow, setSlow, 'number', '2', '500')}</>}
       {rule === 'rsi' && field('rsiLevel', level, setLevel, 'number', '0', '100')}
       {field('start', start, setStart, 'date')}{field('end', end, setEnd, 'date')}{field('cash', cash, setCash, 'number', '1')}
-      {field('commission', commission, setCommission, 'number', '0', '100')}{field('slippage', slippage, setSlippage, 'number', '0', '100')}{field('stop', stop, setStop, 'number', '0.01', '100')}
+      {field('commission', commission, setCommission, 'number', '0', '100')}{field('slippage', slippage, setSlippage, 'number', '0', '100')}{field('stop', stop, setStop, 'number', '0.01', '100', pctStopIndex >= 0 && spec.exit.length === 1)}
     </div>
     {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
-    <Button type="submit" disabled={busy}>{t('backtest.save')}</Button>
+    <Button type="submit" disabled={busy || (rule === 'daily' && dailyGroup.signals.length === 0)}>{t('backtest.save')}</Button>
     <p className="text-xs text-muted-foreground">{t('backtest.dataHint')}</p>
   </form>;
+}
+
+function ScannerRulePicker({ onSelect }: {onSelect: (group: DailyRuleGroup) => void}) {
+  const { t } = useTranslation();
+  const [choices, setChoices] = useState<{id: number; name: string; group: DailyRuleGroup}[]>([]);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    scannerService.listConfigs().then(configs => {
+      if (active) setChoices(configs.flatMap(config => {
+        const group = config.weights?.rule_group as DailyRuleGroup | undefined;
+        return group ? [{id: config.id, name: config.name, group}] : [];
+      }));
+    }).catch((e: Error) => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, []);
+  return <label className="block text-xs">{t('dailyRules.import')}
+    <select aria-label={t('dailyRules.import')} className="w-full rounded border bg-background p-2"
+      value="" onChange={e => {
+        const source = choices.find(c => c.id === Number(e.target.value));
+        if (source) onSelect(source.group);
+      }}>
+      <option value="">{t('dailyRules.chooseConfig')}</option>
+      {choices.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+    </select>
+    {error && <span role="alert">{error}</span>}
+  </label>;
 }
 
 function localToday(): string {

@@ -16,6 +16,8 @@ from src.lab.engine.indicators import IndicatorMatrix
 from src.lab.engine.signal_eval import eval_entry, eval_exit, eval_filter
 from src.lab.engine.sizing import compute_position_dollars
 from src.lab.spec.strategy import StrategySpec
+from v2.rules.daily import combine_matches
+from v2.rules.spec import DailyRule
 
 
 @dataclass
@@ -41,12 +43,35 @@ class Trade:
 
 
 @dataclass
+class RuleCoverage:
+    missing_by_operand: list[int]
+    sessions: int = 0
+    unavailable: int = 0
+    incomplete: int = 0
+
+    @property
+    def evaluated(self) -> int:
+        return self.sessions - self.unavailable
+
+    def describe(self, segment: str, signals: list) -> str:
+        details = [
+            f"{segment} had {self.evaluated} evaluated and {self.unavailable} unavailable group decisions.",
+            f"{self.incomplete} ticker-sessions had incomplete evidence.",
+        ]
+        for i, (signal, missing) in enumerate(zip(signals, self.missing_by_operand), start=1):
+            details.append(f"Condition {i} ({signal.type}) had {self.sessions - missing} evaluated "
+                           f"and {missing} unavailable.")
+        return " ".join(details)
+
+
+@dataclass
 class SimulationOutput:
     trades: list[Trade] = field(default_factory=list)
     equity_curve: list[float] = field(default_factory=list)
     dates: list[datetime] = field(default_factory=list)
     final_cash: float = 0.0
     final_positions: dict[str, Position] = field(default_factory=dict)
+    rule_coverage: RuleCoverage | None = None
 
 
 def run_simulation(spec: StrategySpec, matrix: IndicatorMatrix) -> SimulationOutput:
@@ -65,12 +90,15 @@ def run_simulation(spec: StrategySpec, matrix: IndicatorMatrix) -> SimulationOut
     pending_exits: dict[str, str] = {}
     last_closes: dict[str, float] = {}
 
+    signals = spec.entry.signals
+    coverage = RuleCoverage([0] * len(signals)) if any(isinstance(s, DailyRule) for s in signals) else None
     if not matrix.indicators:
-        return SimulationOutput(equity_curve=[cash], final_cash=cash)
+        return SimulationOutput(equity_curve=[cash], final_cash=cash, rule_coverage=coverage)
 
     all_dates = sorted(set().union(*[df.index for df in matrix.indicators.values()]))
     cost_pct = (cfg.commission_bps + cfg.slippage_bps) / 10000.0
 
+    entry_matches = {ticker: _entry_matches(spec, ticker, matrix, coverage) for ticker in matrix.indicators}
     for date in all_dates:
         # Fill yesterday's exits first, using today's open (including gaps).
         for ticker, reason in list(pending_exits.items()):
@@ -124,6 +152,7 @@ def run_simulation(spec: StrategySpec, matrix: IndicatorMatrix) -> SimulationOut
             close = float(df.loc[date, "close"])
             last_closes[ticker] = close
             atr = float(df.loc[date, "atr_14"]) if "atr_14" in df.columns else 0.0
+            entry_match = entry_matches[ticker].at[date]
             if ticker in positions:
                 pos = positions[ticker]
                 pos.highest_close = max(pos.highest_close, close)
@@ -133,9 +162,9 @@ def run_simulation(spec: StrategySpec, matrix: IndicatorMatrix) -> SimulationOut
                                  current_close=close, current_atr=atr, bars_held=bars_held):
                         pending_exits[ticker] = block.type
                         break
-                if ticker not in pending_exits and cfg.reverse_signal_as_exit and not _entry_fires(spec, ticker, date, matrix):
+                if ticker not in pending_exits and cfg.reverse_signal_as_exit and entry_match is False:
                     pending_exits[ticker] = "reverse_signal"
-            elif _filters_pass(spec, ticker, date, matrix) and _entry_fires(spec, ticker, date, matrix):
+            elif entry_match is True and _filters_pass(spec, ticker, date, matrix):
                 pending_entries[ticker] = atr if atr > 0 else 1.0
 
         equity_curve.append(cash + sum(pos.shares * last_closes[t] for t, pos in positions.items()))
@@ -143,27 +172,38 @@ def run_simulation(spec: StrategySpec, matrix: IndicatorMatrix) -> SimulationOut
 
     return SimulationOutput(
         trades=trades, equity_curve=equity_curve, dates=out_dates,
-        final_cash=cash, final_positions=positions,
+        final_cash=cash, final_positions=positions, rule_coverage=coverage,
     )
 
 
-def _entry_fires(spec, ticker, date, matrix) -> bool:
-    """Evaluate entry group with combiner on a specific date."""
-    results = []
-    for sig in spec.entry.signals:
-        try:
-            series = eval_entry(sig, ticker, matrix)
-            if date in series.index:
-                results.append(bool(series.loc[date]))
-            else:
-                results.append(False)
-        except Exception:
-            results.append(False)
-    if not results:
-        return False
-    if spec.entry.combiner == "and":
-        return all(results)
-    return any(results)
+def _entry_matches(
+    spec: StrategySpec, ticker: str, matrix: IndicatorMatrix, coverage: RuleCoverage | None,
+) -> pd.Series:
+    """Compute each signal once per ticker and keep only the group's per-session decision."""
+    index = matrix.indicators[ticker].index
+    operands = []
+    for i, signal in enumerate(spec.entry.signals):
+        if isinstance(signal, DailyRule):
+            series = eval_entry(signal, ticker, matrix)
+        else:
+            try:
+                series = eval_entry(signal, ticker, matrix).reindex(index, fill_value=False)
+            except Exception:
+                # Legacy blocks have always treated an unavailable indicator as a non-match.
+                series = pd.Series(False, index=index)
+        if coverage is not None:
+            coverage.missing_by_operand[i] += int(series.isna().sum())
+        operands.append(series.to_numpy(dtype=object, na_value=None))
+
+    matches = []
+    for values in zip(*operands):
+        match = combine_matches(spec.entry.combiner, values)
+        matches.append(match)
+        if coverage is not None:
+            coverage.sessions += 1
+            coverage.unavailable += match is None
+            coverage.incomplete += None in values
+    return pd.Series(matches, index=index, dtype=object)
 
 
 def _filters_pass(spec, ticker, date, matrix) -> bool:

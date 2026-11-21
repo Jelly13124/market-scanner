@@ -191,5 +191,73 @@ def test_catalog_endpoint(client):
     r = client.get("/lab/catalog")
     assert r.status_code == 200
     body = r.json()
-    assert len(body) == 18
+    assert {"relative_strength", "relative_volume", "range_breakout"} <= body.keys()
     assert "rsi" in body and "ma_cross" in body
+
+
+@pytest.mark.parametrize("group,spy_available,evaluated", [
+    ("and", True, 5), ("or", False, 1), ("strength_only", False, 0),
+])
+def test_shared_rule_backtest_persists_trades_and_evidence_coverage(
+    client, monkeypatch, group, spy_available, evaluated,
+):
+    from datetime import date, timedelta
+    from types import SimpleNamespace
+
+    from v2.data.models import Price
+
+    spec = _spec_dict()
+    spec.update(
+        entry={"combiner": "and", "signals": [
+            {"type": name, "window": 2}
+            for name in ("relative_volume", "range_breakout", "relative_strength")
+        ]},
+        exit=[{"type": "time_stop", "bars": 1}],
+        backtest_config={"start_date": "2024-03-04", "end_date": "2024-03-18",
+                         "is_oos_split": 0.5, "benchmark": "none", "reverse_signal_as_exit": False},
+    )
+    if group == "strength_only":
+        spec["entry"]["signals"] = [spec["entry"]["signals"][-1]]
+    else:
+        spec["entry"]["combiner"] = group
+
+    def historical_prices(ticker, start_date, end_date):
+        if ticker == "SPY" and not spy_available:
+            return []
+        day = max(date(2024, 2, 29), date.fromisoformat(start_date))
+        rows = []
+        while day <= date.fromisoformat(end_date):
+            if day.weekday() < 5:
+                hit = ticker == "NVDA" and day.day in (4, 11)
+                rows.append(Price(time=f"{day}T20:00:00Z", open=100, high=100, low=100, close=100,
+                                  adjusted_close=115 if hit else 100, volume=200 if hit else 100))
+            day += timedelta(days=1)
+        return rows
+
+    monkeypatch.setattr("src.lab.backtest_runner.load_universe_tickers", lambda *a, **kw: ["NVDA"])
+    monkeypatch.setattr("v2.data.factory.make_data_client", lambda: SimpleNamespace(get_prices=historical_prices))
+    headers = _auth_header(client)
+    created = client.post("/lab/strategies", json={"name": "Daily rules", "initial_spec_json": spec},
+                          headers=headers)
+    assert created.status_code == 201, created.text
+    response = client.post(f"/lab/strategies/{created.json()['id']}/backtest", json={}, headers=headers)
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["error_message"] is None
+    assert result["universe_size"] == 1
+    trades = [(t["ticker"], t["entry_date"][:10]) for t in result["trades_json"]]
+    assert trades == ([("NVDA", "2024-03-05"), ("NVDA", "2024-03-12")] if evaluated else [])
+    stored = client.get(f"/lab/backtests/{result['id']}", headers=headers).json()
+    verdict = stored["verdict_text"]
+    for segment in ("IS", "OOS"):
+        assert f"{segment} had {evaluated} evaluated and {5 - evaluated} unavailable group decisions" in verdict
+    assert f"{0 if spy_available else 5} ticker-sessions had incomplete evidence" in verdict
+    operand = 1 if group == "strength_only" else 3
+    spy_sessions = 5 if spy_available else 0
+    assert f"Condition {operand} (relative_strength) had {spy_sessions} evaluated and {5 - spy_sessions} unavailable" in verdict
+    if not evaluated:
+        assert stored["verdict_label"] == "insufficient"
+        assert "Insufficient rule data" in verdict
+        assert stored["is_total_return"] is None and stored["oos_total_return"] is None
+    else:
+        assert "Condition 1 (relative_volume) had 5 evaluated and 0 unavailable" in verdict

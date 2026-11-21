@@ -397,3 +397,32 @@ def test_reconnect_after_worker_finished_gets_persisted_terminal_event(setup, mo
         assert "Source unavailable" in response.text
     else:
         assert '"entries": 0' in response.text
+
+
+@pytest.mark.parametrize("method", ["post", "patch"])
+@pytest.mark.parametrize("signals", [
+    [{"type": "intraday_move"}],
+    [{"type": "range_breakout", "version": "2"}],
+    [{"type": "range_breakout"}, {"type": "range_breakout", "window": 4}],
+])
+def test_invalid_daily_group_is_rejected_when_saving_config(setup, method, signals):
+    client, _, _, _ = setup
+    base = {"name": "Daily", "universe_kind": "sp500"}
+    weights = {"rule_group": {"combiner": "and", "signals": signals}}
+    if method == "post":
+        response = client.post("/scanner/configs", json={**base, "weights": weights})
+    else:
+        config = client.post("/scanner/configs", json=base).json()
+        response = client.patch(f"/scanner/configs/{config['id']}", json={"weights": weights})
+    assert response.status_code == 422
+
+
+def test_config_round_trip_saves_effective_daily_rule_defaults(setup):
+    client, _, _, _ = setup
+    weights = {"rule_group": {"combiner": "or", "signals": [{"type": "relative_volume"}]}}
+    created = client.post("/scanner/configs", json={"name": "Daily", "universe_kind": "sp500", "weights": weights})
+    assert created.status_code == 201
+    fetched = client.get(f"/scanner/configs/{created.json()['id']}")
+    assert fetched.json()["weights"]["rule_group"]["signals"] == [
+        {"type": "relative_volume", "direction": "bullish", "window": 20, "threshold": 2.0, "version": "1"}
+    ]

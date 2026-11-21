@@ -40,6 +40,16 @@ def evidence_markdown(source, market, language="en"):
         lines.append(("扫描截至 " if zh else "Scan as of ") + str(source["scan_as_of"]))
     results = {item["detector"]: item for item in (source.get("outcome") or {}).get("detector_results", [])}
     definitions = {item["name"]: item for item in (source.get("detector_config") or {}).get("detectors", [])}
+    group = ((source.get("detector_config") or {}).get("weights") or {}).get("rule_group")
+    if group:
+        matches = ((source.get("outcome") or {}).get("quality") or {}).get("rule_group", {}).get("matches", {})
+        labels = {True: "已满足", False: "未满足", None: missing} if zh else {
+            True: "matched", False: "not matched", None: missing,
+        }
+        lines.append(("组合条件 " if zh else "Rule group ") + group["combiner"].upper())
+        for rule in group["signals"]:
+            params = ", ".join(f"{key}={value}" for key, value in rule.items() if key != "type")
+            lines.append(f"- {rule['type']} ({params}) · {labels[matches.get(rule['type'])]}")
     for trigger in source["triggers"]:
         name = trigger["detector"]
         detail = results.get(name, {})

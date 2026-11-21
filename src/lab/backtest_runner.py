@@ -29,6 +29,9 @@ from src.lab.engine.simulation import run_simulation
 from src.lab.engine.universe import UniverseError, load_universe_tickers
 from src.lab.engine.verdict import Verdict, make_verdict
 from src.lab.spec.strategy import StrategySpec
+from v2.data import factory
+from v2.rules.daily import lookback_start
+from v2.rules.spec import DailyRule, RelativeStrengthRule
 
 logger = logging.getLogger(__name__)
 
@@ -86,8 +89,41 @@ def run_backtest(spec: StrategySpec, db: Any, *, user_id: int | None = None) -> 
 
     # 2. Data load
     loader = DataLoader()
-    load_result = loader.load(tickers, start, end)
-    if not load_result.bars:
+    rules = [signal for signal in spec.entry.signals if isinstance(signal, DailyRule)]
+    benchmark = None
+    if rules:
+        history_start = lookback_start(start, max(rule.window for rule in rules))
+        symbols = list(tickers)
+        needs_spy = any(isinstance(rule, RelativeStrengthRule) for rule in rules)
+        if needs_spy and "SPY" not in symbols:
+            symbols.append("SPY")
+        client = factory.make_data_client()
+        try:
+            load_result = loader.load(symbols, history_start, end,
+                                      daily_price_source=client.get_prices)
+        finally:
+            if hasattr(client, "close"):
+                client.close()
+        if needs_spy:
+            benchmark = load_result.bars.get("SPY")
+            if "SPY" not in tickers:
+                load_result.bars.pop("SPY", None)
+    else:
+        load_result = loader.load(tickers, start, end)
+    bars = load_result.bars
+    if rules:
+        # Preserve every observed session for rule lookbacks. Only usable raw
+        # opens and closes inside the execution segment can be traded or marked.
+        bars = {}
+        for ticker, history in load_result.bars.items():
+            frame = history.loc[(history.index >= pd.Timestamp(start)) & (history.index < pd.Timestamp(end))]
+            prices = frame[["open", "close"]]
+            tradable = frame.loc[(prices.gt(0) & prices.lt(float("inf"))).all(axis=1)]
+            if tradable.empty:
+                load_result.failed[ticker] = "no tradable bars in the backtest window"
+            else:
+                bars[ticker] = tradable
+    if not bars:
         result.error_message = (
             f"No data loaded for any ticker (universe size {len(tickers)}); "
             f"failed: {len(load_result.failed)}"
@@ -96,7 +132,10 @@ def run_backtest(spec: StrategySpec, db: Any, *, user_id: int | None = None) -> 
         return result
 
     # 3. Indicators
-    matrix = compute_indicators(load_result.bars)
+    matrix = compute_indicators(bars)
+    if rules:
+        matrix.daily_history = load_result.bars
+        matrix.benchmark = benchmark
 
     # 4. Split — slice each ticker's frame by midpoint
     is_matrix = _slice_matrix(matrix, start, midpoint)
@@ -129,6 +168,19 @@ def run_backtest(spec: StrategySpec, db: Any, *, user_id: int | None = None) -> 
     # 8. Verdict
     verdict = make_verdict(is_m, oos_m, benchmark_cagr=benchmark_cagr)
 
+    if rules:
+        segments = [("IS", is_sim.rule_coverage), ("OOS", oos_sim.rule_coverage)]
+        unavailable = [segment for segment, coverage in segments if not coverage.evaluated]
+        if unavailable:
+            message = f"Insufficient rule data to evaluate {' and '.join(unavailable)} performance."
+            verdict = Verdict("insufficient", message, 0.0)
+        details = [coverage.describe(segment, spec.entry.signals) for segment, coverage in segments]
+        verdict.text = " ".join([verdict.text, *details])
+        if not is_sim.rule_coverage.evaluated:
+            is_m = None
+        if not oos_sim.rule_coverage.evaluated:
+            oos_m = None
+
     result.is_metrics = is_m
     result.oos_metrics = oos_m
     result.benchmark_cagr = benchmark_cagr
@@ -148,7 +200,7 @@ def _slice_matrix(matrix: IndicatorMatrix, start: date, end: date) -> IndicatorM
         sub = df.loc[mask]
         if not sub.empty:
             sliced[ticker] = sub
-    return IndicatorMatrix(indicators=sliced)
+    return IndicatorMatrix(indicators=sliced, daily_history=matrix.daily_history, benchmark=matrix.benchmark)
 
 
 def _trade_to_dict(trade) -> dict:

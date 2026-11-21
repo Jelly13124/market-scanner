@@ -3,6 +3,8 @@
 // cron_expr (preset dropdown + custom), top_n, is_enabled.
 
 import { Button } from '@/components/ui/button';
+import { DailyRuleEditor } from '../shared/daily-rule-editor';
+import { defaultDailyGroup, type DailyRuleGroup } from '@/types/daily-rule';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -60,6 +62,8 @@ export function ScannerConfigDialog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [dailyGroup, setDailyGroup] = useState<DailyRuleGroup | null>(null);
+
   // Detector picker: loaded once when dialog opens. detectorEnabled tracks
   // checkbox state (Set of names that are ON), detectorMult tracks slider
   // values (Map name -> float). Both are seeded from editing.weights when
@@ -75,6 +79,7 @@ export function ScannerConfigDialog({
   // Sync form state when opening for edit / new.
   useEffect(() => {
     if (!open) return;
+    setDailyGroup((editing?.weights?.rule_group as DailyRuleGroup | undefined) ?? null);
     if (editing) {
       setForm({
         name: editing.name,
@@ -195,13 +200,13 @@ export function ScannerConfigDialog({
     try {
       // Frontend guard mirroring the backend validator — empty selection is
       // rejected because a config that runs no detectors produces no triggers.
-      if (detectorMeta.length > 0 && detectorEnabled.size === 0) {
+      if (!dailyGroup && detectorMeta.length > 0 && detectorEnabled.size === 0) {
         setError('Pick at least one detector.');
         setSubmitting(false);
         return;
       }
 
-      const payload: ScannerConfigCreateRequest = { ...form };
+      const payload: ScannerConfigCreateRequest = { ...form, weights: form.weights ? {...form.weights} : undefined };
       // Manual ticker entry was removed from the UI; never send custom tickers.
       delete payload.universe_tickers;
 
@@ -233,7 +238,9 @@ export function ScannerConfigDialog({
       // only when a strict subset is selected (otherwise null = "all" keeps
       // the JSON small + lets the backend default kick in). detector_severity_mult
       // persists only the entries that diverge from 1.0 for the same reason.
-      if (detectorMeta.length > 0) {
+      if (dailyGroup) {
+        payload.weights = {...payload.weights, rule_group: dailyGroup};
+      } else if (detectorMeta.length > 0) {
         const allNames = detectorMeta.map((d) => d.name);
         const isAllEnabled = allNames.every((n) => detectorEnabled.has(n));
         const enabledList = isAllEnabled
@@ -250,6 +257,8 @@ export function ScannerConfigDialog({
         };
         payload.weights = w as Record<string, unknown>;
       }
+
+      if (!dailyGroup && payload.weights?.rule_group) delete payload.weights.rule_group;
 
       const saved = editing
         ? await scannerService.updateConfig(editing.id, payload)
@@ -269,8 +278,7 @@ export function ScannerConfigDialog({
         <DialogHeader>
           <DialogTitle>{editing ? 'Edit scanner config' : 'New scanner config'}</DialogTitle>
           <DialogDescription>
-            Scanner runs on a cron schedule and produces a ranked watchlist of stocks
-            that triggered any of the enabled detectors.
+            {t('dailyRules.scannerDescription')}
           </DialogDescription>
         </DialogHeader>
 
@@ -465,7 +473,15 @@ export function ScannerConfigDialog({
           </div>
 
           {/* Detectors picker */}
-          {detectorMeta.length > 0 && (
+          <label className="block text-sm">{t('dailyRules.mode')}
+            <select aria-label={t('dailyRules.mode')} className="w-full rounded border bg-background p-2" value={dailyGroup ? 'daily' : 'detectors'}
+              onChange={e => setDailyGroup(e.target.value === 'daily' ? defaultDailyGroup() : null)}>
+              <option value="detectors">{t('dailyRules.detectors')}</option>
+              <option value="daily">{t('dailyRules.title')}</option>
+            </select>
+          </label>
+          {dailyGroup && <DailyRuleEditor group={dailyGroup} onChange={setDailyGroup} />}
+          {!dailyGroup && detectorMeta.length > 0 && (
             <details open className="rounded-md border bg-muted/20">
               <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium flex items-center justify-between">
                 <span>
@@ -543,7 +559,7 @@ export function ScannerConfigDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button type="submit" disabled={submitting || dailyGroup?.signals.length === 0}>
               {submitting ? 'Saving…' : editing ? 'Save changes' : 'Create config'}
             </Button>
           </DialogFooter>

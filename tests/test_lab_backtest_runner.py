@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 from src.lab.backtest_runner import BacktestRunResult, run_backtest
 from src.lab.spec.blocks_entry import DonchianBreakEntry
@@ -120,3 +121,108 @@ def test_benchmark_uses_oos_dates(universe, loader, benchmark):
     result = run_backtest(spec, db=MagicMock())
     benchmark.assert_called_once_with(date.fromisoformat(result.midpoint_date), date(2021, 1, 1))
     assert result.benchmark_cagr == 0.15
+
+
+def test_saved_volume_spike_keeps_its_current_bar_in_the_average():
+    from src.lab.engine.indicators import compute_indicators
+    from src.lab.engine.signal_eval import eval_entry
+
+    saved = _minimal_spec().model_dump()
+    saved["entry"]["signals"] = [{"type": "volume_spike", "avg_period": 2, "multiplier": 2}]
+    spec = StrategySpec.model_validate(saved)
+    data = _df_uptrend(n=3)
+    data["volume"] = [100, 100, 200]
+    matches = eval_entry(spec.entry.signals[0], "AAPL", compute_indicators({"AAPL": data}))
+    assert not matches.any()
+
+
+def test_unavailable_relative_strength_does_not_close_an_or_group_position(monkeypatch):
+    from types import SimpleNamespace
+
+    data = _df_uptrend(n=12)
+    data["adjusted_close"] = [100, 100, 120] + [110] * 9
+    def historical_prices(ticker, start_date, end_date):
+        frame = data.loc[start_date:end_date]
+        if ticker == "SPY":
+            return []
+        return frame.rename_axis("time").reset_index().to_dict("records")
+
+    monkeypatch.setattr("src.lab.backtest_runner.load_universe_tickers", lambda *a, **kw: ["NVDA"])
+    monkeypatch.setattr("v2.data.factory.make_data_client", lambda: SimpleNamespace(get_prices=historical_prices))
+    saved = _minimal_spec().model_dump()
+    saved["entry"] = {"combiner": "or", "signals": [
+        {"type": "range_breakout", "window": 2}, {"type": "relative_strength", "window": 2},
+    ]}
+    saved["exit"] = [{"type": "time_stop", "bars": 2}]
+    saved["backtest_config"].update(start_date="2020-01-03", end_date="2020-01-18")
+    result = run_backtest(StrategySpec.model_validate(saved), db=MagicMock())
+    trade, = result.is_trades
+    assert (trade["entry_date"][:10], trade["exit_date"][:10], trade["exit_reason"]) == (
+        "2020-01-06", "2020-01-09", "time_stop",
+    )
+
+
+def test_daily_loader_distinguishes_absent_and_invalid_adjusted_prices():
+    from datetime import date
+    from src.lab.engine.data import DataLoader
+    from src.lab.engine.signal_eval import iter_daily_rule_evidence
+    from v2.data.models import Price
+    from v2.rules.spec import RangeBreakoutRule
+
+    prices = [
+        Price(time=f"2024-03-0{i}", open=100, high=100, low=100, close=100, volume=10,
+              adjusted_close=adj)
+        for i, adj in enumerate([None, 105, float("nan"), None], start=1)
+    ]
+    result = DataLoader().load(["NVDA"], date(2024, 3, 1), date(2024, 3, 4),
+                               daily_price_source=lambda *args, **kw: prices)
+    outcomes = [trigger for _, trigger in iter_daily_rule_evidence(
+        RangeBreakoutRule(window=1), result.bars["NVDA"],
+    )]
+    assert outcomes[0] is None
+    assert outcomes[1].direction == "bullish"
+    assert outcomes[2:] == [None, None]
+
+
+@pytest.mark.parametrize(
+    ("adjustment", "entry_dates"),
+    [(None, []), (15.0, []), (9.0, ["2020-01-07"])],
+)
+def test_invalid_execution_bar_still_counts_in_breakout_history(monkeypatch, adjustment, entry_dates):
+    from types import SimpleNamespace
+
+    data = _df_uptrend(n=12)
+    data["close"] = [10, 11, float("nan")] + [12] * 9
+    data["adjusted_close"] = pd.Series([None, None, adjustment] + [None] * 9,
+                                       index=data.index, dtype=object)
+    def historical_prices(ticker, start_date, end_date):
+        return data.loc[start_date:end_date].rename_axis("time").reset_index().to_dict("records")
+
+    monkeypatch.setattr("src.lab.backtest_runner.load_universe_tickers", lambda *a, **kw: ["NVDA"])
+    monkeypatch.setattr("v2.data.factory.make_data_client", lambda: SimpleNamespace(get_prices=historical_prices))
+    saved = _minimal_spec().model_dump()
+    saved["entry"]["signals"] = [{"type": "range_breakout", "window": 2}]
+    saved["exit"] = [{"type": "time_stop", "bars": 1}]
+    saved["backtest_config"].update(start_date="2020-01-01", end_date="2020-01-22",
+                                   reverse_signal_as_exit=False)
+    result = run_backtest(StrategySpec.model_validate(saved), db=MagicMock())
+    assert [t["entry_date"][:10] for t in result.is_trades] == entry_dates
+    assert len(result.equity_curve_is) == 9  # 10 sessions in the segment, one untradable close
+
+
+def test_warmup_and_exclusive_end_alone_do_not_produce_a_backtest(monkeypatch):
+    from types import SimpleNamespace
+
+    data = _df_uptrend(2)
+    data.index = pd.to_datetime(["2020-01-03", "2020-01-17"])
+    def historical_prices(ticker, start_date, end_date):
+        return data.loc[start_date:end_date].rename_axis("time").reset_index().to_dict("records")
+
+    monkeypatch.setattr("src.lab.backtest_runner.load_universe_tickers", lambda *a, **kw: ["NVDA"])
+    monkeypatch.setattr("v2.data.factory.make_data_client", lambda: SimpleNamespace(get_prices=historical_prices))
+    saved = _minimal_spec().model_dump()
+    saved["entry"]["signals"] = [{"type": "relative_volume", "window": 1}]
+    saved["backtest_config"].update(start_date="2020-01-06", end_date="2020-01-17")
+    result = run_backtest(StrategySpec.model_validate(saved), db=MagicMock())
+    assert result.error_message
+    assert result.is_metrics is None and result.oos_metrics is None

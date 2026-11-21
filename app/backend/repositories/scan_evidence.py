@@ -76,8 +76,10 @@ def _archived_scan_evidence(source_id: str, *, user_id: int, ticker: str, market
         decisions = result.get("detector_results", [])
         triggers = quality.get("legacy_triggers")
         if triggers is None:
+            matches = quality.get("rule_group", {}).get("matches")
             triggers = [dict(item, signal_session=sessions.get(item["detector"]), severity_z=item.get("severity"))
-                        for item in decisions if item.get("status") == "triggered"]
+                        for item in decisions if item.get("status") == "triggered"
+                        and (matches is None or matches.get(item["detector"]) is True)]
         return json_value({
             "scan_result_id": None, "scan_run_id": None, "universe_snapshot_id": None,
             "mongo_scan_result_id": str(result["_id"]), "mongo_scan_run_id": str(run["_id"]),

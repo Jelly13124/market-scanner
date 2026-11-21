@@ -19,6 +19,9 @@ class IndicatorMatrix:
     """Per-ticker DataFrame keyed by date, with indicator columns appended
     to the original OHLCV bars."""
     indicators: dict[str, pd.DataFrame] = field(default_factory=dict)
+    # Historical rule inputs can include warm-up before this simulation segment.
+    daily_history: dict[str, pd.DataFrame] = field(default_factory=dict)
+    benchmark: pd.DataFrame | None = None
 
 
 def compute_indicators(bars: dict[str, pd.DataFrame]) -> IndicatorMatrix:

@@ -361,3 +361,124 @@ class TestBenchmarkPlumbing:
         )
 
         assert det.captured[0].benchmark_prices is None
+
+
+@pytest.mark.parametrize("combiner,latest,outcome_name,group_match,selected", [
+    ("and", 110, "no_data", None, False),
+    ("or", 110, "evaluated", True, True),
+    ("and", 100, "evaluated", False, False),
+    ("or", 100, "no_data", None, False),
+])
+def test_daily_group_keeps_unknown_operand(combiner, latest, outcome_name, group_match, selected):
+    from v2.scanner.test_daily_momentum import END, bars, client
+
+    weights = ScannerWeights(rule_group={"combiner": combiner, "signals": [
+        {"type": "range_breakout", "window": 2},
+        {"type": "relative_strength", "window": 2},
+    ]})
+    seen = []
+    run_scan(tickers=["AAA"], end_date=END, weights=weights, max_workers=1,
+             provider_factory=lambda: client(bars(n=3, last=latest), spy=[]),
+             outcome_cb=seen.append)
+    result, = seen
+    assert [item["detector"] for item in result.detector_results] == ["range_breakout", "relative_strength"]
+    assert result.quality["rule_group"] == {
+        "match": group_match, "incomplete": True,
+        "matches": {"range_breakout": latest > 100, "relative_strength": None},
+    }
+    assert result.outcome == outcome_name
+    assert result.selected is selected
+
+
+def test_daily_group_uses_ticker_to_break_equal_weighted_scores():
+    from v2.scanner.test_daily_momentum import END, bars, client
+
+    weights = ScannerWeights(
+        rule_group={"combiner": "and", "signals": [{"type": "relative_volume", "window": 2}]},
+        detector_severity_mult={"relative_volume": 2},
+    )
+    fd = client()
+    fd.get_prices.side_effect = lambda ticker, *_: bars(n=3, volume=250 if ticker == "AAA" else 350)
+    ranked = run_scan(tickers=["ZZZ", "AAA"], end_date=END, weights=weights, max_workers=1,
+                      provider_factory=lambda: fd)
+    assert [entry.composite_score for entry in ranked] == [100, 100]
+    assert [entry.ticker for entry in ranked] == ["AAA", "ZZZ"]
+
+
+@pytest.mark.parametrize("spy_fails", [False, True])
+def test_group_shares_one_series_per_ticker_and_benchmark_evidence(spy_fails):
+    from collections import Counter
+    from datetime import date, timedelta
+    from v2.data.models import Price
+    from v2.scanner.test_daily_momentum import END
+
+    end = date.fromisoformat(END)
+    def series(ages):
+        rows = []
+        for age in ages:
+            price = 110 if age == 0 else 100
+            rows.append(Price(time=(end - timedelta(days=age)).isoformat(), open=100,
+                              high=120, low=90, close=price, volume=200 if age == 0 else 100))
+        return rows
+
+    sparse = series([*range(145, 95, -1), 0, -1])
+    dense = series([*range(50, -1, -1), -1])
+    prices = {"AAA": sparse, "BBB": dense, "SPY": dense}
+    calls = []
+
+    class Provider:
+        def __init__(self):
+            # A pooled client can already have refs from an unrelated request.
+            self.evidence = [{"source": "unrelated"}]
+            self.quality = [{"source": "unrelated"}]
+
+        def get_prices(self, ticker, start_date, end_date):
+            calls.append((ticker, start_date, end_date))
+            self.quality.append({"source": ticker})
+            if ticker == "SPY" and spy_fails:
+                raise RuntimeError("benchmark unavailable")
+            self.evidence.append({"source": ticker})
+            # Simulate a provider returning extra, unsorted rows.
+            return list(reversed(prices[ticker]))
+
+        def close(self):
+            pass
+
+    weights = ScannerWeights(rule_group={"combiner": "or", "signals": [
+        {"type": "range_breakout", "window": 50},
+        {"type": "relative_strength", "window": 2},
+        {"type": "relative_volume", "window": 2},
+    ]})
+    outcomes = []
+    run_scan(tickers=["AAA", "BBB", "SPY"], end_date=END, weights=weights,
+             provider_factory=Provider, max_workers=2, outcome_cb=outcomes.append)
+    assert Counter(calls) == Counter((symbol, (end - timedelta(days=150)).isoformat(), END)
+                                     for symbol in prices)
+    by_symbol = {o.ticker: o for o in outcomes}
+    sparse_results = by_symbol["AAA"].detector_results
+    assert [r["status"] for r in sparse_results] == ["triggered", "no_data", "no_data"]
+    assert sparse_results[0]["signal_session"] == END
+    assert by_symbol["BBB"].selected
+    assert by_symbol["BBB"].quality["rule_group"]["matches"]["relative_volume"] is True
+    assert by_symbol["BBB"].quality["rule_group"]["matches"]["relative_strength"] is (None if spy_fails else False)
+    assert by_symbol["SPY"].outcome == ("no_data" if spy_fails else "evaluated")
+    for symbol, outcome in by_symbol.items():
+        sources = ["SPY"] if symbol == "SPY" else ["SPY", symbol]
+        assert [q["source"] for q in outcome.quality["inputs"]] == sources
+        assert [ref["source"] for ref in outcome.evidence] == [
+            source for source in sources if not (spy_fails and source == "SPY")
+        ]
+
+
+def test_ungrouped_daily_detectors_keep_independent_observations():
+    from v2.scanner.detectors import RangeBreakoutDetector, RelativeVolumeDetector
+    from v2.scanner.test_daily_momentum import END, bars, client
+
+    fd = client()
+    fd.get_prices.side_effect = [bars(n=3, last=110), bars(n=3, last=90)]
+    result, = run_scan(tickers=["AAA"], end_date=END, provider_factory=lambda: fd,
+                       detectors=[RangeBreakoutDetector(window=2), RelativeVolumeDetector(window=2)])
+    assert [(t["detector"], t["direction"]) for t in result.triggers] == [
+        ("range_breakout", "bullish"), ("relative_volume", "bearish")
+    ]
+    assert fd.get_prices.call_count == 2

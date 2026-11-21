@@ -1,4 +1,4 @@
-"""Phase 6A: CATALOG of all 18 strategy blocks.
+"""Catalog of strategy blocks.
 
 Consumed by:
   - LLM chat prompt builder (via get_llm_prompt_text())
@@ -26,6 +26,7 @@ from src.lab.spec.blocks_filters import (
 from src.lab.spec.blocks_sizing import (
     EqualWeightSizing, FixedPctSizing, VolTargetedSizing,
 )
+from v2.rules.spec import RangeBreakoutRule, RelativeStrengthRule, RelativeVolumeRule
 
 
 def _entry(model, description):
@@ -61,7 +62,7 @@ def _filter(model, description):
 
 
 CATALOG: dict[str, dict] = {
-    # Entry blocks (8)
+    # Entry blocks
     "rsi": _entry(RSIEntry,
         "Buy when RSI(period) crosses below `level` (oversold_buy) "
         "or above `level` (overbought_short, v1 long-only treats as no-op)."),
@@ -82,6 +83,12 @@ CATALOG: dict[str, dict] = {
         "Turtle-style breakout."),
     "volume_spike": _entry(VolumeSpikeEntry,
         "Volume > multiplier x avg_period day average. Confirms conviction."),
+    "relative_volume": _entry(RelativeVolumeRule,
+        "Volume reaches threshold times the preceding window mean. Direction follows the daily return."),
+    "range_breakout": _entry(RangeBreakoutRule,
+        "Close strictly above or below the preceding window of adjusted closes when available."),
+    "relative_strength": _entry(RelativeStrengthRule,
+        "Return spread versus SPY reaches the threshold over matching sessions. 0.05 is five percentage points."),
     # Exit blocks (4)
     "stop_loss": _exit(StopLossExit,
         "Exit when loss reaches `value` (mode=pct, 0.05=5%) or "
@@ -118,6 +125,8 @@ _NAME_TO_MODEL: dict[str, type[BaseModel]] = {
     "price_vs_ma": PriceVsMAEntry, "macd": MACDEntry,
     "bollinger_break": BollingerBreakEntry, "donchian_break": DonchianBreakEntry,
     "volume_spike": VolumeSpikeEntry,
+    "relative_volume": RelativeVolumeRule, "range_breakout": RangeBreakoutRule,
+    "relative_strength": RelativeStrengthRule,
     "stop_loss": StopLossExit, "take_profit": TakeProfitExit,
     "trailing_stop": TrailingStopExit, "time_stop": TimeStopExit,
     "fixed_pct": FixedPctSizing, "equal_weight": EqualWeightSizing,
@@ -172,7 +181,7 @@ def get_llm_prompt_text() -> str:
         )
 
     out = [
-        "AVAILABLE STRATEGY BLOCKS (catalog v1, 18 blocks):",
+        f"AVAILABLE STRATEGY BLOCKS (catalog v1, {len(CATALOG)} blocks):",
         "",
         "Entry signals (pick 1-5, combine via combiner='and'/'or'):",
         *by_cat["entry"],

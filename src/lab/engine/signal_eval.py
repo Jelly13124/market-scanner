@@ -1,30 +1,68 @@
 """Phase 6B: evaluate any block (entry/exit/filter) on the indicator matrix.
 
 eval_entry / eval_exit / eval_filter dispatch on block.type and read
-the precomputed indicator columns. Engine calls these once per bar
-per ticker — no recomputation.
+precomputed indicators or evaluate a shared daily rule over historical bars.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from bisect import bisect_left, bisect_right
+from collections.abc import Iterator
+from typing import TYPE_CHECKING, NamedTuple
 
 import pandas as pd
 
 from src.lab.engine.indicators import IndicatorMatrix
-from src.lab.spec.blocks_entry import (
-    BollingerBreakEntry, DonchianBreakEntry, MACDEntry, MACrossEntry,
-    PriceVsMAEntry, RSICrossEntry, RSIEntry, VolumeSpikeEntry,
-)
-from src.lab.spec.blocks_exit import (
-    StopLossExit, TakeProfitExit, TimeStopExit, TrailingStopExit,
-)
-from src.lab.spec.blocks_filters import (
-    LiquidityFilter, TrendFilter, VolatilityFilter,
-)
+from v2.rules.daily import evaluate_rule, lookback_days, match_condition
+from v2.rules.spec import DailyCondition, DailyRule, RelativeStrengthRule
+from v2.scanner.detectors.base import EventTrigger
 
 if TYPE_CHECKING:
     from src.lab.engine.simulation import Position
+
+
+class _DailyBar(NamedTuple):
+    time: str
+    adjusted_close: float | None
+    close: float
+    volume: float
+
+
+def _daily_rows(frame: pd.DataFrame) -> list[_DailyBar]:
+    adjusted = frame.get("adjusted_close", [None] * len(frame))
+    return [_DailyBar(session.date().isoformat(), adj, close, volume)
+            for session, adj, close, volume in zip(frame.index, adjusted, frame.close, frame.volume)]
+
+
+def iter_daily_rule_evidence(
+    rule: DailyCondition, bars: pd.DataFrame, benchmark: pd.DataFrame | None = None,
+    *, first_session: pd.Timestamp | None = None,
+) -> Iterator[tuple[pd.Timestamp, EventTrigger | None]]:
+    """Yield each session's original Scanner-compatible evidence using only data known then."""
+    if bars.empty:
+        return
+    bars = bars.sort_index()
+    stock = _daily_rows(bars)
+    days = [session.toordinal() for session in bars.index]
+    spy, spy_days = [], []
+    if isinstance(rule, RelativeStrengthRule) and benchmark is not None and not benchmark.empty:
+        benchmark = benchmark.sort_index()
+        spy = _daily_rows(benchmark)
+        spy_days = [session.toordinal() for session in benchmark.index]
+
+    horizon = lookback_days(rule.window)
+    first = bisect_left(days, first_session.toordinal()) if first_session is not None else 0
+    for i in range(first, len(stock)):
+        cutoff = days[i] - horizon
+        start = bisect_left(days, cutoff, hi=i + 1)
+        reference = ()
+        if isinstance(rule, RelativeStrengthRule):
+            end = bisect_right(spy_days, days[i])
+            begin = bisect_left(spy_days, cutoff, lo=max(0, end - rule.window - 1), hi=end)
+            reference = spy[begin:end]
+        else:
+            start = max(start, i - rule.window)
+        yield bars.index[i], evaluate_rule(rule, stock[start:i + 1], reference)
 
 
 def eval_entry(block, ticker: str, matrix: IndicatorMatrix) -> pd.Series:
@@ -32,6 +70,15 @@ def eval_entry(block, ticker: str, matrix: IndicatorMatrix) -> pd.Series:
     True where the entry signal fires."""
     df = matrix.indicators[ticker]
     t = block.type
+
+    if isinstance(block, DailyRule):
+        bars = matrix.daily_history.get(ticker, df)
+        # Keep legacy indicator calculations segment-local. Shared rules read warm-up
+        # from the same history for the first in-sample and out-of-sample sessions.
+        evidence = iter_daily_rule_evidence(block, bars.loc[:df.index[-1]], matrix.benchmark,
+                                            first_session=df.index[0])
+        matches = {session: match_condition(block, trigger) for session, trigger in evidence}
+        return pd.Series(matches, dtype="boolean").reindex(df.index)
 
     if t == "rsi":
         col = df[f"rsi_{block.period}"] if f"rsi_{block.period}" in df.columns else _rsi_for(df, block.period)

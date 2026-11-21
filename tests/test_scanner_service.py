@@ -373,3 +373,82 @@ def test_historical_scan_does_not_backdate_live_consensus(session_factory, confi
         )
         assert [r.target_median for r in rows["AAPL"]] == [30.]
         assert not rows.get("MSFT")
+
+
+def test_saved_invalid_daily_group_cannot_fall_back_to_default_detectors(session_factory):
+    with session_factory() as session:
+        cfg = ScannerConfigRepository(session).create(
+            name="Invalid", universe_kind="custom", universe_tickers=["AAA"], user_id=1,
+            weights={"rule_group": {"combiner": "or", "signals": [{"type": "unknown"}]}},
+        )
+        config_id = cfg.id
+
+    with pytest.raises(ValueError):
+        ScannerService(session_factory)._begin(config_id, "2026-10-30")
+    with session_factory() as session:
+        assert not ScanRunRepository(session).list_for_config(config_id)
+
+
+def test_group_run_freezes_selected_parameters_and_uses_only_daily_inputs(session_factory, monkeypatch):
+    from v2.scanner.test_daily_momentum import bars, client
+
+    with session_factory() as session:
+        cfg = ScannerConfigRepository(session).create(
+            name="Volume or breakdown", universe_kind="custom", universe_tickers=["AAA"],
+            user_id=1,
+            weights={
+                "rule_group": {"combiner": "or", "signals": [
+                    {"type": "relative_volume", "window": 2, "threshold": 1.5},
+                    {"type": "range_breakout", "window": 2, "direction": "bearish"},
+                ]},
+                "detector_severity_mult": {"relative_volume": 2, "range_breakout": 5},
+                "enabled_detectors": ["earnings_event"],
+                "quant_weight": 0.8, "event_weight": 0.2,
+            },
+        )
+        config_id = cfg.id
+
+    fd = client(bars(n=3, volume=150))
+    monkeypatch.setattr("v2.data.factory.get_provider_factory", lambda **_: lambda: fd)
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("A daily group requested fundamental data")
+
+    service = ScannerService(session_factory)
+    monkeypatch.setattr(service, "_refresh_target_snapshots", unexpected)
+    monkeypatch.setattr(service, "_load_earnings_calendar", unexpected)
+    monkeypatch.setattr("v2.scanner.runner._evaluate_quant", unexpected)
+    run_id = service.execute(config_id, end_date="2026-10-30", max_workers=1, deliver_emails=False)
+    with session_factory() as session:
+        run = session.get(ScanRun, run_id)
+        definitions = run.detector_config["detectors"]
+        assert [(d["name"], d["version"], d["parameters"]) for d in definitions] == [
+            ("relative_volume", "1", {"window": 2, "threshold": 1.5}),
+            ("range_breakout", "1", {"window": 2}),
+        ]
+        effective = run.detector_config["weights"]["rule_group"]["signals"]
+        assert [signal["direction"] for signal in effective] == ["bullish", "bearish"]
+        entry, = WatchlistEntryRepository(session).list_for_run(run_id)
+        assert [trigger["detector"] for trigger in entry.triggers] == ["relative_volume"]
+        assert entry.composite_score == pytest.approx(60)
+        assert entry.quant_score is None
+        outcome = run.outcomes["AAA"]
+        assert outcome["quality"]["rule_group"] == {
+            "match": True, "incomplete": False,
+            "matches": {"relative_volume": True, "range_breakout": False},
+        }
+        assert [result["status"] for result in outcome["detector_results"]] == ["triggered", "triggered"]
+    assert {call.args[0] for call in fd.get_prices.call_args_list} == {"AAA"}
+
+
+def test_pre_group_config_with_malformed_legacy_json_keeps_default_profile(session_factory):
+    from v2.scanner.detectors import ALL_DETECTORS
+
+    with session_factory() as session:
+        cfg = ScannerConfigRepository(session).create(
+            name="Legacy", universe_kind="custom", universe_tickers=["AAA"], user_id=1,
+            weights=["old-format"],
+        )
+        config_id = cfg.id
+    payload, _ = ScannerService(session_factory)._begin(config_id, "2026-10-30")
+    assert [d["name"] for d in payload["detector_config"]["detectors"]] == [cls.name for cls in ALL_DETECTORS]

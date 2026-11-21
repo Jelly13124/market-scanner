@@ -7,11 +7,12 @@ serialization.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, List, Literal, Optional
+from typing import Annotated, Any, List, Literal, Optional
 
-from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic import AfterValidator, BaseModel, Field, computed_field, model_validator
 
 from v2.data.ashare.symbol import is_ashare
+from v2.scanner.models import ScannerWeights
 
 
 class UniverseKind(str, Enum):
@@ -80,7 +81,19 @@ class ScannerConfigBase(BaseModel):
     )
 
 
+def _validate_group_weights(weights: dict[str, Any]) -> dict[str, Any]:
+    if weights.get("rule_group") is None:
+        return weights
+    group = ScannerWeights.model_validate(weights).rule_group
+    return {**weights, "rule_group": group.model_dump(mode="json")}
+
+
+RequestWeights = Annotated[dict[str, Any], AfterValidator(_validate_group_weights)]
+
+
 class ScannerConfigCreateRequest(ScannerConfigBase):
+    weights: RequestWeights | None = None
+
     @model_validator(mode="after")
     def _check_universe(self):
         # field_validator on universe_tickers doesn't fire when the field falls
@@ -104,7 +117,7 @@ class ScannerConfigUpdateRequest(BaseModel):
     cron_expr: Optional[str] = None
     is_enabled: Optional[bool] = None
     top_n: Optional[int] = Field(None, ge=1, le=200)
-    weights: Optional[dict[str, Any]] = None
+    weights: RequestWeights | None = None
     user_watchlist_id: Optional[int] = None
     # Phase 5E — same fields as base, but optional so PATCH can leave them
     # untouched. Field constraints duplicated so update payloads validate.

@@ -1,27 +1,10 @@
 // Run from app/frontend with npm run test:handoff. Uses a disposable Chrome profile.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { chromium } from 'playwright-core';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { build, preview } from 'vite';
+import { openTestApp } from './browser-fixture.mjs';
 
 test('a Scanner row exposes its frozen universe and submits the owned result reference', async t => {
-  process.env.VITE_API_URL = '/api';
-  const outDir = await mkdtemp(join(tmpdir(), 'scanner-handoff-'));
-  let server;
-  let browser;
-  t.after(async () => {
-    await browser?.close();
-    if (server) await new Promise(resolve => server.httpServer.close(resolve));
-    await rm(outDir, {recursive: true, force: true});
-  });
-  const config = {build: {outDir}, logLevel: 'error'};
-  await build(config);
-  server = await preview({...config, preview: {host: '127.0.0.1', port: 0}});
-  browser = await chromium.launch({channel: 'chrome'});
-  const page = await browser.newPage({locale: 'en-US'});
+  const {page, url} = await openTestApp(t);
   const run = {id: 5, config_id: 1, status: 'COMPLETE', universe_size: 2, universe_snapshot_id: 11};
   const trigger = {detector: 'relative_volume', severity_z: 3, direction: 'bullish',
     reason: 'Volume exceeded baseline', signal_session: '2026-10-30', components: {ratio: 3}};
@@ -58,7 +41,7 @@ test('a Scanner row exposes its frozen universe and submits the owned result ref
       use_personas: true, debate_rounds: 3,
     }));
   });
-  await page.goto(server.resolvedUrls.local[0], {waitUntil: 'domcontentloaded'});
+  await page.goto(url, {waitUntil: 'domcontentloaded'});
   const queuedRun = page.waitForResponse(r => r.url().endsWith('/scanner/configs/1/latest-run'));
   await page.getByTitle('Run universe-wide screening').first().click();
   await queuedRun;

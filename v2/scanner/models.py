@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from v2.rules.spec import RuleGroup
+
 Direction = Literal["bullish", "bearish", "neutral"]
 
 
@@ -20,6 +22,7 @@ class ScannerWeights(BaseModel):
     # signal data coverage, especially point-in-time fundamentals.
     event_weight: float = 1.00
     quant_weight: float = 0.00
+    rule_group: RuleGroup | None = None
     factor_weights: dict[str, float] = Field(
         default_factory=lambda: {
             "momentum": 0.30,
@@ -46,6 +49,14 @@ class ScannerWeights(BaseModel):
             "to 1.0 (neutral). Values must be in [0.0, 5.0]."
         ),
     )
+
+    @field_validator("rule_group")
+    @classmethod
+    def _unique_rule_types(cls, group: RuleGroup | None) -> RuleGroup | None:
+        # The Scanner archive identifies each operand by its detector name.
+        if group and len({rule.type for rule in group.signals}) != len(group.signals):
+            raise ValueError("Each daily rule type may appear only once in a Scanner group")
+        return group
 
     @field_validator("enabled_detectors")
     @classmethod
@@ -160,6 +171,9 @@ class ScanContext(BaseModel):
     end_date: str
     market_cap: float | None = None
     benchmark_prices: list[Any] | None = None
+    # Ordered daily observations fetched once for this rule group. An empty
+    # series records an unavailable input and must not trigger another read.
+    daily_price_observations: dict[str, tuple[Any, ...]] | None = None
     # Precomputed benchmark same-day (cvo, gap) keyed by ISO date string,
     # populated once by the runner from ``benchmark_prices``. Empty/None when
     # no benchmark is configured. Keeps IntradayMoveDetector from

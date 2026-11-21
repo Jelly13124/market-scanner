@@ -9,6 +9,7 @@ DatetimeIndex + OHLCV columns.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -35,13 +36,16 @@ class DataLoader:
         tickers: list[str],
         start_date: date,
         end_date: date,
+        *,
+        daily_price_source: Callable | None = None,
     ) -> DataLoadResult:
         result = DataLoadResult()
+        get_prices = daily_price_source or fetch_prices
         start_iso = start_date.isoformat()
         end_iso = end_date.isoformat()
         for ticker in tickers:
             try:
-                raw = fetch_prices(
+                raw = get_prices(
                     ticker, start_date=start_iso, end_date=end_iso,
                 )
             except Exception as e:
@@ -51,7 +55,9 @@ class DataLoader:
             if not raw:
                 result.failed[ticker] = "no bars returned"
                 continue
-            df = _bars_to_dataframe(raw)
+            df = _bars_to_dataframe(raw, daily_sessions=daily_price_source is not None)
+            if daily_price_source is None:
+                df = df.dropna(subset=["close"])
             if df.empty:
                 result.failed[ticker] = "empty dataframe after parse"
                 continue
@@ -59,7 +65,7 @@ class DataLoader:
         return result
 
 
-def _bars_to_dataframe(raw: list) -> pd.DataFrame:
+def _bars_to_dataframe(raw: list, *, daily_sessions: bool = False) -> pd.DataFrame:
     """Convert list of bar dicts (or model objects) to a DataFrame."""
     rows = []
     for b in raw:
@@ -68,16 +74,20 @@ def _bars_to_dataframe(raw: list) -> pd.DataFrame:
         elif isinstance(b, dict):
             d = b
         else:
-            d = {k: getattr(b, k, None) for k in ("time", "open", "high", "low", "close", "volume")}
+            d = {k: getattr(b, k, None) for k in ("time", "open", "high", "low", "close", "volume", "adjusted_close")}
         rows.append(d)
     df = pd.DataFrame(rows)
     if df.empty:
         return df
-    df["time"] = pd.to_datetime(df["time"])
+    if "adjusted_close" in df.columns:
+        # Preserve absent quotes (raw close fallback) versus invalid adjusted quotes.
+        df["adjusted_close"] = pd.Series([row.get("adjusted_close") for row in rows], dtype=object)
+    # The daily rule contract uses the provider's session date (ISO date prefix).
+    times = df["time"].astype(str).str[:10] if daily_sessions else df["time"]
+    df["time"] = pd.to_datetime(times)
     df = df.set_index("time").sort_index()
     # Ensure float columns
     for col in ("open", "high", "low", "close", "volume"):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna(subset=["close"])
     return df

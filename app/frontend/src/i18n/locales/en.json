@@ -1,4 +1,27 @@
 {
+  "dailyRules": {
+    "import": "Use rules from Scanner",
+    "chooseConfig": "Choose a saved configuration…",
+    "title": "Shared daily rules",
+    "mode": "Signal rules",
+    "detectors": "Scanner detectors",
+    "scannerDescription": "Choose the signal rules that qualify a stock for the ranked results.",
+    "combiner": "Match conditions",
+    "and": "All (AND)",
+    "or": "Any (OR)",
+    "relative_volume": "Relative volume",
+    "range_breakout": "Closing-range breakout",
+    "relative_strength": "Relative strength vs SPY",
+    "window": "Lookback sessions",
+    "volumeMultiple": "Volume multiple",
+    "spread": "Spread (percentage points)",
+    "direction": "Signal direction",
+    "bullish": "Bullish",
+    "bearish": "Bearish",
+    "neutral": "Neutral",
+    "any": "Any direction",
+    "selectOne": "Select at least one daily rule."
+  },
   "common": {
     "cancel": "Cancel",
     "save": "Save",

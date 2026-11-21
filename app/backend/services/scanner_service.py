@@ -42,7 +42,7 @@ from v2.data.factory import recommend_max_workers
 from v2.data.yfinance_client import YFinanceClient
 from v2.scanner.detectors import ALL_DETECTORS, DETECTOR_METADATA
 from v2.scanner.models import ScannerWeights, ScoredEntry
-from v2.scanner.runner import ScanProgress, run_scan
+from v2.scanner.runner import ScanProgress, rule_detector_definitions, run_scan
 from v2.scanner.universes import load_universe
 from v2.signals import ALL_SIGNALS
 
@@ -199,39 +199,24 @@ class ScannerService:
                 finnhub_key = ApiKeyService(key_session, config_payload.get("owner_user_id")).get_api_key("FINNHUB_API_KEY") or ""
             provider_factory = get_provider_factory(finnhub_api_key=finnhub_key)
 
-            # M9.d — refresh today's analyst-target snapshot for every ticker
-            # and load the trailing N days back. Done BEFORE the scan pool
-            # starts so the target_shift detector sees consistent history.
-            # Bootstrap: on day 1 the detector returns None (insufficient
-            # snapshots); useful triggers only fire from day 2 onward.
-            target_snapshots_by_ticker = self._refresh_target_snapshots(
-                tickers,
-                end_date,
-            )
-
-            # M9.f — load the universe-wide earnings calendar ONCE via
-            # Finnhub /calendar/earnings and produce a {ticker → days_to}
-            # dict the EarningsUpcomingDetector reads from ctx. Empty dict
-            # when Finnhub doesn't cover the universe; None signals "no
-            # calendar loaded" which makes the detector exclude tickers
-            # from stats (vs returning a misleading "no upcoming" verdict).
-            upcoming_earnings = self._load_earnings_calendar(
-                tickers,
-                end_date,
-                finnhub_api_key=finnhub_key,
-            )
-
-            detector_classes = {cls.name: cls for cls in ALL_DETECTORS}
-            det_instances = [
-                detector_classes[d["name"]](**d["parameters"])
-                for d in execution["detectors"]
-            ]
+            target_snapshots_by_ticker = upcoming_earnings = det_instances = None
+            quant_signals = []
+            if weights.rule_group is None:
+                # The legacy profile collects the analyst snapshots and calendar
+                # before the scan pool, and evaluates factors on triggered rows.
+                target_snapshots_by_ticker = self._refresh_target_snapshots(tickers, end_date)
+                upcoming_earnings = self._load_earnings_calendar(tickers, end_date, finnhub_api_key=finnhub_key)
+                detector_classes = {cls.name: cls for cls in ALL_DETECTORS}
+                det_instances = [
+                    detector_classes[d["name"]](**d["parameters"]) for d in execution["detectors"]
+                ]
+                quant_signals = [cls() for cls in ALL_SIGNALS]
             logger.info(
                 "Scan run %s using %d/%d detectors: %s",
                 run_id,
-                len(det_instances),
+                len(execution["detectors"]),
                 len(ALL_DETECTORS),
-                [d.name for d in det_instances],
+                [d["name"] for d in execution["detectors"]],
             )
 
             outcomes = []
@@ -242,7 +227,7 @@ class ScannerService:
                 weights=weights,
                 detectors=det_instances,
                 provider_factory=provider_factory,
-                quant_signals=[cls() for cls in ALL_SIGNALS],
+                quant_signals=quant_signals,
                 max_workers=max_workers,
                 progress_cb=lambda p: self._publish_progress(run_id, p),
                 benchmark_ticker=execution["benchmark_ticker"],
@@ -404,24 +389,28 @@ class ScannerService:
                 source_snapshot_id=source.id if source else None,
             )
             weights = self._build_weights(config.weights)
-            definitions = []
-            for cls in ALL_DETECTORS:
-                if weights.enabled_detectors is not None and cls.name not in weights.enabled_detectors:
-                    continue
-                # Pass these same constructor parameters to the worker. This also
-                # captures defaults from older configurations with no weights JSON.
-                parameters = {name: param.default for name, param in inspect.signature(cls).parameters.items()}
-                definitions.append({
-                    "name": cls.name, "version": cls.version, "parameters": parameters,
-                    "description": DETECTOR_METADATA[cls.name]["description"],
-                })
+            if weights.rule_group is not None:
+                definitions = rule_detector_definitions(weights.rule_group)
+                benchmark = "SPY" if any(d["name"] == "relative_strength" for d in definitions) else None
+            else:
+                definitions = []
+                for cls in ALL_DETECTORS:
+                    if weights.enabled_detectors is not None and cls.name not in weights.enabled_detectors:
+                        continue
+                    # Freeze constructor defaults for old configs with no weights JSON.
+                    parameters = {name: param.default for name, param in inspect.signature(cls).parameters.items()}
+                    definitions.append({
+                        "name": cls.name, "version": cls.version, "parameters": parameters,
+                        "description": DETECTOR_METADATA[cls.name]["description"],
+                    })
+                benchmark = "QQQ" if config.universe_kind == "nasdaq100" else "SPY"
             execution = {
                 "as_of": end_date, "config_name": config.name, "top_n": config.top_n,
                 "universe_kind": config.universe_kind,
                 "source_watchlist_id": wl.id if wl else None,
                 "source_watchlist_name": wl.name if wl else None,
                 "weights": weights.model_dump(), "detectors": definitions,
-                "benchmark_ticker": "QQQ" if config.universe_kind == "nasdaq100" else "SPY",
+                "benchmark_ticker": benchmark,
             }
             payload = {
                 "config_id": str(config_id),
@@ -497,6 +486,8 @@ class ScannerService:
     def _build_weights(self, raw: dict | None) -> ScannerWeights:
         if not raw:
             return ScannerWeights()
+        if isinstance(raw, dict) and raw.get("rule_group") is not None:
+            return ScannerWeights.model_validate(raw)
         try:
             return ScannerWeights(**raw)
         except Exception as e:

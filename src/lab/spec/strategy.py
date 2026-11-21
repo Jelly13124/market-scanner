@@ -24,6 +24,7 @@ from src.lab.spec.blocks_filters import (
 from src.lab.spec.blocks_sizing import (
     EqualWeightSizing, FixedPctSizing, VolTargetedSizing,
 )
+from v2.rules.spec import RangeBreakoutRule, RelativeStrengthRule, RelativeVolumeRule
 
 
 # Discriminated unions — Pydantic uses `type` field to dispatch
@@ -31,6 +32,7 @@ EntrySpec = Annotated[
     Union[
         RSIEntry, RSICrossEntry, MACrossEntry, PriceVsMAEntry,
         MACDEntry, BollingerBreakEntry, DonchianBreakEntry, VolumeSpikeEntry,
+        RelativeVolumeRule, RangeBreakoutRule, RelativeStrengthRule,
     ],
     Field(discriminator="type"),
 ]

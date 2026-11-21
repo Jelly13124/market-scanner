@@ -326,3 +326,22 @@ def test_historical_consensus_ignores_legacy_backdated_cache(store):
     with patch("yfinance.Ticker") as live:
         assert CachedDataClient(YFinanceClient(), store=store).get_analyst_targets(**request) is None
         live.assert_not_called()
+
+
+def test_archived_daily_group_only_reports_matching_triggers(store, monkeypatch):
+    from app.backend.repositories.scan_evidence import resolve_scan_evidence
+
+    archive = store._db
+    instrument = store.instrument("AAA", archive)
+    run_id = archive.scan_runs.insert_one({"owner_id": "1"}).inserted_id
+    decisions = [{"detector": name, "status": "triggered"} for name in ("range_breakout", "relative_volume")]
+    result_id = archive.scan_results.insert_one({
+        "owner_id": "1", "scan_run_id": run_id, "instrument_id": instrument,
+        "outcome": "evaluated", "selected": True, "detector_results": decisions,
+        "quality": {"rule_group": {"match": True, "incomplete": False,
+                                   "matches": {"relative_volume": True, "range_breakout": False}}},
+    }).inserted_id
+    monkeypatch.setattr("src.storage.mongo.get_store", lambda: store)
+    evidence = resolve_scan_evidence(None, str(result_id), user_id=1, ticker="AAA", market="us")
+    assert [t["detector"] for t in evidence["triggers"]] == ["relative_volume"]
+    assert evidence["outcome"]["detector_results"] == decisions

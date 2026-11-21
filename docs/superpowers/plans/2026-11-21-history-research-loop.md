@@ -55,9 +55,13 @@ The Chrome regression runs with `npm run test:handoff` in `app/frontend`. It ope
 
 ## 3. Share the three daily rules
 
-- [ ] Add paired Scanner/Lab fixtures for relative volume, closing breakout and SPY-relative strength. Include equality at breakout, unequal benchmark dates, insufficient warm-up and an unavailable operand in AND/OR.
-- [ ] Extract pure versioned rule evaluators from `v2/scanner/detectors/`. Call them from Scanner and `src/lab/engine/signal_eval.py`. Both callers must return the same status, direction, evidence values and effective session for the same input.
-- [ ] Keep existing strategies and detector configurations on their original semantics. Test an old serialized strategy as well as a new rule group.
+- [x] Add paired Scanner/Lab fixtures for relative volume, closing breakout and SPY-relative strength. Include equality at breakout, unequal benchmark dates, insufficient warm-up and an unavailable operand in AND/OR.
+- [x] Extract pure versioned rule evaluators from `v2/scanner/detectors/`. Call them from Scanner and `src/lab/engine/signal_eval.py`. Both callers must return the same status, direction, evidence values and effective session for the same input.
+- [x] Keep existing strategies and detector configurations on their original semantics. Test an old serialized strategy as well as a new rule group.
+
+The Scanner and Backtest editors save the same versioned conditions. Backtest can copy a saved Scanner group into its own entry specification. A local comparison read 1,255 AAPL and SPY sessions from MongoDB (November 22, 2021 through November 20, 2026). The two paths agreed on all 3,765 per-rule observations, including 20 warm-up sessions per rule. The counts of raw triggers were 32 for relative volume, 333 for closing breakouts and 455 for relative strength, before applying a directional filter.
+
+An HTTP acceptance run persisted a Scanner group in isolated PostgreSQL, copied its entry conditions to a Backtest strategy and ran the strategy over AAPL in 2024. It read AAPL and SPY through the real local history adapter with Yahoo access disabled, returned 15 in-sample and 7 out-of-sample closed trades, and retained the versioned rules when the saved result was reopened.
 
 ## 4. Confirm strategy revisions and execute them
 

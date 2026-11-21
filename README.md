@@ -367,9 +367,9 @@ For a smaller run use `poetry run python -m scripts.backfill_prices --tickers AA
 
 MongoDB stores instruments, revisioned bars and acquisition coverage in `instruments`, `price_bars` and `data_sync_jobs`. To let the web backend read the history, start it with the same URI and database, removing the empty `MONGODB_URI` override from the no-Mongo startup example above. These commands seed the current universe. Historical index membership and scheduled corrections are covered in the [research loop spec](docs/superpowers/specs/2026-11-17-history-research-loop-design.md) and [implementation plan](docs/superpowers/plans/2026-11-21-history-research-loop.md).
 
-## Scanner daily-bar detectors
+## Daily rules shared by Scanner and Backtest
 
-Scanner configurations now offer three additional detectors. Open the Scanner configuration dialog and enable them in the detector list. Existing configurations with an explicit detector selection keep that selection; configurations using all detectors include the new ones.
+Scanner and Backtest use the same versioned evaluator for these three rules. A shared rule group records the direction, lookback, threshold where applicable, and how the conditions combine.
 
 | Detector | Default condition | Data |
 | --- | --- | --- |
@@ -379,11 +379,23 @@ Scanner configurations now offer three additional detectors. Open the Scanner co
 
 These detectors work without a Finnhub key or MongoDB. MongoDB remains an optional cache/history layer. Missing or insufficient bars produce a no-data outcome; relative strength also requires matching SPY sessions. During market hours, the latest daily bar can still change and its volume is incomplete; use an after-close scan for daily results.
 
-Each qualifying day can trigger again. These rules do not yet implement first-hit alerts, cooldowns, or AND/OR combinations. The dialog's severity multiplier controls ranking, not the trigger threshold; custom window/threshold parameters currently exist only in the Python detector constructors. Breakouts have fixed signed severity 2; relative-volume severity is capped at 5× (zero directional severity for a flat close); relative strength uses 2 severity units per 5-point spread, capped at 5. These scales are ranking heuristics, not probabilities or statistical z-scores. Relative strength describes performance against SPY and can be bullish even when both prices fell.
+### Use a saved Scanner rule group in Backtest
+
+1. Open **Scanner → New** or edit a configuration. Under **Signal rules**, select **Shared daily rules**. Check the conditions to evaluate and set their lookbacks, thresholds and directions. Choose **All (AND)** or **Any (OR)** and save.
+2. Open a strategy in **Backtest**. Set **Entry rule** to **Shared daily rules**, then choose the saved configuration under **Use rules from Scanner**. Backtest copies its conditions into the strategy. Later Scanner edits apply when you import the configuration again.
+3. Choose the universe and dates, review exits, position size and trading costs, and click **Save parameters** before running. Bearish and neutral describe signal direction. The portfolio simulator opens long positions. A qualifying signal on one session can qualify again on the next session.
+
+Scanner ranks qualifying stocks by the strongest weighted event, with ticker order breaking equal scores in shared-rule mode.
+
+A flat close on high volume can satisfy a neutral or any-direction condition. A missing input stays unknown unless another condition determines the group outcome. For example, a true relative-volume condition makes an OR group true even when SPY is missing. A wholly unknown entry group opens no position and cannot cause a reverse-signal exit. The Backtest verdict reports evaluated and unavailable decisions separately for its in-sample and out-of-sample periods.
+
+Backtest loads warm-up bars before the evaluation window. Relative strength uses SPY even when the performance benchmark is disabled. The first supported rule version is `1`. Previously saved Lab blocks such as `volume_spike` and `donchian_break` keep their original definitions.
+
+To run the Chrome regression for saving, importing and reopening a group, run `npm run test:rules` from `app/frontend`.
 
 ## Roadmap: connect screening, scanning, research, and backtesting
 
-The Screener → Scanner → Analyze path works locally with PostgreSQL. Backtest integration is still planned.
+The Screener → Scanner → Analyze path works locally with PostgreSQL. Backtest can import the three shared daily rules from a saved Scanner configuration.
 
 1. In **Screener**, apply filters, check the tickers to keep, and choose **Add to watchlist**. Saving records the exact checked symbols, filter values, market, and Screener data date. Saving into an existing Watchlist adds those symbols alongside its current members.
 2. In **Scanner**, choose that Watchlist as the universe and run a scan. Open **View scanned universe** to inspect the tickers actually scanned and the last Screener selection saved to the list. Later edits to the Watchlist leave both snapshots readable. Deleting the Watchlist pauses Scanner schedules that depended on it.
@@ -404,7 +416,7 @@ Screener → saved stock universe → Scanner signal configuration
 | 1. Share stock universes · available | Save selected Screener results to a Watchlist and use that list to create a Scanner configuration. Freeze the selected tickers first; dynamic re-screening comes later. | The user can trace a scan's exact ticker universe back to its saved selection. |
 | 2. Carry scan evidence into Analyze · available | Pass the triggering scan ID, timestamp, detector values, and evidence alongside the ticker. Keep scan-time observations separate from data fetched for analysis. | The report explains why analysis was started and links back to the triggering scan. |
 | 3. Link reports back to results | Show the latest report, its timestamp, and triggering signal on Scanner results and Watchlist rows. | Users can open the relevant report and see whether newer signals have arrived since it was generated. |
-| 4. Validate Scanner rules with Backtest | Share supported detector definitions between scanning and backtesting. Ask users to specify entry/exit timing, holding limits, sizing, and costs before running. | A supported rule has matching signal semantics in historical and current-data execution; the saved result contains its rule version, universe, parameters, and data window. |
+| 4. Validate Scanner rules with Backtest · shared triggers available | Import a versioned daily rule group into a strategy. Confirmed strategy revisions, exact-universe replay and run-to-source navigation are planned. | A supported rule has matching signal semantics in historical and current-data execution; the saved result contains its rule version, universe, parameters, and data window. |
 | 5. Use historical results in research | Link the appropriate backtest results to Analyze as evidence; offer rule-based section templates for different scan triggers. | Reports identify the tested rule, sample size, IS/OOS periods, costs, and limitations instead of treating backtest performance as a promise. |
 | 6. Add advanced workflows | Consider dynamic Screener universes, historical event studies, parameter comparison, and translating Analyze suggestions into user-reviewed strategy rules. | Each workflow preserves its configuration and evidence, makes model costs visible, and can be reproduced before automation is expanded. |
 

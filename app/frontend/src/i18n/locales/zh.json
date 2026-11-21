@@ -1,4 +1,27 @@
 {
+  "dailyRules": {
+    "import": "从 Scanner 载入规则",
+    "chooseConfig": "选择已保存的扫描配置…",
+    "title": "共用日线规则",
+    "mode": "触发规则",
+    "detectors": "Scanner 检测器",
+    "scannerDescription": "选择股票进入扫描排名所需满足的触发条件。",
+    "combiner": "条件组合",
+    "and": "全部满足（AND）",
+    "or": "任一满足（OR）",
+    "relative_volume": "相对成交量",
+    "range_breakout": "收盘价突破",
+    "relative_strength": "相对 SPY 强弱",
+    "window": "回看交易日数",
+    "volumeMultiple": "成交量倍数",
+    "spread": "收益差（百分点）",
+    "direction": "信号方向",
+    "bullish": "看涨",
+    "bearish": "看跌",
+    "neutral": "中性",
+    "any": "任意方向",
+    "selectOne": "请选择至少一条日线规则。"
+  },
   "common": {
     "cancel": "取消",
     "save": "保存",

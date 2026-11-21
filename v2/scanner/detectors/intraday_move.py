@@ -251,6 +251,7 @@ class IntradayMoveDetector(EventDetector):
                 ),
                 components=components,
                 asof_date=end_date,
+                signal_session=prices_sorted[-1].time[:10],
             )
 
         # --- direction: signed by close_vs_open; neutral when only range fires
@@ -284,4 +285,5 @@ class IntradayMoveDetector(EventDetector):
             reason="; ".join(bits),
             components=components,
             asof_date=end_date,
+            signal_session=prices_sorted[-1].time[:10],
         )

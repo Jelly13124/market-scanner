@@ -8,9 +8,11 @@ import {
   SectorSummaryRow,
   SnapshotRefreshResult,
   SnapshotRefreshState,
+  SelectionDestination,
+  UniverseSnapshot,
 } from '@/types/screener';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8001';
+import { API_BASE } from './auth-service';
 
 function chipValuesToQuery(values: ChipValues): URLSearchParams {
   const sp = new URLSearchParams();
@@ -45,6 +47,28 @@ export async function getLatestSnapshot(q: SnapshotQuery = {}): Promise<Screener
   const url = `${API_BASE}/screener/snapshot/latest?${sp.toString()}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`screener snapshot failed: ${res.status}`);
+  return res.json();
+}
+
+export async function saveScreenerSelection(body: SelectionDestination & {
+  market: Market;
+  snapshot_date: string;
+  filters: ChipValues;
+  tickers: string[];
+}): Promise<UniverseSnapshot> {
+  const res = await fetch(`${API_BASE}/screener/selections`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const failure = await res.json().catch(() => ({}));
+    throw new Error(typeof failure.detail === 'string' ? failure.detail : `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getUniverseSnapshot(id: number): Promise<UniverseSnapshot> {
+  const res = await fetch(`${API_BASE}/screener/universe-snapshots/${id}`);
+  if (!res.ok) throw new Error(`getUniverseSnapshot ${res.status}`);
   return res.json();
 }
 

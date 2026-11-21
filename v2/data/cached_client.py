@@ -11,6 +11,7 @@ import logging
 import os
 from datetime import timedelta
 
+from src.storage.daily_prices import observed_after_close, save_price_bars
 from src.storage.mongo import digest, get_store, json_value, utcnow
 from v2.data import models
 
@@ -52,7 +53,10 @@ class CachedDataClient:
             bound = inspect.signature(fn).bind(*args, **kwargs)
             bound.apply_defaults()
             request = json_value(dict(bound.arguments))
-            key = digest({'source': self.source, 'method': method, 'request': request, 'schema': 1})
+            # Older analyst-target responses could label today's consensus with
+            # a historical request date. Only use entries with observed dates.
+            schema = 2 if method == 'get_analyst_targets' else 1
+            key = digest({'source': self.source, 'method': method, 'request': request, 'schema': schema})
             now = utcnow()
             hit = self.store.execute(lambda db: db.company_snapshots.find_one({
                 'snapshot_kind': 'provider_response', 'payload.request_key': key,
@@ -89,8 +93,8 @@ class CachedDataClient:
                     'payload': {'method': method, 'request': request, 'request_key': key, 'result': raw,
                                 'expires_at': now + timedelta(seconds=ttl)}, 'content_hash': content}
                 db.company_snapshots.insert_one(document)
-                if self.source == 'hybrid' and not request.get('ticker', '').endswith(('.SH', '.SZ', '.BJ')):
-                    self._save_prices(db, method, instrument, raw, now)
+                if method == 'get_prices' and self.source == 'hybrid' and not request.get('ticker', '').endswith(('.SH', '.SZ', '.BJ')):
+                    save_price_bars(db, instrument, raw, now)
                 self._save_domain(db, method, instrument, request, raw, now)
                 if method == 'get_statement_bundle':
                     self._save_statements(db, instrument, request, raw, now)
@@ -130,15 +134,9 @@ class CachedDataClient:
             ttl = max(1, int(os.getenv('MARKET_CACHE_TTL_SECONDS', '900')))
             if not expected.issubset(latest):
                 return None
-            if any(latest[d]['fetched_at'] < now - timedelta(seconds=ttl) for d in expected):
-                from datetime import datetime, timezone
-                start_at = datetime.fromisoformat(request['start_date']).replace(tzinfo=timezone.utc)
-                end_at = datetime.fromisoformat(end).replace(tzinfo=timezone.utc) + timedelta(days=1)
-                confirmed = db.data_sync_jobs.find_one({'instrument_id': instrument['_id'], 'source': 'yahoo',
-                    'resource_type': 'price_bars', 'status': 'succeeded', 'range_start': {'$lte': start_at},
-                    'range_end': {'$gte': end_at}, 'finished_at': {'$gt': now - timedelta(seconds=ttl)}})
-                if confirmed is None:
-                    return None
+            if any(latest[d]['fetched_at'] < now - timedelta(seconds=ttl)
+                   and not observed_after_close(d, latest[d]['fetched_at']) for d in expected):
+                return None
             result, refs = [], []
             for day in sorted(expected):
                 row = latest[day]
@@ -152,38 +150,6 @@ class CachedDataClient:
         result, refs = found
         self.evidence.extend(refs)
         return result
-
-    @staticmethod
-    def _save_prices(db, method, instrument, raw, now):
-        if method != 'get_prices' or not raw:
-            return
-        from bson import ObjectId, Decimal128, Int64
-        from datetime import datetime, timezone
-        rows = db.price_bars.find({'instrument_id': instrument, 'source': 'yahoo', 'interval': '1d',
-            'session_date': {'$in': [bar['time'][:10] for bar in raw]}}).sort('revision', -1)
-        latest = {}
-        for row in rows:
-            latest.setdefault(row['session_date'], row)
-        documents = []
-        for bar in raw:
-            session = bar['time'][:10]
-            previous = latest.get(session)
-            content = digest(bar)
-            if previous and previous['content_hash'] == content:
-                continue
-            document = {'_id': ObjectId(), 'schema_version': 1, 'instrument_id': instrument,
-                'source': 'yahoo', 'interval': '1d', 'session_date': session,
-                'revision': previous['revision'] + 1 if previous else 1,
-                'bar_time': datetime.fromisoformat(bar['time'].replace('Z', '+00:00')).replace(tzinfo=timezone.utc),
-                'volume': Int64(bar['volume']), 'adjustment_policy': 'raw_ohlc_separate_adjusted_close',
-                'content_hash': content, 'fetched_at': now, 'first_seen_at': now}
-            for name in ('open', 'high', 'low', 'close', 'adjusted_close', 'dividend', 'split_ratio'):
-                if bar.get(name) is not None:
-                    document[name] = Decimal128(str(bar[name]))
-            documents.append(document)
-            latest[session] = document
-        if documents:
-            db.price_bars.insert_many(documents, ordered=False)
 
     @staticmethod
     def _save_statements(db, instrument, request, raw, now):

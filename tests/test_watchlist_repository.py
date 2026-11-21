@@ -115,3 +115,23 @@ class TestUserWatchlistRepository:
         r1 = repo.create("SharedName", user_id=1)
         r2 = repo.create("SharedName", user_id=2)
         assert r1.id != r2.id
+
+
+def test_deleting_watchlist_pauses_only_scanners_using_that_universe(db_session):
+    from app.backend.database.models import ScannerConfig
+    from app.backend.routes.watchlists import delete_watchlist
+    from app.backend.database.models import User
+    from unittest.mock import patch
+
+    repo = UserWatchlistRepository(db_session)
+    watchlist = repo.create("Scanner inputs", user_id=_UID)
+    linked = ScannerConfig(name="linked", universe_kind="watchlist", user_watchlist_id=watchlist.id, user_id=_UID)
+    independent = ScannerConfig(name="independent", universe_kind="sp500", user_id=_UID)
+    db_session.add_all([linked, independent])
+    db_session.commit()
+    with patch('app.backend.routes.watchlists.get_scheduler_service') as scheduler:
+        delete_watchlist(watchlist.id, db=db_session, current_user=User(id=_UID))
+        assert not linked.is_enabled
+        assert linked.user_watchlist_id is None
+        assert independent.is_enabled
+        scheduler.return_value.unregister_config.assert_called_once_with(linked.id)

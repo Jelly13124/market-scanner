@@ -32,6 +32,7 @@ from app.backend.models.watchlist_schemas import (
     UserWatchlistUpdate,
 )
 from app.backend.repositories.watchlist_repository import UserWatchlistRepository
+from app.backend.services.scheduler_service import get_scheduler_service
 from app.backend.services.live_quotes import fetch_live_quotes
 from app.backend.services.api_key_service import ApiKeyService
 
@@ -97,9 +98,13 @@ def update_watchlist(watchlist_id: int, body: UserWatchlistUpdate, db: Session =
 
 @router.delete("/{watchlist_id}", status_code=204)
 def delete_watchlist(watchlist_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> Response:
-    deleted = UserWatchlistRepository(db).delete(watchlist_id, user_id=current_user.id)
-    if not deleted:
+    paused = UserWatchlistRepository(db).delete_and_pause_scanners(watchlist_id, user_id=current_user.id)
+    if paused is None:
         raise HTTPException(404, f"no watchlist with id {watchlist_id}")
+    if paused:
+        scheduler = get_scheduler_service()
+        for config_id in paused:
+            scheduler.unregister_config(config_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

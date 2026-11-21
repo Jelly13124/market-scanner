@@ -28,6 +28,16 @@ from v2.scanner.models import ScoredEntry
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def offline_providers(monkeypatch):
+    from src.storage import mongo
+
+    monkeypatch.setenv("MONGODB_URI", "")
+    monkeypatch.setattr(mongo, "_STORE", mongo.MongoStore())
+    monkeypatch.setattr("v2.data.yfinance_client.YFinanceClient.get_analyst_targets", lambda *args, **kwargs: None)
+    monkeypatch.setattr(ScannerService, "_load_earnings_calendar", lambda *args, **kwargs: {})
+
+
 @pytest.fixture()
 def engine():
     eng = create_engine(
@@ -130,20 +140,31 @@ class TestScannerServiceExecute:
             assert len(runs) == 1
             assert runs[0].status == "ERROR"
             assert "synthetic failure" in runs[0].error_message
+            assert set(runs[0].outcomes) == {"AAPL", "MSFT", "NVDA"}
+            for outcome in runs[0].outcomes.values():
+                assert outcome["outcome"] == "unrecorded"
+                assert outcome["selected"] is None
+                assert outcome["detector_results"] == []
 
-    def test_refuses_double_run(self, session_factory, config, monkeypatch):
-        # Manually create a RUNNING row to simulate an in-flight scan.
+    @pytest.mark.parametrize("status", ["PENDING", "RUNNING"])
+    def test_refuses_double_run(self, session_factory, config, monkeypatch, status):
+        # The first request has acquired its run ID, with or without a started worker.
         with session_factory() as session:
             run = ScanRunRepository(session).create_pending(config)
-            ScanRunRepository(session).mark_running(run.id, universe_size=10)
+            if status == "RUNNING":
+                ScanRunRepository(session).mark_running(run.id, universe_size=10)
+            original = run.id
 
         monkeypatch.setattr(
             "app.backend.services.scanner_service.run_scan",
             _stub_runner([]),
         )
         svc = ScannerService(session_factory)
-        with pytest.raises(ScanAlreadyRunningError):
+        with pytest.raises(ScanAlreadyRunningError) as caught:
             svc.execute(config)
+        assert caught.value.run_id == original
+        with session_factory() as session:
+            assert len(ScanRunRepository(session).list_for_config(config)) == 1
 
     def test_unknown_config_raises(self, session_factory, monkeypatch):
         monkeypatch.setattr(
@@ -264,3 +285,91 @@ def test_scanner_uses_owner_key_for_workers_and_calendar(session_factory, config
     build.assert_called_once_with(finnhub_api_key=stored_key)
     assert runner.call_args.kwargs['provider_factory'] is factory
     assert calendar.call_args.kwargs['finnhub_api_key'] == stored_key
+
+
+def test_freezes_execution_universe_and_observed_signals(session_factory, monkeypatch):
+    from datetime import date
+    from app.backend.database.models import UniverseSnapshot
+    from app.backend.repositories.screener_repository import ScreenerRepository, SnapshotRow
+    from app.backend.repositories.watchlist_repository import UserWatchlistRepository
+    from v2.scanner.test_daily_momentum import bars, client
+
+    with session_factory() as session:
+        watchlists = UserWatchlistRepository(session)
+        watchlist = watchlists.create("Tech", user_id=1)
+        screener = ScreenerRepository(session)
+        selection_date = date(2026, 10, 29)
+        screener.bulk_upsert([SnapshotRow(
+            ticker="AAPL", market="US", snapshot_date=selection_date, sector="Technology",
+        )])
+        source = screener.save_selection(
+            user_id=1, market="US", snapshot_date=selection_date,
+            filters={"sector_in": ["Technology"]}, tickers=["AAPL"],
+            watchlist_id=watchlist.id, new_watchlist_name=None,
+        )
+        watchlists.update(watchlist.id, user_id=1, tickers=["AAPL", "MSFT", "NVDA"])
+        cfg = ScannerConfigRepository(session).create(
+            name="Volume", user_id=1, universe_kind="watchlist",
+            user_watchlist_id=watchlist.id, top_n=1,
+            weights={"enabled_detectors": ["relative_volume"]},
+        )
+        config_id, source_id, list_id = cfg.id, source.id, watchlist.id
+
+    fd = client()
+    daily = {"AAPL": bars(volume=250), "MSFT": bars(volume=100)}
+    fd.get_prices.side_effect = lambda ticker, *_: daily.get(ticker, [])
+    monkeypatch.setattr("v2.data.factory.get_provider_factory", lambda **_: lambda: fd)
+    service = ScannerService(session_factory)
+    monkeypatch.setattr("app.backend.services.scanner_service.ALL_SIGNALS", ())
+    run_id = service.execute(config_id, end_date="2026-10-31", max_workers=1,
+                             deliver_emails=False)
+    with session_factory() as session:
+        UserWatchlistRepository(session).update(list_id, user_id=1, tickers=["NEW"])
+        run = ScanRunRepository(session).get_by_id_for_user(run_id, user_id=1)
+        frozen = session.get(UniverseSnapshot, run.universe_snapshot_id)
+        assert frozen.tickers == ["AAPL", "MSFT", "NVDA"]
+        assert frozen.origin == "scanner"
+        assert frozen.source_snapshot_id == source_id
+        original = session.get(UniverseSnapshot, source_id)
+        assert original.filters == {"sector_in": ["Technology"]}
+        assert original.tickers == ["AAPL"]
+        assert original.screener_snapshot_date == selection_date
+        assert frozen.source_watchlist_id == list_id
+        assert run.detector_config["source_watchlist_id"] == list_id
+        assert run.detector_config["source_watchlist_name"] == "Tech"
+        assert run.detector_config["as_of"] == "2026-10-31"
+        definition, = run.detector_config["detectors"]
+        assert definition["name"] == "relative_volume"
+        assert definition["parameters"] == {"window": 20, "threshold": 2.0}
+        assert run.outcomes["AAPL"]["selected"]
+        decision, = run.outcomes["AAPL"]["detector_results"]
+        assert decision["version"] == definition["version"]
+        assert decision["signal_session"] == "2026-10-30"
+        assert decision["components"]["relative_volume"] == 2.5
+        assert run.outcomes["MSFT"]["detector_results"][0]["status"] == "no_event"
+        assert run.outcomes["NVDA"]["outcome"] == "no_data"
+        assert not run.outcomes["NVDA"]["selected"]
+        entry, = WatchlistEntryRepository(session).list_for_run(run_id)
+        assert entry.triggers[0]["signal_session"] == "2026-10-30"
+
+
+def test_historical_scan_does_not_backdate_live_consensus(session_factory, config, monkeypatch):
+    from types import SimpleNamespace
+    from app.backend.repositories.scanner_repository import AnalystTargetSnapshotRepository
+
+    live = SimpleNamespace(target_mean=990., target_median=990., target_high=990.,
+                           target_low=990., current_price=500., n_analysts=4)
+    monkeypatch.setattr("v2.data.yfinance_client.YFinanceClient.get_analyst_targets",
+                        lambda *args, **kwargs: live)
+    monkeypatch.setattr("app.backend.services.scanner_service.run_scan", _stub_runner([]))
+    with session_factory() as session:
+        AnalystTargetSnapshotRepository(session).upsert(
+            ticker="AAPL", asof_date="2001-01-05", target_median=30.,
+        )
+    ScannerService(session_factory).execute(config, end_date="2001-01-05")
+    with session_factory() as session:
+        rows = AnalystTargetSnapshotRepository(session).list_for_tickers(
+            ["AAPL", "MSFT"], lookback_days=1, end_date="2001-01-05",
+        )
+        assert [r.target_median for r in rows["AAPL"]] == [30.]
+        assert not rows.get("MSFT")

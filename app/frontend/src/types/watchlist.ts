@@ -5,6 +5,7 @@ export interface UserWatchlist {
   id: number;
   name: string;
   tickers: string[];
+  latest_selection_id?: number | null;
   created_at: string;
   updated_at?: string | null;
 }

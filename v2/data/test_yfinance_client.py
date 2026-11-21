@@ -55,7 +55,7 @@ class TestGetAnalystTargets:
         }
         with patch("yfinance.Ticker", return_value=mock_ticker):
             client = YFinanceClient()
-            target = client.get_analyst_targets("AAPL", asof_date="2026-05-15")
+            target = client.get_analyst_targets("AAPL", asof_date=date.today().isoformat())
         assert target is not None
         assert target.ticker == "AAPL"
         assert target.current_price == 200.0
@@ -63,7 +63,7 @@ class TestGetAnalystTargets:
         assert target.target_median == 215.0
         assert target.target_high == 280.0
         assert target.target_low == 160.0
-        assert target.asof_date == "2026-05-15"
+        assert target.asof_date == date.today().isoformat()
 
     def test_returns_none_when_empty(self):
         mock_ticker = MagicMock()
@@ -297,3 +297,9 @@ class TestGetEstimateRevisions:
         with patch("yfinance.Ticker", side_effect=RuntimeError("network")):
             client = YFinanceClient()
             assert client.get_estimate_revisions("AAPL") is None
+
+
+def test_yahoo_consensus_is_unavailable_before_observation():
+    with patch("yfinance.Ticker") as fetch:
+        assert YFinanceClient().get_analyst_targets("AAPL", asof_date="2000-01-03") is None
+        fetch.assert_not_called()

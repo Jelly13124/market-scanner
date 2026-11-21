@@ -3,14 +3,14 @@
 > 2026-10-24 用户修订（优先于下文旧基线）：MongoDB 是可选的优先缓存和历史存储。命中且未过期时读 MongoDB；无记录、缺覆盖、未配置或连接故障时由统一数据层回退 Yahoo/Finnhub 在线数据，分析可继续。在线回退保留来源、观察时间和持久化状态；实时 quote 不能替代历史 K 线，当前基本面不能冒充历史。存储失败须报告未保存，不能声称历史写入成功。
 
 
-状态：建库评审设计稿，2026-10-24；尚未连接 MongoDB、建集合或迁移数据。需求以 [确认需求](../requirements/market-data-and-analyze.md) 为准。
+2026-11-21 进度：已在本地 MongoDB 安装物理定义并运行五年日线回填。需求以 [确认需求](../requirements/market-data-and-analyze.md) 为准。
 
 交付组成：[完整全字段 ERD](mongodb-full-erd.md) 提供统一关系图和唯一键；本页说明数据模型和生命周期；[字段字典](mongodb-data-dictionary.md) 列出每个字段的 BSON 类型/必填性/索引；[物理定义 JSON](mongodb-schema.json) 包含严格顶层 validator、唯一索引和应用层引用规则。目标为 MongoDB 8.0+ replica set，实际 server/driver/checkpointer 版本需在实现时锁定。
 
 ## 1. 设计边界与纠正
 
 - Finnhub 负责日内实时报价，应用按 source timestamp 显示新鲜度；第一版只做短期进程缓存，**不建立 MongoDB quote/tick 集合，不把报价采样拼成历史 K 线**。
-- Yahoo 负责历史日线的外部获取；同步服务写入 MongoDB，分析和回测只读数据库。
+- Yahoo 提供历史日线，回填命令写入 MongoDB。普通分析在历史不足时在线获取，原数据重放仅使用已冻结的输入。
 - Finnhub 提供其免费账户实际获准的公司新闻、基础资料和事件。Yahoo 提供可用财报及分析师资料；不承诺免费源等价覆盖付费数据。
 - 新闻、财报、快照、事件必须独立存储，不能全部压进报告或一个任意 payload 集合。分析引用它们的确定版本。
 - 用户/鉴权/key/watchlist/交易记录继续在 SQL；Mongo 的 owner_id 是 SQL user id 的字符串表示，没有跨库外键或自动级联。

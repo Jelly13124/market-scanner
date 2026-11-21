@@ -93,10 +93,22 @@ class MongoStore:
         market = 'CN' if symbol.endswith(('.SH', '.SZ', '.BJ')) else 'US'
         exchange = {'SH': 'XSHG', 'SZ': 'XSHE', 'BJ': 'XBSE'}.get(symbol.rsplit('.', 1)[-1], 'XUNK')
         key = {'market': market, 'exchange': exchange, 'symbol': symbol}
-        doc = dict(key, _id=ObjectId(), schema_version=1, name=symbol, asset_type='equity',
+        doc = dict(key, _id=ObjectId(), schema_version=1, name=symbol,
                    currency='CNY' if market == 'CN' else 'USD', timezone='Asia/Shanghai' if market == 'CN' else 'America/New_York',
-                   provider_symbols={'yahoo': symbol}, active=True, created_at=utcnow())
-        db.instruments.update_one(key, {'$setOnInsert': doc}, upsert=True)
+                   active=True, created_at=utcnow())
+        updates = {}
+        if symbol == 'SPY':
+            updates['asset_type'] = 'etf'
+        else:
+            doc['asset_type'] = 'equity'
+        if market == 'US' and '.' in symbol:
+            updates['provider_symbols.yahoo'] = symbol.replace('.', '-')
+        else:
+            doc['provider_symbols'] = {'yahoo': symbol}
+        update = {'$setOnInsert': doc}
+        if updates:
+            update['$set'] = updates
+        db.instruments.update_one(key, update, upsert=True)
         return db.instruments.find_one(key)['_id']
 
     def install_schema(self):

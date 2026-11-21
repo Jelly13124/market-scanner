@@ -111,6 +111,7 @@ class MaCrossDetector(EventDetector):
                 reason=reason,
                 components=components,
                 asof_date=end_date,
+                signal_session=prices_sorted[-1].time[:10],
             )
 
         if death:
@@ -123,6 +124,7 @@ class MaCrossDetector(EventDetector):
                 reason=reason,
                 components=components,
                 asof_date=end_date,
+                signal_session=prices_sorted[-1].time[:10],
             )
 
         reason = f"no cross: SMA{self._fast} {sma_fast_today:.4f} vs SMA{self._slow} {sma_slow_today:.4f} " f"(yesterday {sma_fast_yest:.4f} vs {sma_slow_yest:.4f})"
@@ -132,4 +134,5 @@ class MaCrossDetector(EventDetector):
             reason=reason,
             components=components,
             asof_date=end_date,
+            signal_session=prices_sorted[-1].time[:10],
         )

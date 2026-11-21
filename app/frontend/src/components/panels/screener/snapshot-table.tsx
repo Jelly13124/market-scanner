@@ -15,7 +15,8 @@ import { useRequestAnalyze } from '@/hooks/use-request-analyze';
 import { useToastManager } from '@/hooks/use-toast-manager';
 import { cn } from '@/lib/utils';
 import type { Market } from '@/types/analyze';
-import { SnapshotRow } from '@/types/screener';
+import type { ChipValues, Market as ScreenerMarket, SelectionDestination, SnapshotRow } from '@/types/screener';
+import { saveScreenerSelection } from '@/services/screener-service';
 import { UserWatchlist } from '@/types/watchlist';
 import { watchlistService } from '@/services/watchlist-service';
 import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
@@ -23,6 +24,9 @@ import { useTranslation } from 'react-i18next';
 
 interface SnapshotTableProps {
   rows: SnapshotRow[];
+  market: ScreenerMarket;
+  filters: ChipValues;
+  snapshotDate: string;
   sortBy: string;
   sortDir: 'asc' | 'desc';
   onSort: (column: string) => void;
@@ -278,7 +282,7 @@ const HEADER_DEFAULTS: Record<string, string> = {
   'screener.col.analyze':  'Analyze',
 };
 
-export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTableProps) {
+export function SnapshotTable({ rows, market, filters, snapshotDate, sortBy, sortDir, onSort }: SnapshotTableProps) {
   const requestAnalyze = useRequestAnalyze();
   const { t } = useTranslation();
   const { success, error } = useToastManager();
@@ -289,7 +293,7 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
   const [watchlists, setWatchlists] = useState<UserWatchlist[]>([]);
   const [loadingWl, setLoadingWl] = useState(false);
   const [newListName, setNewListName] = useState('');
-  const [creatingWl, setCreatingWl] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const activeCols = GROUPS[group].map((k) => COL_MAP[k]);
 
@@ -302,11 +306,14 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
     selectedRows.length > 0 && selectedRows.every((r) => r.market === 'CN') ? 'cn' : 'us';
 
   function toggleAll(checked: boolean) {
-    if (checked) {
-      setSelected(new Set(rows.map((r) => r.ticker)));
-    } else {
-      setSelected(new Set());
-    }
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const row of rows) {
+        if (checked) next.add(row.ticker);
+        else next.delete(row.ticker);
+      }
+      return next;
+    });
   }
 
   function toggleOne(ticker: string, checked: boolean) {
@@ -332,35 +339,29 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
     }
   }
 
-  async function handlePickWatchlist(wl: UserWatchlist) {
-    const tickers = Array.from(selected).filter((tk) => !wl.tickers.includes(tk));
-    const results = await Promise.allSettled(
-      tickers.map((tk) => watchlistService.addTicker(wl.id, tk)),
-    );
-    const added = results.filter((r) => r.status === 'fulfilled').length;
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    if (added > 0) {
-      success(t('screener.bulk.added', 'Added {{n}} to {{name}}', { n: added, name: wl.name }));
+  async function saveSelection(destination: SelectionDestination, name: string) {
+    if (saving || !name) return;
+    setSaving(true);
+    try {
+      const snapshot = await saveScreenerSelection({
+        ...destination, market, filters, snapshot_date: snapshotDate, tickers: Array.from(selected),
+      });
+      success(t('screener.bulk.saved', 'Saved {{n}} selected tickers to {{name}}', {
+        n: snapshot.tickers.length, name,
+      }));
+      setSelected(new Set());
+      setDialogOpen(false);
+    } catch (err) {
+      const message = t('screener.bulk.saveFailed', 'Could not save selection');
+      error(err instanceof Error ? `${message}: ${err.message}` : message);
+    } finally {
+      setSaving(false);
     }
-    if (failed > 0) {
-      error(t('screener.bulk.addFailed', '{{n}} ticker(s) failed to add', { n: failed }));
-    }
-    setSelected(new Set());
-    setDialogOpen(false);
   }
 
-  async function handleCreateAndAdd() {
+  function createAndAdd() {
     const name = newListName.trim();
-    if (!name || creatingWl) return;
-    setCreatingWl(true);
-    try {
-      const wl = await watchlistService.create({ name });
-      await handlePickWatchlist(wl);
-    } catch {
-      error(t('screener.bulk.createFailed', 'Failed to create watchlist'));
-    } finally {
-      setCreatingWl(false);
-    }
+    return saveSelection({ new_watchlist_name: name }, name);
   }
 
   return (
@@ -500,7 +501,8 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
               <button
                 key={wl.id}
                 className="w-full flex items-center justify-between px-3 py-2 rounded-md text-sm hover:bg-accent text-left"
-                onClick={() => handlePickWatchlist(wl)}
+                disabled={saving}
+                onClick={() => saveSelection({ watchlist_id: wl.id }, wl.name)}
               >
                 <span>{wl.name}</span>
                 <Badge variant="outline" className="h-5 text-[10px]">{wl.tickers.length}</Badge>
@@ -512,17 +514,17 @@ export function SnapshotTable({ rows, sortBy, sortDir, onSort }: SnapshotTablePr
               value={newListName}
               onChange={(e) => setNewListName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleCreateAndAdd();
+                if (e.key === 'Enter') createAndAdd();
               }}
               placeholder={t('screener.bulk.newListPlaceholder', 'New watchlist name…')}
               className="h-8 text-sm"
-              disabled={creatingWl}
+              disabled={saving}
             />
             <Button
               size="sm"
               className="h-8 shrink-0 text-xs"
-              onClick={handleCreateAndAdd}
-              disabled={creatingWl || !newListName.trim()}
+              onClick={createAndAdd}
+              disabled={saving || !newListName.trim()}
             >
               {t('screener.bulk.createAndAdd', 'Create & add')}
             </Button>

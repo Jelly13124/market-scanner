@@ -8,7 +8,7 @@ these schemas are the API boundary types.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -168,7 +168,10 @@ class AnalyzeRunRequest(AnalyzeConfig):
     """POST /research/analyze body."""
     resume_run_id: str | None = None
     force_rerun: bool = False
-    source_scan_result_id: str | None = None
+    source_scan_result_id: (
+        Annotated[int, Field(gt=0, strict=True)] |
+        Annotated[str, Field(pattern=r"^[a-fA-F0-9]{24}$", strict=True)] | None
+    ) = None
     ticker: str
 
     @field_validator("ticker")
@@ -216,6 +219,9 @@ class VerdictPayload(BaseModel):
 
 
 class AnalyzeReportDetail(BaseModel):
+    source_scan_result_id: int | None = None
+    source_scan_evidence: dict | None = None
+    analysis_market_evidence: dict | None = None
     analysis_run_id: str | None = None
     analysis_status: str | None = None
     storage_status: str | None = None

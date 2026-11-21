@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, asdict
 from datetime import date, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Literal
 
 from sqlalchemy import and_, case, delete, desc, func, select
@@ -18,7 +18,8 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
-from app.backend.database.models import TickerSnapshot
+from app.backend.database.models import TickerSnapshot, UniverseSnapshot, UserWatchlist
+from app.backend.repositories.watchlist_repository import UserWatchlistRepository
 
 logger = logging.getLogger(__name__)
 
@@ -137,11 +138,84 @@ _SORTABLE_COLS = {
 }
 
 
+def _selection_filters(filters: dict) -> dict:
+    """Keep only supported, active predicates in durable provenance."""
+    result = {}
+    for key, value in filters.items():
+        if key not in _RANGE_FILTERS and key not in _DATE_FILTERS and key not in _LIST_FILTERS:
+            raise ValueError(f"Unknown Screener filter: {key}")
+        if value is None or value == "" or value == []:
+            continue
+        if key in _RANGE_FILTERS:
+            try:
+                if not Decimal(str(value)).is_finite():
+                    raise ValueError(f"Expected a finite number for {key}")
+            except InvalidOperation as exc:
+                raise ValueError(f"Expected a number for {key}") from exc
+        elif key in _DATE_FILTERS:
+            if not isinstance(value, str):
+                raise ValueError(f"Expected an ISO date for {key}")
+            value = date.fromisoformat(value).isoformat()
+        else:
+            if isinstance(value, str):
+                value = value.split(",")
+            if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                raise ValueError(f"Expected a list of strings for {key}")
+            value = [item.strip() for item in value if item.strip()]
+            if not value:
+                continue
+        result[key] = value
+    return result
+
+
 class ScreenerRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
 
     # ----- writes ------------------------------------------------------
+
+    def save_selection(
+        self, *, user_id: int, market: str, snapshot_date: date, filters: dict,
+        tickers: list[str], watchlist_id: int | None, new_watchlist_name: str | None,
+    ) -> UniverseSnapshot | None:
+        if watchlist_id is not None:
+            watchlist = UserWatchlistRepository(self.db).get(
+                watchlist_id, user_id=user_id, for_update=True,
+            )
+            if watchlist is None:
+                return None
+        else:
+            watchlist = UserWatchlist(name=new_watchlist_name, user_id=user_id, tickers=[])
+
+        filters = _selection_filters(filters)
+        selected = list(dict.fromkeys(tickers))
+        rows, _ = self.query(
+            market=[market] if market != "ALL" else None, universe=selected,
+            snapshot_date=snapshot_date, filters=filters, limit=len(selected),
+        )
+        matching = {r.ticker for r in rows}
+        if any(ticker not in matching for ticker in selected):
+            raise ValueError("Some selected tickers do not match this Screener date, market and filters")
+
+        if watchlist_id is None:
+            self.db.add(watchlist)
+            self.db.flush()
+        snapshot = UniverseSnapshot(
+            user_id=user_id, origin="screener", market=market, tickers=selected,
+            filters=filters, filter_version="screener.v1", screener_snapshot_date=snapshot_date,
+            source_watchlist_id=watchlist.id,
+        )
+        self.db.add(snapshot)
+        self.db.flush()
+        watchlist.tickers = list(dict.fromkeys([*(watchlist.tickers or []), *selected]))
+        watchlist.latest_selection_id = snapshot.id
+        self.db.commit()
+        return snapshot
+
+    def get_universe_snapshot(self, snapshot_id: int, *, user_id: int) -> UniverseSnapshot | None:
+        return self.db.scalar(select(UniverseSnapshot).where(
+            UniverseSnapshot.id == snapshot_id, UniverseSnapshot.user_id == user_id,
+        ))
 
     def bulk_upsert(self, rows: list[SnapshotRow]) -> int:
         """INSERT ... ON CONFLICT (ticker, snapshot_date) DO UPDATE.

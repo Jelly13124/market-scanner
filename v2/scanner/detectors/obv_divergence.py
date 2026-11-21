@@ -201,6 +201,7 @@ class OBVDivergenceDetector(EventDetector):
                 reason=reason,
                 components=components,
                 asof_date=end_date,
+                signal_session=prices_sorted[-1].time[:10],
             )
 
         if obv_z > 0:
@@ -226,4 +227,5 @@ class OBVDivergenceDetector(EventDetector):
             reason=reason,
             components=components,
             asof_date=end_date,
+            signal_session=prices_sorted[-1].time[:10],
         )

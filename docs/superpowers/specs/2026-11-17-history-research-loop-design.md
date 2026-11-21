@@ -1,7 +1,8 @@
 # Historical data and research loop design
 
-Status: proposed design for user approval; not an implementation claim.
-Date: 2026-11-17
+**Approved November 21, 2026.** The first delivery is a local five-year daily-price seed. Later slices connect the four application modules.
+
+[PostgreSQL and MongoDB ERDs](../../design/research-loop-erd.md) · [Implementation plan](../plans/2026-11-21-history-research-loop.md)
 
 ## Intent and confirmed decisions
 
@@ -32,15 +33,15 @@ C. Build a full historical market platform first: appropriate for point-in-time 
 
 The user selected A. Existing legacy strategies and detector identifiers must remain readable; new semantics are explicitly versioned rather than silently applied to old results.
 
-## Current implementation and gaps
+## Implementation baseline before the first two slices
 
 Existing code includes optional Mongo storage (`src/storage/mongo.py`), cache/history and revisioned prices (`v2/data/cached_client.py`), full-universe scan history (`src/storage/history.py`), Analyze datasets and checkpoints (`src/storage/analysis.py`), a LangGraph analysis workflow, and a separate Lab backtest engine.
 
-Screener already adds selections to Watchlists; Scanner already resolves Watchlists. Automatic analysis has partial source-result linkage. Manual Scanner -> Analyze currently passes only ticker/market. Saving selections does not preserve original filters. Backtest loading drops data provenance and does not freeze its resolved stock list. Scanner rules and Lab blocks are separate implementations. Existing dataset IDs alone do not prove reconstructible inputs. These are code observations, not proof that real Mongo storage has passed acceptance.
+Screener already adds selections to Watchlists; Scanner already resolves Watchlists. Automatic analysis has partial source-result linkage. Manual Scanner -> Analyze currently passes only ticker/market. Saving selections does not preserve original filters. Backtest loading drops data provenance and does not freeze its resolved stock list. Scanner rules and Lab blocks are separate implementations. Existing dataset IDs alone do not prove reconstructible inputs. The implementation plan records subsequent delivery and acceptance of historical prices, selection snapshots and signal provenance.
 
 ## Ownership and persisted objects
 
-Extend existing models/repositories; exact table and module names below are conceptual and may be adapted by the implementer.
+The two ERDs define ownership and cardinality. PostgreSQL owns users, selections, confirmed strategy revisions and run navigation. MongoDB owns market observations and versioned evidence. A SQL backtest stores the optional dataset identifier, hash and persistence state. The application resolves this cross-database reference.
 
 | Object | Durable contents | Storage |
 | --- | --- | --- |
@@ -112,6 +113,16 @@ Reuse the application's scheduler and worker conventions. Track the union of use
 
 Use one local maintenance execution at a time; no distributed lease infrastructure in this version. Persist progress per instrument/window, resume unfinished windows after restart, and use idempotent writes. An initial manual update and visible last-success/error state are sufficient controls. Periodic maintenance needs Mongo enabled to retain market history; otherwise skip proactive historical storage work while ordinary requests remain online-capable. User-owned Finnhub enrichment continues to require that user's saved key; shared daily maintenance uses Yahoo data.
 
+### First delivery · five years of local daily prices
+
+Resolve the named US Scanner universe from its bundled snapshot, deduplicate the symbols and append SPY once. Also accept explicit US tickers for a smaller run. The initial installation uses the enabled Scanner configuration’s Nasdaq-100/S&P 500 union. This seed uses the bundled list as a fixed universe throughout the window. It cannot establish index membership on a historical date.
+
+Start five calendar years before today's New York date and end at the latest closed XNYS session. Exchange holidays, early closes and daylight saving apply. Store Yahoo OHLC, volume, separate adjusted close, dividend and split fields when supplied. Preserve the values returned with `auto_adjust=False`. Preserve the observation time when Yahoo revises historical values. When a future split or dividend changes an earlier adjusted price series, the correction pass must revalidate the affected history before freezing a consistent portfolio dataset. Corporate-action execution requires separate validation before enabling the portfolio profile.
+
+Reuse `instruments`, `price_bars` and `data_sync_jobs` with the existing validators and unique revision index. Record market session dates separately from retrieval timestamps. Group consecutive missing trading sessions per symbol and fetch those windows. A fully covered window reads locally on a repeat seed. Historical observations acquired after their session close remain usable beyond the short response-cache TTL. The seed rechecks any intraday observation after the session closes. Each attempted symbol records expected and stored session counts, missing ranges and provider error types. A listing that starts mid-window is allowed to have a shorter series. Without verified listing metadata its earlier sessions remain gaps with unknown cause.
+
+Acceptance requires real local MongoDB, a full-universe run, independent counts and date bounds, a complete SPY series and a repeat run demonstrating stable revision counts. Report full, partial and empty series separately. No synthetic bars, imputed prices or automatic exclusion to raise coverage. This first delivery needs no PostgreSQL migration. Scheduled updates and the revision refresh policy belong to a later slice.
+
 ## Delivery slices and TDD acceptance
 
 Each slice: write a behavior test, observe the intended assertion failure, implement minimum behavior, run relevant regressions, refactor only while green. Read the invoked TDD skill's writing-good-tests.md before writing tests. Exercise actual rule/domain/repository code; mock external market/model transport only where necessary. No paid model calls in the test suite.
@@ -129,7 +140,3 @@ Frontend behavior changes need tests for draft confirmation, provenance propagat
 Out of scope: full-market historical dynamic screening, historical fundamental/news trading rules, intraday fills, shorting/leverage/pyramiding, paper/live trading, distributed queues, arbitrary workflow DAG editor, automatic model trading, automatic parameter search, hosted infrastructure.
 
 Builder may choose exact table names, small internal module boundaries, dataset serialization/compression, batching sizes and UI placement while preserving contracts. Prefer existing storage/history APIs over parallel frameworks. Keep existing configurations readable and migrate additively; no forced rewrite of old reports/results. Update conflicting historical-design docs to distinguish existing code, this approved target and deferred capabilities during implementation.
-
-## Approval boundary
-
-The user approved the scope decisions and approach A. This written design still awaits approval. After approval, produce a sequenced implementation plan, then implement with TDD. No production code or schema changes are part of authoring this document.

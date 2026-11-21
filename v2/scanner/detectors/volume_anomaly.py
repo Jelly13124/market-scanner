@@ -105,6 +105,7 @@ class VolumeAnomalyDetector(EventDetector):
                 reason=f"z_vol={z_vol:+.2f} (below {self._vol_thresh:.1f})",
                 components=components,
                 asof_date=end_date,
+                signal_session=prices_sorted[-1].time[:10],
             )
 
         if not return_calm:
@@ -116,6 +117,7 @@ class VolumeAnomalyDetector(EventDetector):
                 ),
                 components=components,
                 asof_date=end_date,
+                signal_session=prices_sorted[-1].time[:10],
             )
 
         # Direction follows return sign; tie-break to neutral if return is ~0.
@@ -139,4 +141,5 @@ class VolumeAnomalyDetector(EventDetector):
             reason=f"volume z={z_vol:+.2f} on flat day (ret {today_ret*100:+.2f}%)",
             components=components,
             asof_date=end_date,
+            signal_session=prices_sorted[-1].time[:10],
         )

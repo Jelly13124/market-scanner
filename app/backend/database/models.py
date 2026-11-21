@@ -1,5 +1,6 @@
 import sqlalchemy as sa
 from sqlalchemy import Column, Integer, Float, String, DateTime, Text, Boolean, JSON, ForeignKey, Index, UniqueConstraint, BigInteger, Date, Numeric
+from sqlalchemy.orm import deferred
 from sqlalchemy.sql import func, text
 from .connection import Base
 
@@ -95,7 +96,7 @@ class ScannerConfig(Base):
     # kinds (sp500/nasdaq100/custom/etc.).
     user_watchlist_id = Column(
         Integer,
-        ForeignKey("user_watchlists.id"),
+        ForeignKey("user_watchlists.id", ondelete="SET NULL", name="fk_scanner_configs_user_watchlist"),
         nullable=True,
         index=True,
     )
@@ -123,7 +124,26 @@ class ScannerConfig(Base):
     # When True, also email the auto-SOP reports to those recipients.
     email_reports = Column(Boolean, nullable=False, default=False, server_default=sa.false())
 
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
+
+
+class UniverseSnapshot(Base):
+    """Resolved selection or execution universe, kept independently of its mutable Watchlist."""
+
+    __tablename__ = "universe_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
+    origin = Column(String(20), nullable=False)
+    market = Column(String(12), nullable=False)
+    tickers = Column(JSON, nullable=False)
+    filters = Column(JSON, nullable=True)
+    filter_version = Column(String(32), nullable=True)
+    screener_snapshot_date = Column(Date, nullable=True)
+    selected_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    source_watchlist_id = Column(Integer, ForeignKey("user_watchlists.id", ondelete="SET NULL"), index=True)
+    source_snapshot_id = Column(Integer, ForeignKey("universe_snapshots.id"), index=True)
 
 
 class ScanRun(Base):
@@ -140,6 +160,9 @@ class ScanRun(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
+    universe_snapshot_id = Column(Integer, ForeignKey("universe_snapshots.id", name="fk_run_universe"), index=True)
+    detector_config = deferred(Column(JSON, nullable=True))
+    outcomes = deferred(Column(JSON, nullable=True))
     universe_size = Column(Integer, nullable=True)
     error_message = Column(Text, nullable=True)
 
@@ -368,6 +391,7 @@ class ResearchReport(Base):
     duration_seconds = Column(Float, nullable=True)
 
     # Phase 4 — full SOP structured payload + AnalyzeRequest serialization
+    source_scan_result_id = Column(Integer, ForeignKey("watchlist_entries.id", name="fk_report_scan_result", ondelete="SET NULL"), index=True)
     analyze_request_json = Column(JSON, nullable=True)
     sections_json = Column(JSON, nullable=True)
 
@@ -391,6 +415,8 @@ class UserWatchlist(Base):
 
     name = Column(String(200), nullable=False, index=True)
     # list[str] of uppercased tickers; defaults to empty list
+    latest_selection_id = Column(Integer, ForeignKey("universe_snapshots.id", name="fk_watchlist_selection",
+                                                    use_alter=True), nullable=True)
     tickers = Column(JSON, nullable=False, default=list)
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)

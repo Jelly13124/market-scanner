@@ -36,7 +36,11 @@ export function ScreenerTab() {
   const [sortBy, setSortBy] = useState('market_cap');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [page, setPage] = useState(0);
-  const [response, setResponse] = useState<ScreenerSnapshotResponse | null>(null);
+  const [result, setResult] = useState<{
+    response: ScreenerSnapshotResponse; market: Market; filters: ChipValues;
+  } | null>(null);
+  const response = result?.market === market && result.filters === filterValues
+    ? result.response : null;
   const [status, setStatus] = useState<ScreenerStatusResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -83,7 +87,7 @@ export function ScreenerTab() {
       limit: PAGE_SIZE, offset: page * PAGE_SIZE,
       filters: filterValues,
     })
-      .then((r) => { if (alive) setResponse(r); })
+      .then((r) => { if (alive) setResult({ response: r, market, filters: filterValues }); })
       .catch(console.error)
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -214,7 +218,11 @@ export function ScreenerTab() {
       <div className="flex-1 overflow-auto px-2 pb-2">
         {!hasAnySnapshot
           ? <EmptyState />
-          : <SnapshotTable rows={rows} sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+          : response && <SnapshotTable
+              key={JSON.stringify([market, filterValues, response.snapshot_date])}
+              rows={rows} sortBy={sortBy} sortDir={sortDir} onSort={handleSort}
+              market={market} filters={filterValues} snapshotDate={response.snapshot_date}
+            />
         }
       </div>
 

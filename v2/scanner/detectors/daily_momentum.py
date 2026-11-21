@@ -78,6 +78,7 @@ class RelativeVolumeDetector(EventDetector):
             components={"relative_volume": ratio, "baseline_volume": baseline,
                         "today_volume": volumes[-1], "daily_return": daily_return},
             asof_date=bars[-1].time[:10],
+            signal_session=bars[-1].time[:10],
         )
 
 
@@ -109,6 +110,7 @@ class RangeBreakoutDetector(EventDetector):
             components={"close": closes[-1], "prior_high_close": upper,
                         "prior_low_close": lower, "window": float(self.window)},
             asof_date=bars[-1].time[:10],
+            signal_session=bars[-1].time[:10],
         )
 
 
@@ -152,4 +154,5 @@ class RelativeStrengthDetector(EventDetector):
             components={"stock_return": stock_return, "benchmark_return": bench_return,
                         "return_spread": spread, "threshold": self.threshold},
             asof_date=benchmark[-1].time[:10],
+            signal_session=benchmark[-1].time[:10],
         )

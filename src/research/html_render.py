@@ -24,6 +24,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from src.research.models import AnalyzeReport, ResearchState
+from src.research.scan_provenance import evidence_markdown
 from src.research.sections.conviction import conviction_total_score
 
 
@@ -479,6 +480,10 @@ def render_sop(report: AnalyzeReport, *, report_id: int | None = None) -> str:
     }
 
     html = _ENV.get_template("report.html").render(**ctx)
+    provenance = evidence_markdown(getattr(req, "source_scan_evidence", None),
+                                   report.get("analysis_market_evidence"), req.report_language)
+    if provenance:
+        html = html.replace("</header>", "</header>\n<section>" + _markdown_to_html(provenance) + "</section>", 1)
 
     # Inject every section body, in canonical order. The body REPLACES
     # any scalar Jinja placeholders the template had inside that section

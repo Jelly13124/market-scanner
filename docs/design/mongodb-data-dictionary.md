@@ -1,9 +1,9 @@
 # MongoDB 字段字典与物理约束 v2.2
 
-> v2.3 实现补充：MongoDB 可选，公共数据支持在线回退。company_snapshots.snapshot_kind 新增 provider_response；payload 保存精确 request_key、类型化响应及 expires_at（读取时判断过期，不删除历史）。关联索引见 mongodb-schema.json。LangGraph 的内部 checkpoint/writes 使用独立集合，不混入市场证据集合。服务端物理验证仍待验收。
+> v2.3 实现补充：MongoDB 可选，公共数据支持在线回退。company_snapshots.snapshot_kind 新增 provider_response；payload 保存精确 request_key、类型化响应及 expires_at（读取时判断过期，不删除历史）。关联索引见 mongodb-schema.json。LangGraph 的内部 checkpoint/writes 使用独立集合，不混入市场证据集合。本地 MongoDB 已验证集合与索引安装及日线入库。其他集合的业务验收按闭环计划推进。
 
 
-来自 [物理定义](mongodb-schema.json)。设计稿，未执行。PK 为 _id；复合 UK 按整组字段唯一；optional 省略而非 null。条件文档约束以 validator 和 [设计说明](mongodb-market-data-erd.md) 为准。
+来自 [物理定义](mongodb-schema.json)。本地已验证日线写入。PK 为 _id；复合 UK 按整组字段唯一；optional 省略而非 null。条件文档约束以 validator 和 [设计说明](mongodb-market-data-erd.md) 为准。
 
 ## instruments
 

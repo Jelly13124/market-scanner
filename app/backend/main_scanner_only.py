@@ -56,11 +56,11 @@ async def startup_event() -> None:
     try:
         with SessionLocal() as session:
             runs = ScanRunRepository(session)
-            stale = runs.list_running()
+            stale = runs.list_in_flight()
             for run in stale:
                 runs.mark_error(run.id, "interrupted at startup")
             if stale:
-                logger.info("Marked %d stale RUNNING scan(s) as ERROR", len(stale))
+                logger.info("Marked %d interrupted scan(s) as ERROR", len(stale))
     except Exception as e:
         logger.warning("Stale-run cleanup failed: %s", e)
     try:

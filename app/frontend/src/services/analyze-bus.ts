@@ -16,6 +16,7 @@ export interface AnalyzeRequest {
   ticker: string;
   /** Backend market convention is lowercase. */
   market: 'us' | 'cn';
+  source_scan_result_id?: number;
 }
 
 type Listener = (req: AnalyzeRequest) => void;

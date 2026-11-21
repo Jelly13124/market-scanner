@@ -67,6 +67,8 @@ class EventTrigger(BaseModel):
     reason: str = ""
     components: dict[str, float] = Field(default_factory=dict)
     asof_date: str | None = None
+    # Actual session of a price bar used by the decision, when applicable.
+    signal_session: str | None = None
 
 
 class EventDetector(ABC):
@@ -84,6 +86,7 @@ class EventDetector(ABC):
 
     #: Stable identifier used in EventTrigger.detector and scoring weights.
     name: str = "base"
+    version: str = "1"
 
     @abstractmethod
     def detect(

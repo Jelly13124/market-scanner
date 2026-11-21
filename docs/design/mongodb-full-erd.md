@@ -1,9 +1,9 @@
 # MongoDB 完整物理 ERD v2.2
 
-> v2.3 实现补充：MongoDB 可选，公共数据支持在线回退。company_snapshots.snapshot_kind 新增 provider_response；payload 保存精确 request_key、类型化响应及 expires_at（读取时判断过期，不删除历史）。关联索引见 mongodb-schema.json。LangGraph 的内部 checkpoint/writes 使用独立集合，不混入市场证据集合。服务端物理验证仍待验收。
+> v2.3 实现补充：MongoDB 可选，公共数据支持在线回退。company_snapshots.snapshot_kind 新增 provider_response；payload 保存精确 request_key、类型化响应及 expires_at（读取时判断过期，不删除历史）。关联索引见 mongodb-schema.json。LangGraph 的内部 checkpoint/writes 使用独立集合，不混入市场证据集合。本地 MongoDB 已验证集合与索引安装及日线入库。其他集合的业务验收按闭环计划推进。
 
 
-设计稿，2026-10-24。覆盖全部 13 个 MongoDB 集合与全部字段；SQL_USERS 仅表示现有 SQL 账户，不新建同名 Mongo 集合。未执行建库。
+设计稿，2026-10-24。覆盖全部 13 个 MongoDB 集合与全部字段；SQL_USERS 仅表示现有 SQL 账户，不新建同名 Mongo 集合。本地已安装集合与索引。
 
 ## 图例与约束含义
 

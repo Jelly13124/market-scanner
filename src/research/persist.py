@@ -57,3 +57,39 @@ def state_to_db_kwargs(
         "backtest_caveat": backtest.caveat,
     }
     return report_kwargs, plan_kwargs
+
+
+def analyze_to_db_kwargs(request, report, *, duration_seconds):
+    """Persist the same request, origin and market observations for manual and auto-SOP runs."""
+    from src.research.scan_provenance import analyze_markdown
+    from src.storage.mongo import json_value
+
+    source_id = request.source_scan_evidence["scan_result_id"] if request.source_scan_evidence else None
+    inputs = json_value(request)
+    inputs.update(
+        source_scan_result_id=source_id or (request.source_scan_evidence or {}).get("mongo_scan_result_id"),
+        analysis_market_evidence=report.get("analysis_market_evidence"),
+        storage_status=report.get("storage_status"),
+        mongo_report_id=report.get("mongo_report_id"),
+        analysis_run_id=report.get("analysis_run_id"),
+        analysis_status=report.get("analysis_status"),
+        usage=report.get("usage", {}),
+    )
+    sections = {
+        name: {"markdown": p.markdown, "structured": p.structured, "skipped": p.skipped,
+               "persona_used": p.persona_used, "skip_reason": p.skip_reason}
+        for name, p in report["sections"].items() if not name.startswith("_")
+    }
+    return {
+        "ticker": request.ticker,
+        "scan_date": date.today().isoformat(),
+        "source_scan_result_id": source_id,
+        "request_json": inputs,
+        "analyze_request_json": inputs,
+        "report_markdown": analyze_markdown(report),
+        "sections_json": sections,
+        "rendered_html": report["rendered_html"],
+        "use_personas": request.use_personas,
+        "persona_assignments_json": report.get("persona_assignments"),
+        "duration_seconds": duration_seconds,
+    }

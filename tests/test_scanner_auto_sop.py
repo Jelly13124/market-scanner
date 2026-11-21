@@ -199,3 +199,27 @@ class TestBundledDispatchFiresOnce:
         assert len(kwargs["reports"]) == 2
         tickers = [r.ticker for r in kwargs["reports"]]
         assert tickers == ["T0", "T1"]
+
+
+def test_auto_analysis_copies_selected_signal_and_respects_run_owner(db_session, monkeypatch):
+    from app.backend.services.auto_sop_runner import run_auto_sop_for_scan
+
+    monkeypatch.setenv("MONGODB_URI", "")
+    scan_id = _seed_scan_with_entries(db_session, n=1)
+    entry = db_session.query(WatchlistEntry).one()
+    entry.ticker = "600519.SH"
+    entry.triggers = [{"detector": "relative_volume", "signal_session": "2026-10-13",
+                       "reason": "Unusual volume", "components": {"ratio": 3}}]
+    db_session.commit()
+    with patch("app.backend.services.auto_sop_runner.run_sop") as analyze, \
+         patch("app.backend.services.auto_sop_runner.render_sop", return_value="<html></html>"):
+        analyze.side_effect = lambda req, **kwargs: dict(_fake_sop_report(req.ticker), request=req)
+        assert run_auto_sop_for_scan(db_session, scan_id, 1, False, owner_user_id=2) == []
+        analyze.assert_not_called()
+        ids = run_auto_sop_for_scan(db_session, scan_id, 1, False, owner_user_id=1)
+    assert len(ids) == 1
+    saved = db_session.get(ResearchReport, ids[0])
+    assert saved.source_scan_result_id == entry.id
+    assert saved.analyze_request_json["market"] == "cn"
+    assert saved.analyze_request_json["source_scan_evidence"]["triggers"] == entry.triggers
+    assert "Unusual volume" in saved.report_markdown

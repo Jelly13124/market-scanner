@@ -13,6 +13,7 @@ export type Market = 'us' | 'cn';
 
 export interface AnalyzeRunRequest {
   ticker: string;
+  source_scan_result_id?: number;
   objective?: Objective;
   position_budget_usd?: number | null;
   already_holds?: boolean;

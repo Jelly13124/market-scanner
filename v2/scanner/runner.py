@@ -104,14 +104,15 @@ def _scan_one_ticker(
             upcoming_earnings_days_to=upcoming_earnings_days_to)
         triggers, results = [], []
         for det in detectors:
-            item = {'detector': det.name, 'version': '1', 'status': 'no_data'}
+            item = {'detector': det.name, 'version': det.version, 'status': 'no_data'}
             try:
                 trigger = det.detect(ticker, end_date, fd, ctx=ctx)
                 if trigger is not None:
                     triggers.append(trigger)
                     item.update(status='triggered' if trigger.triggered else 'no_event',
                         severity=float(trigger.severity_z), direction=trigger.direction,
-                        reason=trigger.reason, components=trigger.components)
+                        reason=trigger.reason, components=trigger.components,
+                        signal_session=trigger.signal_session)
             except Exception as error:
                 logger.warning('Detector %s failed for %s (%s)', det.name, ticker, type(error).__name__)
                 item.update(status='error', reason=type(error).__name__)

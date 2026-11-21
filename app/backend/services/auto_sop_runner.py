@@ -18,14 +18,15 @@ import logging
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.backend.database.models import WatchlistEntry
+from app.backend.database.models import ScanRun, ScannerConfig, WatchlistEntry
+from app.backend.repositories.scan_evidence import owned_scan_runs, scan_evidence
 from app.backend.repositories.research_repository import ResearchReportRepository
 from src.research.html_render import render_sop
 from src.research.models import AnalyzeRequest, SECTION_ORDER
+from src.research.persist import analyze_to_db_kwargs
 from src.research.sop_orchestrator import run_sop
 
 logger = logging.getLogger(__name__)
@@ -56,13 +57,21 @@ def run_auto_sop_for_scan(
     if top_n <= 0:
         return []
 
-    entries = (
+    if owner_user_id is None:
+        owner_user_id = (db.query(ScannerConfig.user_id)
+                         .join(ScanRun, ScanRun.config_id == ScannerConfig.id)
+                         .filter(ScanRun.id == scan_run_id).scalar())
+    run = owned_scan_runs(db, owner_user_id).filter(ScanRun.id == scan_run_id).one_or_none()
+    if run is None:
+        return []
+    rows = (
         db.query(WatchlistEntry)
         .filter(WatchlistEntry.scan_run_id == scan_run_id)
         .order_by(WatchlistEntry.rank.asc())
         .limit(top_n)
         .all()
     )
+    entries = [scan_evidence(entry, run) for entry in rows]
     if not entries:
         logger.warning(
             "auto_sop: no watchlist entries for scan_run %s", scan_run_id,
@@ -71,44 +80,18 @@ def run_auto_sop_for_scan(
 
     repo = ResearchReportRepository(db)
     report_ids: list[int] = []
-    today_iso = date.today().isoformat()
 
-    # Per-user keys: run the SOP with the config OWNER's stored provider keys.
-    # The scanner cron runs detached from any HTTP request, so there is no
-    # current_user — without this, run_sop falls back to host env keys, which on
-    # the per-user-key deploy are ABSENT → "no API key". Mirrors the
-    # /research/analyze route and the report-schedule cron.
-    api_keys = None
-    if owner_user_id is not None:
-        try:
-            from app.backend.services.api_key_service import ApiKeyService
+    # Scheduled executions have no HTTP user. Charge only the verified config owner's keys.
+    from app.backend.services.api_key_service import ApiKeyService
+    try:
+        api_keys = ApiKeyService(db, owner_user_id).get_api_keys_dict()
+    except Exception:
+        logger.exception("auto_sop: failed to load keys for user %s", owner_user_id)
+        api_keys = {}
 
-            api_keys = ApiKeyService(db, owner_user_id).get_api_keys_dict()
-        except Exception:
-            logger.exception("auto_sop: failed to load keys for user %s", owner_user_id)
-
-    from src.storage.mongo import get_store
-    def source_ids(database):
-        run = database.scan_runs.find_one({'owner_id': str(owner_user_id),
-            'config_snapshot.sql_run_id': scan_run_id, 'status': {'$in': ['succeeded', 'partial']}})
-        if not run:
-            return {}
-        result = {}
-        for row in database.scan_results.find({'scan_run_id': run['_id'], 'owner_id': str(owner_user_id), 'selected': True}):
-            instrument = database.instruments.find_one({'_id': row['instrument_id']})
-            if instrument:
-                result[instrument['symbol']] = str(row['_id'])
-        return result
-    source_scan_ids = get_store().execute(source_ids) or {}
-
-    # ---- Phase 1: analyze every ticker CONCURRENTLY (DB-free) ----
-    # run_sop is thread-safe — FastAPI already calls it concurrently across
-    # requests, and it threads api_keys via SectionContext (never globals). It
-    # touches NO database. Fan the tickers out across a bounded pool, then
-    # render + persist back on THIS thread (a SQLAlchemy Session is
-    # single-thread-only). Peak LLM concurrency ~= workers * SOP_MAX_PARALLEL.
+    # Workers receive plain evidence dictionaries. All SQL access stays on this thread.
     def _analyze(entry):
-        ticker = entry.ticker
+        ticker = entry["ticker"]
         req = AnalyzeRequest(
             ticker=ticker,
             objective="medium_term",
@@ -118,11 +101,13 @@ def run_auto_sop_for_scan(
             risk_tolerance="balanced",
             use_personas=use_personas,
             included_sections=set(SECTION_ORDER),
+            market=entry["market"],
+            source_scan_evidence=entry,
         )
         t0 = time.monotonic()
         try:
-            report = run_sop(req, api_keys=api_keys, owner_id=owner_user_id,
-                             source_scan_result_id=source_scan_ids.get(ticker))
+            report = run_sop(req, api_keys=api_keys, owner_id=owner_user_id)
+            report["request"] = req
         except Exception as e:
             logger.exception("auto_sop: run_sop failed for %s: %s", ticker, e)
             return None
@@ -146,7 +131,7 @@ def run_auto_sop_for_scan(
             if analyzed[idx] is not None:
                 logger.info(
                     "auto_sop: %s analysis done (%.1fs)",
-                    entries[idx].ticker, analyzed[idx][1],
+                    entries[idx]["ticker"], analyzed[idx][1],
                 )
 
     # ---- Phase 2: render + persist SEQUENTIALLY on the main thread ----
@@ -156,7 +141,7 @@ def run_auto_sop_for_scan(
         if result is None:
             continue
         report, duration = result
-        ticker = entry.ticker
+        ticker = entry["ticker"]
 
         try:
             html = render_sop(report, report_id=None)
@@ -165,49 +150,13 @@ def run_auto_sop_for_scan(
             logger.exception("auto_sop: render failed for %s: %s", ticker, e)
             continue
 
-        arq_dict = {
-            "ticker": ticker,
-            "objective": "medium_term",
-            "position_budget_usd": None,
-            "already_holds": False,
-            "cost_basis_usd": None,
-            "risk_tolerance": "balanced",
-            "use_personas": use_personas,
-            "included_sections": sorted(set(SECTION_ORDER)),
-        }
-        sections_json = {
-            name: {
-                "markdown": p.markdown,
-                "structured": p.structured,
-                "skipped": p.skipped,
-                "persona_used": p.persona_used,
-                "skip_reason": p.skip_reason,
-            }
-            for name, p in (report.get("sections") or {}).items()
-            if not name.startswith("_")
-        }
-        report_markdown = "\n\n".join(
-            p.markdown for name, p in (report.get("sections") or {}).items()
-            if not name.startswith("_")
-        )
-
         try:
             row = repo.create_analyze(
-                report={
-                    "ticker": ticker,
-                    "scan_date": today_iso,
-                    "request_json": arq_dict,
-                    "report_markdown": report_markdown,
-                    "rendered_html": html,
-                    "use_personas": use_personas,
-                    "persona_assignments_json": report.get("persona_assignments"),
-                    "duration_seconds": duration,
-                    "analyze_request_json": arq_dict,
-                    "sections_json": sections_json,
-                },
+                report=analyze_to_db_kwargs(report["request"], report, duration_seconds=duration),
                 user_id=owner_user_id,
             )
         except Exception as e:
+            db.rollback()
             logger.exception("auto_sop: persist failed for %s: %s", ticker, e)
             continue
 
@@ -219,6 +168,7 @@ def run_auto_sop_for_scan(
             row.rendered_html = final_html
             db.commit()
         except Exception as e:
+            db.rollback()
             logger.exception(
                 "auto_sop: re-render with id failed for %s: %s", ticker, e,
             )

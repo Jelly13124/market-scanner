@@ -9,6 +9,7 @@ from typing import TypedDict
 from src.storage.mongo import MongoStore, utcnow
 from src.storage.history import ScanHistory
 from src.storage.checkpoint import OptionalMongoSaver
+from src.storage.daily_prices import save_price_bars
 from v2.data.cached_client import CachedDataClient
 from v2.data.models import Price
 from v2.scanner.models import ScanOutcome, ScoredEntry
@@ -98,7 +99,7 @@ def test_revisions_preserve_old_bars(store):
 def outcomes():
     return [ScanOutcome(ticker='A', outcome='evaluated', selected=True,
         entry=ScoredEntry(ticker='A', composite_score=80., event_score=80., rank=1),
-        detector_results=[{'detector': 'test', 'version': '1', 'status': 'triggered'}]),
+        detector_results=[{'detector': 'test', 'version': '1', 'status': 'triggered', 'signal_session': '2026-10-21'}]),
         ScanOutcome(ticker='B', outcome='evaluated', detector_results=[{'detector': 'test', 'version': '1', 'status': 'no_event'}]),
         ScanOutcome(ticker='C', outcome='no_data', detector_results=[{'detector': 'test', 'version': '1', 'status': 'no_data'}]),
         ScanOutcome(ticker='D', outcome='error', detector_results=[{'detector': 'test', 'version': '1', 'status': 'error'}])]
@@ -112,6 +113,10 @@ def save_scan(store, key='slot1'):
 def test_full_universe_and_independent_rescans(store):
     assert save_scan(store)['status'] == 'partial'
     assert save_scan(store)['reused']
+    selected = store._db.scan_results.find_one({'selected': True})
+    assert selected['quality']['signal_sessions'] == {'test': '2026-10-21'}
+    # Installed validators accept only the original detector_results keys.
+    assert 'signal_session' not in selected['detector_results'][0]
     assert store._db.scan_results.count_documents({}) == 4
     save_scan(store, 'manual2')
     assert store._db.scan_results.count_documents({}) == 8
@@ -161,7 +166,7 @@ def test_existing_raw_mongo_bars_cover_overlapping_request(store):
     instrument = store.instrument('SPY', store._db)
     bars = [bar().model_copy(update={'time': day}).model_dump(mode='json')
             for day in ['2024-01-02', '2024-01-03', '2024-01-04', '2024-01-05']]
-    CachedDataClient._save_prices(store._db, 'get_prices', instrument, bars, now)
+    save_price_bars(store._db, instrument, bars, now)
     backend = Backend()
     rows = CachedDataClient(backend, store=store).get_prices('SPY', '2024-01-02', '2024-01-05')
     assert len(rows) == 4
@@ -269,3 +274,55 @@ def test_legacy_migration_is_idempotent_and_never_invents_full_universe(store):
         assert session.query(ResearchReport).count() == 1
         assert session.query(WatchlistEntry).count() == 1
     engine.dispose()
+
+
+def test_scan_report_reuse_requires_same_sql_signal_and_keeps_original_market_observation(store):
+    from dataclasses import replace
+    from mongomock.gridfs import enable_gridfs_integration
+    from src.research.models import AnalyzeRequest
+    from src.research.shared_data import SharedData
+    from src.research.sop_orchestrator import run_sop
+    from src.storage.analysis import AnalysisHistory
+
+    enable_gridfs_integration()
+    signal = {"scan_result_id": 21, "scan_run_id": 10, "ticker": "SPY", "rank": 1,
+              "direction": "bullish", "composite_score": 80.0, "triggers": []}
+    request = AnalyzeRequest(ticker="SPY", objective="medium_term", position_budget_usd=None,
+        already_holds=False, cost_basis_usd=None, risk_tolerance="balanced", use_personas=False,
+        included_sections={"data_health"}, source_scan_evidence=signal)
+    shared = SharedData(ticker="SPY", scan_date="2026-10-22", prices=[bar()], financials=[],
+        insider_trades=[], news=[], analyst_actions=[], analyst_targets=None, earnings_history=[],
+        company_facts={}, sector_etf_prices=[], spy_prices=[])
+    with patch("src.research.sop_orchestrator.fetch_shared_data", return_value=shared), \
+         patch("src.research.sop_orchestrator.run_signal_backtest", return_value=None), \
+         patch("src.storage.analysis.AnalysisHistory", return_value=AnalysisHistory(store)), \
+         patch("src.storage.checkpoint.get_store", return_value=store):
+        stored = run_sop(request, owner_id=1)
+        reused = run_sop(request, owner_id=1)
+        assert reused["reused"]
+        assert reused["analysis_market_evidence"] == stored["analysis_market_evidence"]
+        for changed in (None, dict(signal, scan_result_id=22), dict(signal, direction="bearish")):
+            different = run_sop(replace(request, source_scan_evidence=changed), owner_id=1)
+            assert not different.get("reused")
+            assert different["usage"]["cache_hits"] == 0
+        with pytest.raises(ValueError, match="unauthorized"):
+            run_sop(replace(request, source_scan_evidence=None), owner_id=1,
+                    resume_run_id=stored["analysis_run_id"])
+
+
+def test_historical_consensus_ignores_legacy_backdated_cache(store):
+    from src.storage.mongo import digest
+    from v2.data.yfinance_client import YFinanceClient
+
+    request = {"ticker": "AAPL", "asof_date": "2001-01-05"}
+    key = digest({"source": "hybrid", "method": "get_analyst_targets", "request": request, "schema": 1})
+    store._db.company_snapshots.insert_one({
+        "snapshot_kind": "provider_response", "content_hash": "legacy",
+        "observed_at": utcnow(), "payload": {
+            "request_key": key, "expires_at": utcnow() + timedelta(days=1),
+            "result": {"ticker": "AAPL", "asof_date": "2001-01-05", "target_mean": 990.},
+        },
+    })
+    with patch("yfinance.Ticker") as live:
+        assert CachedDataClient(YFinanceClient(), store=store).get_analyst_targets(**request) is None
+        live.assert_not_called()

@@ -28,6 +28,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AgentRunsList } from './agent-runs-list';
 import { NotificationSettings } from './notification-settings';
+import { ScannedUniverse } from './scanned-universe';
 import { ScannerConfigDialog } from './scanner-config-dialog';
 import { WatchlistTable } from './watchlist-table';
 
@@ -120,7 +121,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
     setDeleting(true);
     try {
       await scannerService.deleteConfig(targetId);
-      // Drop any in-flight scan view tied to this config — its rows are gone.
+      // Close the view for the removed configuration.
       abortRef.current?.();
       setRunId(null);
       setRun(null);
@@ -156,16 +157,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
         try {
           const detail = await scannerService.getRunEntries(run_id);
           setEntries(detail.entries);
-          setRun({
-            id: detail.id,
-            config_id: detail.config_id,
-            status: detail.status,
-            started_at: detail.started_at,
-            completed_at: detail.completed_at,
-            universe_size: detail.universe_size,
-            error_message: detail.error_message,
-            created_at: detail.created_at,
-          });
+          setRun(detail);
         } catch (err) {
           setStreamError(err instanceof Error ? err.message : String(err));
         }
@@ -197,7 +189,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
 
   // Re-attach to the selected config's latest run on (re)mount or config switch.
   // A tab switch unmounts this panel and aborts the SSE, but the scan keeps
-  // running server-side — RUNNING => resubscribe to live progress, COMPLETE =>
+  // running server-side — PENDING/RUNNING => resubscribe, COMPLETE =>
   // restore the results, otherwise show the empty state.
   useEffect(() => {
     if (selectedId == null) return;
@@ -206,7 +198,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
       try {
         const latest = await scannerService.getLatestRun(selectedId);
         if (cancelled) return;
-        if (latest && latest.status === 'RUNNING') {
+        if (latest && (latest.status === 'PENDING' || latest.status === 'RUNNING')) {
           setRunId(latest.id);
           setRun(latest);
           setProgress(null);
@@ -239,20 +231,17 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
     };
   }, [selectedId, subscribeToRun]);
 
-  function handleTickerClick(ticker: string) {
-    // One-click → open/focus the Analyze tab, pre-fill this ticker, auto-run
-    // the SOP deep-research report. Scanner universes are US.
-    requestAnalyze(ticker, 'us');
+  function handleTickerClick(entry: WatchlistEntryResponse) {
+    requestAnalyze(entry.ticker, entry.market, entry.id);
   }
 
   // ---- render -------------------------------------------------------------
 
-  const isRunning =
+  const isRunning = !streamError && (
+    run?.status === 'PENDING' ||
     run?.status === 'RUNNING' ||
-    (runId !== null &&
-      progress != null &&
-      progress.processed < progress.total &&
-      entries.length === 0);
+    (runId !== null && progress != null && progress.processed < progress.total && entries.length === 0)
+  );
 
   return (
     <div className="h-full w-full flex flex-col bg-background">
@@ -337,7 +326,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
       )}
 
       {/* Progress (live SSE) */}
-      {progress && (
+      {progress && !streamError && (
         <div className="border-b px-4 py-3 bg-muted/40">
           <div className="flex items-center gap-3 text-sm">
             <span className="font-mono tabular-nums">
@@ -375,6 +364,9 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
               ? 'Create a scanner config to get started.'
               : 'Pick a config and click "Run now" to generate today\'s watchlist.'}
           </div>
+        )}
+        {run?.universe_snapshot_id != null && (
+          <ScannedUniverse key={run.universe_snapshot_id} snapshotId={run.universe_snapshot_id} />
         )}
         {runId && entries.length > 0 && (
           <>
@@ -419,9 +411,7 @@ export function ScannerPanel({ initialConfigId }: ScannerPanelProps) {
             <DialogDescription>
               {selectedConfig ? (
                 <>
-                  Permanently delete <span className="font-semibold">{selectedConfig.name}</span>?
-                  This also removes all past scan runs and watchlist entries created by
-                  this config. This action cannot be undone.
+                  Remove <span className="font-semibold">{selectedConfig.name}</span> from your scanner configurations and stop its schedule?
                 </>
               ) : (
                 'No config selected.'

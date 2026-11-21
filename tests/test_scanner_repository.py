@@ -363,3 +363,27 @@ class TestAnalystTargetSnapshotRepository:
         # Composite is a superset of both, deduped.
         assert set(composite) == ndx | sp5
         assert len(composite) == len(set(composite))  # no duplicates
+
+
+def test_deleted_configuration_keeps_owned_run_and_stops_scheduling(configs, runs):
+    cfg = configs.create(name="Old signal", universe_kind="sp500", user_id=1)
+    run = runs.create_pending(cfg.id)
+    assert configs.delete(cfg.id, user_id=1)
+    assert runs.get_by_id_for_user(run.id, user_id=1) is not None
+    assert runs.get_by_id_for_user(run.id, user_id=2) is None
+    assert configs.get_by_id(cfg.id, user_id=1) is None
+    assert configs.get_by_id_unscoped(cfg.id) is None
+    assert configs.list_for_user(1) == []
+    assert configs.list_all() == []
+
+
+def test_cannot_create_run_from_foreign_execution_snapshot(configs, runs, db_session):
+    from app.backend.database.models import UniverseSnapshot
+
+    cfg = configs.create(name="Own", universe_kind="sp500", user_id=1)
+    foreign = UniverseSnapshot(user_id=2, origin="scanner", market="US", tickers=["AAPL"])
+    db_session.add(foreign)
+    db_session.commit()
+    with pytest.raises(ValueError, match="snapshot"):
+        runs.create_pending(cfg.id, universe_snapshot_id=foreign.id)
+    assert runs.list_for_config(cfg.id) == []

@@ -16,6 +16,7 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.backend.auth.dependencies import get_current_user
@@ -24,6 +25,8 @@ from app.backend.database import get_db
 from app.backend.database.models import TickerSnapshot, User
 from app.backend.models.screener_schemas import (
     ScreenerColumnMetadata,
+    ScreenerSelectionCreate,
+    UniverseSnapshotResponse,
     ScreenerSnapshotResponse,
     ScreenerStatusResponse,
     SectorSummaryRow,
@@ -34,6 +37,7 @@ from app.backend.models.screener_schemas import (
 from app.backend.models.screener_preset_schemas import PresetCreate, PresetOut, PresetPatch
 from app.backend.repositories.screener_preset_repository import ScreenerPresetRepository
 from app.backend.repositories.screener_repository import ScreenerRepository
+from app.backend.repositories.watchlist_repository import UserWatchlistRepository
 from app.backend.services.scheduler_service import SchedulerService, get_scheduler_service
 from app.backend.services.snapshot_refresh import get_refresh_state, start_refresh
 from src.screener.column_metadata import COLUMN_METADATA
@@ -105,6 +109,41 @@ def get_latest_snapshot(
         snapshot_date=snapshot_date,
         last_updated=last_updated,
     )
+
+
+@router.post("/selections", response_model=UniverseSnapshotResponse, status_code=201)
+def save_selection(
+    body: ScreenerSelectionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UniverseSnapshotResponse:
+    try:
+        snapshot = ScreenerRepository(db).save_selection(
+            user_id=current_user.id, **body.model_dump(),
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except IntegrityError as exc:
+        db.rollback()
+        if body.new_watchlist_name and UserWatchlistRepository(db).get_by_name(
+            body.new_watchlist_name, user_id=current_user.id,
+        ):
+            raise HTTPException(409, "Watchlist name already exists") from exc
+        raise
+    if snapshot is None:
+        raise HTTPException(404, "Watchlist not found")
+    return UniverseSnapshotResponse.model_validate(snapshot)
+
+
+@router.get("/universe-snapshots/{snapshot_id}", response_model=UniverseSnapshotResponse)
+def get_universe_snapshot(
+    snapshot_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> UniverseSnapshotResponse:
+    snapshot = ScreenerRepository(db).get_universe_snapshot(snapshot_id, user_id=current_user.id)
+    if snapshot is None:
+        raise HTTPException(404, "Universe snapshot not found")
+    return UniverseSnapshotResponse.model_validate(snapshot)
 
 
 @router.get("/snapshot/columns", response_model=ScreenerColumnMetadata)

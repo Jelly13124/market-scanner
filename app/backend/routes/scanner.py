@@ -31,11 +31,12 @@ import logging
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
-from app.backend.database.models import User
+from app.backend.database.models import User, WatchlistEntry
 from app.backend.rate_limit import heavy_limit, rate_limited
 from app.backend.models.scanner_schemas import (
     DetectorMetadataResponse,
@@ -51,6 +52,7 @@ from app.backend.repositories.scanner_repository import (
     ScannerConfigRepository,
     WatchlistEntryRepository,
 )
+from app.backend.repositories.watchlist_repository import UserWatchlistRepository
 from app.backend.services.scan_broadcaster import ScanBroadcaster, get_broadcaster
 from app.backend.services.scanner_service import ScanAlreadyRunningError
 from app.backend.services.scheduler_service import (
@@ -119,6 +121,11 @@ def list_configs(
     return [ScannerConfigResponse.model_validate(r) for r in rows]
 
 
+def _check_watchlist(db: Session, watchlist_id: int | None, user_id: int) -> None:
+    if watchlist_id is not None and UserWatchlistRepository(db).get(watchlist_id, user_id=user_id) is None:
+        raise HTTPException(404, "Watchlist not found")
+
+
 @router.post(
     "/configs",
     response_model=ScannerConfigResponse,
@@ -131,6 +138,7 @@ def create_config(
     current_user: User = Depends(get_current_user),
 ) -> ScannerConfigResponse:
     _validate_cron(body.cron_expr)
+    _check_watchlist(db, body.user_watchlist_id, current_user.id)
     cfg = ScannerConfigRepository(db).create(
         name=body.name,
         universe_kind=body.universe_kind.value,
@@ -176,7 +184,23 @@ def update_config(
 ) -> ScannerConfigResponse:
     if body.cron_expr is not None:
         _validate_cron(body.cron_expr)
+    repo = ScannerConfigRepository(db)
+    cfg = repo.get_by_id(config_id, user_id=current_user.id)
+    if cfg is None:
+        raise HTTPException(404, f"No scanner config with id {config_id}")
+    _check_watchlist(db, body.user_watchlist_id, current_user.id)
     updates = body.model_dump(exclude_unset=True)
+    candidate = ScannerConfigResponse.model_validate(cfg).model_dump()
+    candidate.update({k: v for k, v in updates.items() if v is not None or k == "user_watchlist_id"})
+    # An already orphaned config may be renamed or disabled while awaiting repair.
+    orphaned = (cfg.universe_kind == "watchlist" and cfg.user_watchlist_id is None
+                and candidate["universe_kind"] == "watchlist" and candidate["user_watchlist_id"] is None
+                and not candidate["is_enabled"])
+    if not orphaned:
+        try:
+            ScannerConfigCreateRequest.model_validate(candidate)
+        except ValidationError as exc:
+            raise HTTPException(422, exc.errors()[0]["msg"]) from exc
     # Pydantic enum → str
     if "universe_kind" in updates and updates["universe_kind"] is not None:
         updates["universe_kind"] = updates["universe_kind"].value
@@ -184,7 +208,7 @@ def update_config(
     # (the repo uses this to know whether to overwrite an existing FK).
     if "user_watchlist_id" in updates:
         updates["_set_watchlist_id"] = True
-    cfg = ScannerConfigRepository(db).update(config_id, user_id=current_user.id, **updates)
+    cfg = repo.update(config_id, user_id=current_user.id, **updates)
     if not cfg:
         raise HTTPException(404, f"No scanner config with id {config_id}")
     try:
@@ -236,14 +260,19 @@ def run_config_now(
     config's ``email_watchlist``/``email_reports`` flags). A plain manual run
     does NOT email. Cron runs deliver unconditionally via ``execute``.
     """
-    if not ScannerConfigRepository(db).get_by_id(config_id, user_id=current_user.id):
+    cfg = ScannerConfigRepository(db).get_by_id(config_id, user_id=current_user.id)
+    if cfg is None:
         raise HTTPException(404, f"No scanner config with id {config_id}")
+    if cfg.universe_kind == "watchlist" and cfg.user_watchlist_id is None:
+        raise HTTPException(422, "The source Watchlist was removed. Choose another Watchlist to run this Scanner.")
     try:
         run_id = scheduler.run_now(config_id, deliver_emails=send_email)
     except ScanAlreadyRunningError as e:
         # Idempotent: a run is already in flight for this config. Return it so the
         # client re-attaches to its stream instead of seeing a 500.
         return {"run_id": e.run_id, "status": "RUNNING", "already_running": True}
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
     except Exception as e:
         logger.exception("Manual run for config %s failed to dispatch", config_id)
         raise HTTPException(500, str(e))
@@ -298,6 +327,7 @@ def get_run_entries(
         started_at=run.started_at,
         completed_at=run.completed_at,
         universe_size=run.universe_size,
+        universe_snapshot_id=run.universe_snapshot_id,
         error_message=run.error_message,
         created_at=run.created_at,
         entries=entries,
@@ -343,28 +373,41 @@ async def stream_run(
     run_id: int,
     request: Request,
     broadcaster: ScanBroadcaster = Depends(get_broadcaster),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """SSE stream of ``ScanBroadcaster`` events for ``run_id``.
 
     Stream stays open until the scan completes (``event: complete`` / ``error``)
     or the client disconnects. If the run has already finished by the time the
-    client subscribes, the stream ends quickly with no events.
+    client subscribes, replay its terminal status from PostgreSQL.
     """
+
+    if ScanRunRepository(db).get_by_id_for_user(run_id, user_id=current_user.id) is None:
+        raise HTTPException(404, f"No scan run with id {run_id}")
+
+    bind = db.get_bind()
+    owner_id = current_user.id
+
+    def terminal_event():
+        with Session(bind) as session:
+            run = ScanRunRepository(session).get_by_id_for_user(run_id, user_id=owner_id)
+            if run is None or run.status == "ERROR":
+                return {"event": "error", "run_id": run_id,
+                        "message": run.error_message if run else "Scan unavailable"}
+            if run.status == "COMPLETE":
+                count = session.query(WatchlistEntry.id).filter_by(scan_run_id=run_id).count()
+                return {"event": "complete", "run_id": run_id, "entries": count}
+            return None
 
     async def event_generator():
         # Send a heartbeat-style start event so the client gets a response immediately.
         yield _sse_event("start", {"run_id": run_id})
 
-        gen = broadcaster.subscribe(run_id)
-        try:
-            async for ev in gen:
-                if await request.is_disconnected():
-                    break
-                event_name = ev.get("event", "progress")
-                yield _sse_event(event_name, ev)
-        finally:
-            # Async generators clean themselves up when closed; nothing else to do.
-            pass
+        async for ev in broadcaster.subscribe(run_id, terminal_event):
+            if await request.is_disconnected():
+                break
+            yield _sse_event(ev.get("event", "progress"), ev)
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

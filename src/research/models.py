@@ -197,6 +197,8 @@ class AnalyzeRequest:
     # ETFs). "cn" swaps the benchmark to 000300.SH (沪深300) and resolves
     # sector ETFs via SW1 (申万一级) index codes.
     market: str = "us"
+    # Populated from an owner-scoped SQL lookup, never from client-supplied metrics.
+    source_scan_evidence: dict | None = None
 
     def __post_init__(self) -> None:
         # Clamp to a sane window — guards against the API schema being
@@ -251,3 +253,4 @@ class AnalyzeReport(TypedDict, total=False):
     persona_assignments: dict | None
     backtest: BacktestVerdict | None
     rendered_html: str | None
+    analysis_market_evidence: dict | None

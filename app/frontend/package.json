@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:handoff": "node --test tests/scanner-handoff.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.10",
@@ -51,6 +52,7 @@
     "eslint": "^8.56.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
+    "playwright-core": "1.65.1",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.1",
     "tailwindcss-animate": "^1.0.7",

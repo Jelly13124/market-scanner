@@ -16,7 +16,6 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import date as _date
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -40,12 +39,14 @@ from app.backend.models.research_schemas import (
     VerdictPayload,
 )
 from app.backend.repositories.research_repository import ResearchReportRepository
+from app.backend.repositories.scan_evidence import resolve_scan_evidence
 from app.backend.services.report_delivery import email_report_html
+from src.storage.mongo import StorageUnavailable
 from src.research.backtest_signal import _closes, run_signal_backtest
 from src.research.charts.render import render_equity_curve_png, render_kline_png
 from src.research.html_render import render_html, render_sop
 from src.research.models import AnalyzeRequest, ResearchRequest, SECTION_ORDER
-from src.research.persist import state_to_db_kwargs
+from src.research.persist import analyze_to_db_kwargs, state_to_db_kwargs
 from src.research.pipeline import run_research
 from src.research.sections.conviction import conviction_total_score
 from src.research.shared_data import fetch_shared_data
@@ -330,6 +331,9 @@ def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
         scan_date=row.scan_date,
         created_at=row.created_at,
         duration_seconds=row.duration_seconds,
+        source_scan_result_id=row.source_scan_result_id,
+        source_scan_evidence=arq.get("source_scan_evidence"),
+        analysis_market_evidence=arq.get("analysis_market_evidence"),
         analysis_run_id=report_dict.get('analysis_run_id', arq.get('analysis_run_id')),
         analysis_status=report_dict.get('analysis_status', arq.get('analysis_status')),
         storage_status=report_dict.get('storage_status', arq.get('storage_status')),
@@ -362,6 +366,15 @@ def trigger_analyze(
     streaming is deferred.
     """
     internal_req = _to_analyze_request(req)
+    if req.source_scan_result_id is not None:
+        try:
+            evidence = resolve_scan_evidence(db, req.source_scan_result_id, user_id=current_user.id,
+                                             ticker=req.ticker, market=req.market)
+        except StorageUnavailable as error:
+            raise HTTPException(503, "Scan archive unavailable") from error
+        if evidence is None:
+            raise HTTPException(404, "Unknown or unauthorized source scan result")
+        internal_req.source_scan_evidence = evidence
 
     # Per-user keys (multi-tenant): fetch the LOGGED-IN user's stored keys and
     # FAIL FAST if they lack the configured provider's key, so the host's keys
@@ -378,7 +391,7 @@ def trigger_analyze(
     t0 = time.monotonic()
     try:
         report = run_sop(internal_req, api_keys=api_keys, owner_id=current_user.id,
-                         force_rerun=req.force_rerun, source_scan_result_id=req.source_scan_result_id, resume_run_id=req.resume_run_id)
+                         force_rerun=req.force_rerun, resume_run_id=req.resume_run_id)
     except ValueError as e:
         # Belt-and-suspenders: a deep "No API key ..." from get_model's
         # no-fallback path (e.g. a section configured for a different provider
@@ -406,36 +419,7 @@ def trigger_analyze(
     html = render_sop(report)
     report["rendered_html"] = html
 
-    from src.storage.mongo import json_value
-    arq_dict = json_value(internal_req)
-    arq_dict.update(storage_status=report.get('storage_status'), mongo_report_id=report.get('mongo_report_id'),
-                    source_scan_result_id=req.source_scan_result_id, analysis_run_id=report.get('analysis_run_id'),
-                    analysis_status=report.get('analysis_status'), usage=report.get('usage', {}))
-    sections_json = {
-        name: {
-            "markdown": p.markdown, "structured": p.structured,
-            "skipped": p.skipped, "persona_used": p.persona_used,
-            "skip_reason": p.skip_reason,
-        }
-        for name, p in (report.get("sections") or {}).items()
-        if not name.startswith("_")
-    }
-    today_iso = _date.today().isoformat()
-    report_kwargs = {
-        "ticker": internal_req.ticker,
-        "scan_date": today_iso,
-        "request_json": arq_dict,
-        "report_markdown": "\n\n".join(
-            p.markdown for name, p in (report.get("sections") or {}).items()
-            if not name.startswith("_")
-        ),
-        "rendered_html": html,
-        "use_personas": internal_req.use_personas,
-        "persona_assignments_json": report.get("persona_assignments"),
-        "duration_seconds": duration,
-        "analyze_request_json": arq_dict,
-        "sections_json": sections_json,
-    }
+    report_kwargs = analyze_to_db_kwargs(internal_req, report, duration_seconds=duration)
     repo = ResearchReportRepository(db)
     row = repo.create_analyze(report=report_kwargs, user_id=current_user.id)
 

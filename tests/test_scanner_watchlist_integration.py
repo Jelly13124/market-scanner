@@ -176,3 +176,35 @@ class TestPydanticValidation:
             universe_kind="sp500",
         )
         assert cfg.user_watchlist_id is None
+
+
+def test_config_rejects_another_users_watchlist(client):
+    with client._session_local() as db:
+        foreign = UserWatchlistRepository(db).create("Private", user_id=2)
+        watchlist_id = foreign.id
+    config = {"name": "Scan", "universe_kind": "custom", "universe_tickers": ["AAPL"]}
+    owned = client.post("/scanner/configs", json=config).json()
+    target = {"universe_kind": "watchlist", "user_watchlist_id": watchlist_id}
+    assert client.post("/scanner/configs", json={**config, **target}).status_code == 404
+    assert client.patch(f"/scanner/configs/{owned['id']}", json=target).status_code == 404
+
+
+def test_config_can_be_retargeted_after_watchlist_deletion(client):
+    from app.backend.repositories.scanner_repository import ScannerConfigRepository
+
+    # PostgreSQL sets the FK to null when the source is removed.
+    with client._session_local() as db:
+        cfg = ScannerConfigRepository(db).create(
+            name="Missing list", universe_kind="watchlist", is_enabled=False, user_id=1,
+        )
+        cfg_id = cfg.id
+        replacement_id = UserWatchlistRepository(db).create("Next", user_id=1).id
+    missing, = client.get("/scanner/configs").json()
+    assert missing["user_watchlist_id"] is None
+    assert client.post(f"/scanner/configs/{cfg_id}/run").status_code == 422
+    assert client.patch(f"/scanner/configs/{cfg_id}", json={"is_enabled": True}).status_code == 422
+    update = client.patch(f"/scanner/configs/{cfg_id}", json={
+        "user_watchlist_id": replacement_id, "is_enabled": True,
+    })
+    assert update.status_code == 200
+    assert update.json()["user_watchlist_id"] == replacement_id

@@ -57,6 +57,7 @@ class AnalystRatingDetector(EventDetector):
     """Trigger on a fresh wave of upgrades/downgrades."""
 
     name = "analyst_rating"
+    version = "2"  # Only provably dated consensus contributes inspection values.
 
     def __init__(
         self,
@@ -150,21 +151,6 @@ class AnalystRatingDetector(EventDetector):
             net_z = (recent_score - baseline_mean) / baseline_std
 
         # ------------------------------------------------------------------
-        # Sub-signal 2: target_mean / current_price gap
-        # ------------------------------------------------------------------
-        gap = 0.0
-        gap_z = 0.0
-        target_mean = None
-        current_price = None
-        if target is not None:
-            target_mean = target.target_mean
-            current_price = target.current_price
-            if (target_mean is not None and current_price is not None
-                    and current_price > 0):
-                gap = (target_mean - current_price) / current_price
-                gap_z = gap / self._gap_scale  # 5% per "unit" of consensus disagreement
-
-        # ------------------------------------------------------------------
         # Gating — net upgrade flow only. Target gap is inspection-only.
         # ------------------------------------------------------------------
         net_hit = abs(net_z) >= self._net_thresh
@@ -175,15 +161,22 @@ class AnalystRatingDetector(EventDetector):
             "baseline_std": float(baseline_std),
             "baseline_n": float(len(baseline_scores)),
             "net_z": float(net_z),
-            "target_mean": float(target_mean) if target_mean is not None else 0.0,
-            "current_price": float(current_price) if current_price is not None else 0.0,
-            "gap": float(gap),
-            "gap_z": float(gap_z),
             "actions_in_window": float(len([
                 a for a in (actions or [])
                 if (_parse_date(a.action_date) or today) >= recent_cutoff
             ])),
         }
+
+        observed = _parse_date(getattr(target, "asof_date", None))
+        if observed is not None and observed <= today:
+            if target.target_mean is not None:
+                components["target_mean"] = float(target.target_mean)
+            if target.current_price is not None:
+                components["current_price"] = float(target.current_price)
+            if target.target_mean is not None and target.current_price is not None and target.current_price > 0:
+                gap = (target.target_mean - target.current_price) / target.current_price
+                components["gap"] = float(gap)
+                components["gap_z"] = float(gap / self._gap_scale)
 
         if not net_hit:
             return EventTrigger(

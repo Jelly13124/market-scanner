@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -52,13 +52,21 @@ class ScanBroadcaster:
             except RuntimeError:
                 pass
 
-    async def subscribe(self, run_id: int) -> AsyncIterator[dict]:
+    async def subscribe(
+        self, run_id: int, terminal_event: Callable[[], dict | None] | None = None,
+    ) -> AsyncIterator[dict]:
         """Async generator yielding events for *run_id* until end-of-stream."""
         loop = asyncio.get_running_loop()
         q: asyncio.Queue = asyncio.Queue()
         with self._lock:
             self._subs.setdefault(run_id, []).append((loop, q))
         try:
+            # Register first so a worker finishing during the status read is also observed.
+            if terminal_event is not None:
+                terminal = terminal_event()
+                if terminal is not None:
+                    yield terminal
+                    return
             while True:
                 event = await q.get()
                 if event is None:

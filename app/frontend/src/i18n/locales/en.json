@@ -392,6 +392,11 @@
     }
   },
   "scanner": {
+    "signalSession": "Signal session",
+    "evaluatedAsOf": "Evaluated as of",
+    "viewScannedUniverse": "View scanned universe",
+    "loadingUniverse": "Loading universe…",
+    "sourceSelection": "Last Screener selection saved to this watchlist",
     "title": "Daily Market Scanner",
     "newConfig": "+ New config",
     "deleteConfig": "Delete config \"{{name}}\"?",
@@ -583,6 +588,8 @@
       "noListsCreate": "No watchlists yet — create one below.",
       "newListPlaceholder": "New watchlist name…",
       "createAndAdd": "Create & add",
+      "saved": "Saved {{n}} selected tickers to {{name}}",
+      "saveFailed": "Could not save selection",
       "createFailed": "Failed to create watchlist",
       "added": "Added {{n}} to {{name}}",
       "addFailed": "{{n}} ticker(s) failed to add"

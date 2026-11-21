@@ -392,6 +392,11 @@
     }
   },
   "scanner": {
+    "signalSession": "信号交易日",
+    "evaluatedAsOf": "扫描截至",
+    "viewScannedUniverse": "查看本次扫描的股票池",
+    "loadingUniverse": "正在读取股票池…",
+    "sourceSelection": "保存到此自选股列表的最近一次 Screener 筛选",
     "title": "每日市场扫描器",
     "newConfig": "+ 新配置",
     "deleteConfig": "删除配置 \"{{name}}\"？",
@@ -583,6 +588,8 @@
       "noListsCreate": "还没有自选清单 — 在下方新建一个。",
       "newListPlaceholder": "新建清单名称…",
       "createAndAdd": "创建并加入",
+      "saved": "已将 {{n}} 只选中股票保存到 {{name}}",
+      "saveFailed": "无法保存本次选股",
       "createFailed": "创建清单失败",
       "added": "已将 {{n}} 只加入 {{name}}",
       "addFailed": "{{n}} 只股票加入失败"

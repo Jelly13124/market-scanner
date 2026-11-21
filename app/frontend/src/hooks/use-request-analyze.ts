@@ -14,12 +14,12 @@ export function useRequestAnalyze() {
   const { openTab, isTabOpen, setActiveTab } = useTabsContext();
 
   return useCallback(
-    (ticker: string, market: 'us' | 'cn' = 'us') => {
+    (ticker: string, market: 'us' | 'cn' = 'us', sourceScanResultId?: number) => {
       const clean = ticker.trim().toUpperCase();
       if (!clean) return;
       // Queue first so an already-mounted Analyze panel runs immediately;
       // a fresh tab will read the pending request on mount.
-      analyzeBus.requestAnalyze({ ticker: clean, market });
+      analyzeBus.requestAnalyze({ ticker: clean, market, source_scan_result_id: sourceScanResultId });
       if (isTabOpen('analyze', 'analyze')) {
         setActiveTab('analyze');
       } else {

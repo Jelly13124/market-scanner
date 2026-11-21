@@ -48,6 +48,7 @@ export interface TriggerPayload {
   reason: string;
   components?: Record<string, number>;
   asof_date?: string | null;
+  signal_session?: string | null;
 }
 
 export interface ScannerConfigResponse {
@@ -111,6 +112,7 @@ export interface ScannerConfigUpdateRequest {
 }
 
 export interface ScanRunSummary {
+  universe_snapshot_id?: number | null;
   id: number;
   config_id: number;
   status: ScanStatus;
@@ -122,6 +124,7 @@ export interface ScanRunSummary {
 }
 
 export interface WatchlistEntryResponse {
+  market: 'us' | 'cn';
   id: number;
   scan_run_id: number;
   ticker: string;

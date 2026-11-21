@@ -125,8 +125,10 @@ class YFinanceClient:
         *,
         asof_date: str | None = None,
     ) -> AnalystTarget | None:
-        """Snapshot of analyst price targets. ``asof_date`` is informational
-        only — yfinance returns current consensus regardless."""
+        """Yahoo supplies current consensus only, dated when observed."""
+        observed = _date.today().isoformat()
+        if asof_date is not None and asof_date != observed:
+            return None
         try:
             import yfinance as yf
             t = yf.Ticker(ticker)
@@ -138,7 +140,6 @@ class YFinanceClient:
         if not isinstance(raw, dict) or not raw:
             return None
 
-        when = asof_date or _date.today().isoformat()
         try:
             return AnalystTarget(
                 ticker=ticker,
@@ -148,7 +149,7 @@ class YFinanceClient:
                 target_high=_safe_float(raw.get("high")),
                 target_low=_safe_float(raw.get("low")),
                 n_analysts=_safe_int(raw.get("numberOfAnalysts") or raw.get("number_of_analysts")),
-                asof_date=when,
+                asof_date=observed,
             )
         except Exception as e:
             logger.debug("Malformed analyst target row for %s: %s", ticker, e)

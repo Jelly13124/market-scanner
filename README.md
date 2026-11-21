@@ -319,7 +319,7 @@ cd ../..
 
 Restart the backend and Vite, or rebuild the frontend for the backend-served setup. Do not overwrite your `.env` or regenerate existing secrets.
 
-The current migrations include debate rounds, personal Paper prototype tables, and `report_schedules.analysis_config` for scheduled workflow snapshots. Old schedules retain their default behavior. Old backtest records are retained and must be rerun to use the corrected execution and cost calculations.
+The current migrations include debate rounds, personal Paper prototype tables, scheduled workflow settings, and the PostgreSQL links between Screener selections, Scanner runs and Analyze reports. Old schedules retain their default behavior. Old backtest records are retained and must be rerun to use the corrected execution and cost calculations.
 
 An older SQLite database is not automatically imported into PostgreSQL. An existing business database without Alembic version history needs a separate schema/migration review before using the initializer.
 
@@ -351,6 +351,22 @@ Backtests evaluate signals at the close and execute at the next available tradin
 
 When enabled, MongoDB provides additional cache/history storage, datasets, node caches, and checkpoints. Without it, online analysis continues, but SQL report copies do not replace full MongoDB history or checkpoint-based recovery.
 
+## Seed five years of daily prices in local MongoDB
+
+Run these commands from the repository root after installing the Poetry dependencies above. Start the local MongoDB container that owns your data volume. If you need a new local instance, create it once with `docker run -d --name market-scanner-history -p 127.0.0.1:27017:27017 -v market-scanner-history:/data/db mongo:8`. For subsequent starts use `docker start market-scanner-history`.
+
+```bash
+export MONGODB_URI=mongodb://127.0.0.1:27017
+export MONGODB_DATABASE=market_scanner
+export MONGODB_TIMEOUT_MS=30000
+poetry run python -m scripts.mongo_history install-schema --apply
+poetry run python -m scripts.backfill_prices --universe nasdaq100_sp500
+```
+
+For a smaller run use `poetry run python -m scripts.backfill_prices --tickers AAPL MSFT`. Both commands include SPY once. The named universe uses the same bundled constituent lists as Scanner. The window covers the last five calendar years through the most recent completed US trading session. Yahoo supplies daily prices without an API key. The command prints one JSON line per ticker and a final summary. A nonzero exit with partial or failed tickers means coverage gaps remain. Run the same command again to request only the missing sessions. The recorded gaps can include dates before a symbol started trading.
+
+MongoDB stores instruments, revisioned bars and acquisition coverage in `instruments`, `price_bars` and `data_sync_jobs`. To let the web backend read the history, start it with the same URI and database, removing the empty `MONGODB_URI` override from the no-Mongo startup example above. These commands seed the current universe. Historical index membership and scheduled corrections are covered in the [research loop spec](docs/superpowers/specs/2026-11-17-history-research-loop-design.md) and [implementation plan](docs/superpowers/plans/2026-11-21-history-research-loop.md).
+
 ## Scanner daily-bar detectors
 
 Scanner configurations now offer three additional detectors. Open the Scanner configuration dialog and enable them in the detector list. Existing configurations with an explicit detector selection keep that selection; configurations using all detectors include the new ones.
@@ -367,7 +383,13 @@ Each qualifying day can trigger again. These rules do not yet implement first-hi
 
 ## Roadmap: connect screening, scanning, research, and backtesting
 
-The stages below are **planned work**, not a description of an already integrated product. Existing modules provide parts of this workflow, but the end-to-end links and shared rule definitions still need implementation. No delivery dates are committed.
+The Screener → Scanner → Analyze path works locally with PostgreSQL. Backtest integration is still planned.
+
+1. In **Screener**, apply filters, check the tickers to keep, and choose **Add to watchlist**. Saving records the exact checked symbols, filter values, market, and Screener data date. Saving into an existing Watchlist adds those symbols alongside its current members.
+2. In **Scanner**, choose that Watchlist as the universe and run a scan. Open **View scanned universe** to inspect the tickers actually scanned and the last Screener selection saved to the list. Later edits to the Watchlist leave both snapshots readable. Deleting the Watchlist pauses Scanner schedules that depended on it.
+3. Expand a trigger badge to inspect the measured values and the signal session when available. Click the ticker to open **Analyze**. The report preserves the original rule, threshold, evidence and source result ID alongside the market inputs available at analysis time. Standalone ticker analysis still works. Older scans show the evidence they recorded.
+
+To run the browser regression with Google Chrome installed, run `npm run test:handoff` from `app/frontend`. It builds the app locally and exercises a queued scan, its saved evidence, and the Analyze request using test data.
 
 Target workflow:
 
@@ -377,10 +399,10 @@ Screener → saved stock universe → Scanner signal configuration
                                       └→ Scan hits → user-selected Analyze → linked report
 ```
 
-| Stage | Planned work | Completion criteria |
+| Stage | Work | Completion criteria |
 | --- | --- | --- |
-| 1. Share stock universes | Save selected Screener results to a Watchlist and use that list to create a Scanner configuration. Freeze the selected tickers first; dynamic re-screening comes later. | The user can trace a scan's exact ticker universe back to its saved selection. |
-| 2. Carry scan evidence into Analyze | Pass the triggering scan ID, timestamp, detector values, and evidence alongside the ticker. Keep scan-time observations separate from data fetched for analysis. | The report explains why analysis was started and links back to the triggering scan. |
+| 1. Share stock universes · available | Save selected Screener results to a Watchlist and use that list to create a Scanner configuration. Freeze the selected tickers first; dynamic re-screening comes later. | The user can trace a scan's exact ticker universe back to its saved selection. |
+| 2. Carry scan evidence into Analyze · available | Pass the triggering scan ID, timestamp, detector values, and evidence alongside the ticker. Keep scan-time observations separate from data fetched for analysis. | The report explains why analysis was started and links back to the triggering scan. |
 | 3. Link reports back to results | Show the latest report, its timestamp, and triggering signal on Scanner results and Watchlist rows. | Users can open the relevant report and see whether newer signals have arrived since it was generated. |
 | 4. Validate Scanner rules with Backtest | Share supported detector definitions between scanning and backtesting. Ask users to specify entry/exit timing, holding limits, sizing, and costs before running. | A supported rule has matching signal semantics in historical and current-data execution; the saved result contains its rule version, universe, parameters, and data window. |
 | 5. Use historical results in research | Link the appropriate backtest results to Analyze as evidence; offer rule-based section templates for different scan triggers. | Reports identify the tested rule, sample size, IS/OOS periods, costs, and limitations instead of treating backtest performance as a promise. |

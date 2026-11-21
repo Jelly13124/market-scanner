@@ -6,9 +6,9 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 class SnapshotRowOut(BaseModel):
@@ -105,6 +105,38 @@ class ScreenerSnapshotResponse(BaseModel):
     total_count: int
     snapshot_date: date
     last_updated: datetime
+
+
+class ScreenerSelectionCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    watchlist_id: int | None = Field(default=None, gt=0)
+    new_watchlist_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)] | None = None
+    market: Literal["US", "CN", "ALL"]
+    snapshot_date: date
+    filters: dict[str, str | int | float | list[str] | None]
+    tickers: list[Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=20)]] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def check_watchlist(self) -> Self:
+        if (self.watchlist_id is None) == (self.new_watchlist_name is None):
+            raise ValueError("Choose an existing watchlist or give a new watchlist name")
+        return self
+
+
+class UniverseSnapshotResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    origin: str
+    market: str
+    tickers: list[str]
+    filters: dict | None
+    filter_version: str | None
+    screener_snapshot_date: date | None
+    selected_at: datetime
+    source_watchlist_id: int | None
+    source_snapshot_id: int | None
 
 
 class ScreenerStatusResponse(BaseModel):

@@ -2,8 +2,8 @@
 
 Lifecycle of a single ``execute()`` call:
 
-    1. Load ScannerConfig from DB. Create a ScanRun row (PENDING).
-    2. Resolve universe via ``load_universe(kind, custom)``.
+    1. Resolve the owned Scanner config and its execution universe.
+    2. Save the frozen universe, detector configuration and PENDING run together.
     3. Mark run RUNNING, broadcast 'start' event.
     4. Invoke ``v2.scanner.runner.run_scan`` (sync, thread-pool internally).
        Progress callbacks bridge to the broadcaster.
@@ -15,11 +15,12 @@ background jobs OR from a thread spawned by an async REST endpoint. The runner
 itself manages its own ThreadPoolExecutor.
 
 Concurrency guard: refuses to start a new run for a config that already has
-a RUNNING row (prevents accidental double-trigger from cron + manual).
+a PENDING or RUNNING row (prevents accidental double-trigger from cron + manual).
 """
 
 from __future__ import annotations
 
+import inspect
 import logging
 import threading
 from datetime import date
@@ -27,7 +28,7 @@ from typing import Callable
 
 from sqlalchemy.orm import Session
 
-from app.backend.database.models import ScanRun
+from app.backend.database.models import ScanRun, UniverseSnapshot
 from app.backend.repositories.scanner_repository import (
     AnalystTargetSnapshotRepository,
     ScanRunRepository,
@@ -36,9 +37,10 @@ from app.backend.repositories.scanner_repository import (
 )
 from app.backend.repositories.watchlist_repository import UserWatchlistRepository
 from app.backend.services.scan_broadcaster import ScanBroadcaster
+from v2.data.ashare.symbol import is_ashare
 from v2.data.factory import recommend_max_workers
 from v2.data.yfinance_client import YFinanceClient
-from v2.scanner.detectors import ALL_DETECTORS
+from v2.scanner.detectors import ALL_DETECTORS, DETECTOR_METADATA
 from v2.scanner.models import ScannerWeights, ScoredEntry
 from v2.scanner.runner import ScanProgress, run_scan
 from v2.scanner.universes import load_universe
@@ -48,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 
 class ScanAlreadyRunningError(RuntimeError):
-    """Raised when a scan is requested for a config that already has a RUNNING row.
+    """Raised when a scan is requested for a config that already has a PENDING or RUNNING row.
 
     Carries ``run_id`` (the in-flight run) so the API layer can return it and let
     the client re-attach to that run's stream instead of surfacing a 500.
@@ -109,7 +111,7 @@ class ScannerService:
                 return previous['config_snapshot']['sql_run_id']
 
         # Phase 1: load config, refuse double-run, create PENDING row.
-        config_payload, run_id = self._begin(config_id)
+        config_payload, run_id = self._begin(config_id, end_date)
         if execution_key:
             config_payload.update(execution_key=execution_key, trigger_type="scheduled")
         self._run_to_completion(
@@ -143,7 +145,7 @@ class ScannerService:
         if max_workers is None:
             max_workers = recommend_max_workers()
 
-        config_payload, run_id = self._begin(config_id)
+        config_payload, run_id = self._begin(config_id, end_date)
 
         def _bg() -> None:
             try:
@@ -185,38 +187,17 @@ class ScannerService:
         notification email is independent and always dispatched).
         """
         try:
-            tickers = load_universe(
-                config_payload["universe_kind"],
-                custom=config_payload["universe_tickers"],
-                watchlist_tickers=config_payload.get("watchlist_tickers"),
-            )
+            tickers = config_payload["resolved_tickers"]
+            execution = config_payload["detector_config"]
             self._mark_running(run_id, len(tickers))
             self._publish(run_id, {"event": "start", "run_id": run_id, "universe_size": len(tickers)})
 
-            weights = self._build_weights(config_payload["weights"])
+            weights = ScannerWeights(**execution["weights"])
             from app.backend.services.api_key_service import ApiKeyService
             from v2.data.factory import get_provider_factory
             with self._session_factory() as key_session:
                 finnhub_key = ApiKeyService(key_session, config_payload.get("owner_user_id")).get_api_key("FINNHUB_API_KEY") or ""
             provider_factory = get_provider_factory(finnhub_api_key=finnhub_key)
-
-            # Per-universe benchmark for IDAY's SPY-relative adjustment.
-            # NDX-100 is best matched against QQQ (~95% beta); broader US
-            # universes use SPY. The runner pre-fetches the series once and
-            # injects it into every per-ticker ScanContext.
-            BENCHMARK_BY_UNIVERSE = {
-                "nasdaq100": "QQQ",
-                "sp500": "SPY",
-                "nasdaq100_sp500": "SPY",
-                "russell3000": "SPY",
-                "all_us": "SPY",
-                "custom": "SPY",
-                "watchlist": "SPY",
-            }
-            benchmark_ticker = BENCHMARK_BY_UNIVERSE.get(
-                config_payload["universe_kind"],
-                "SPY",
-            )
 
             # M9.d — refresh today's analyst-target snapshot for every ticker
             # and load the trailing N days back. Done BEFORE the scan pool
@@ -240,16 +221,11 @@ class ScannerService:
                 finnhub_api_key=finnhub_key,
             )
 
-            # Build the per-config detector list. None = all (preserves
-            # pre-feature behavior); a non-None list filters ALL_DETECTORS
-            # by .name. Validation already happened in ScannerWeights, so
-            # any unknown name would have been rejected upstream — the
-            # filter here is purely structural.
-            if weights.enabled_detectors is None:
-                det_instances = [c() for c in ALL_DETECTORS]
-            else:
-                enabled_set = set(weights.enabled_detectors)
-                det_instances = [c() for c in ALL_DETECTORS if c().name in enabled_set]
+            detector_classes = {cls.name: cls for cls in ALL_DETECTORS}
+            det_instances = [
+                detector_classes[d["name"]](**d["parameters"])
+                for d in execution["detectors"]
+            ]
             logger.info(
                 "Scan run %s using %d/%d detectors: %s",
                 run_id,
@@ -262,18 +238,28 @@ class ScannerService:
             scored = run_scan(
                 tickers=tickers,
                 end_date=end_date,
-                top_n=config_payload["top_n"],
+                top_n=execution["top_n"],
                 weights=weights,
                 detectors=det_instances,
                 provider_factory=provider_factory,
                 quant_signals=[cls() for cls in ALL_SIGNALS],
                 max_workers=max_workers,
                 progress_cb=lambda p: self._publish_progress(run_id, p),
-                benchmark_ticker=benchmark_ticker,
+                benchmark_ticker=execution["benchmark_ticker"],
                 target_snapshots=target_snapshots_by_ticker,
                 upcoming_earnings=upcoming_earnings,
                 outcome_cb=outcomes.append,
             )
+
+            with self._session_factory() as session:
+                run = session.get(ScanRun, run_id)
+                run.outcomes = {
+                    outcome.ticker: outcome.model_dump(
+                        mode="json", include={"outcome", "selected", "detector_results", "quality"}
+                    )
+                    for outcome in outcomes
+                }
+                session.commit()
 
             from src.storage.history import ScanHistory
             history = ScanHistory().save(execution_key=config_payload.get('execution_key') or f'sql-scan:{run_id}',
@@ -362,21 +348,22 @@ class ScannerService:
     # Phase helpers
     # ------------------------------------------------------------------
 
-    def _begin(self, config_id: int) -> tuple[dict, int]:
+    def _begin(self, config_id: int, end_date: str) -> tuple[dict, int]:
         """Load config, refuse double-run, create the PENDING row.
 
         Returns (config_payload_dict, run_id). We dehydrate config into a dict
         so subsequent phases don't hold the session open across long-running work.
         """
         with self._session_factory() as session:
-            config = ScannerConfigRepository(session).get_by_id_unscoped(config_id)
+            config = ScannerConfigRepository(session).get_by_id_unscoped(config_id, for_update=True)
             if not config:
                 raise ValueError(f"No scanner config with id {config_id}")
 
-            existing = session.query(ScanRun).filter(ScanRun.config_id == config_id, ScanRun.status == "RUNNING").first()
-            if existing is not None:
+            in_flight = ScanRunRepository(session).list_in_flight(config_id)
+            if in_flight:
+                existing = in_flight[0]
                 raise ScanAlreadyRunningError(
-                    f"Scanner config {config_id} already has a RUNNING run (id={existing.id})",
+                    f"Scanner config {config_id} already has a {existing.status} run (id={existing.id})",
                     run_id=existing.id,
                 )
 
@@ -385,20 +372,61 @@ class ScannerService:
             # doesn't have to reopen a session. Fail fast with a clear message
             # if the FK points at a deleted/missing watchlist.
             watchlist_tickers: list[str] | None = None
+            wl = None
+            source = None
             if config.universe_kind == "watchlist":
                 if config.user_watchlist_id is None:
                     raise ValueError(f"Scanner config {config_id} has universe_kind='watchlist' " "but user_watchlist_id is null")
-                wl = UserWatchlistRepository(session).get_by_id_unscoped(config.user_watchlist_id)
+                wl = UserWatchlistRepository(session).get(config.user_watchlist_id, user_id=config.user_id, for_update=True)
                 if wl is None:
                     raise ValueError(f"watchlist {config.user_watchlist_id} not found " f"(referenced by scanner config {config_id})")
                 watchlist_tickers = list(wl.tickers or [])
                 if not watchlist_tickers:
                     raise ValueError(f"watchlist {config.user_watchlist_id} ({wl.name!r}) is empty")
 
-            run = ScanRunRepository(session).create_pending(config_id)
+                if wl.latest_selection_id is not None:
+                    source = session.query(UniverseSnapshot).filter_by(
+                        id=wl.latest_selection_id, user_id=config.user_id,
+                        source_watchlist_id=wl.id, origin="screener",
+                    ).one_or_none()
+                    if source is None:
+                        raise ValueError("Watchlist source selection is unavailable")
+
+            tickers = list(dict.fromkeys(load_universe(
+                config.universe_kind, custom=config.universe_tickers,
+                watchlist_tickers=watchlist_tickers,
+            )))
+            markets = {"CN" if is_ashare(t) else "US" for t in tickers}
+            snapshot = UniverseSnapshot(
+                user_id=config.user_id, origin="scanner",
+                market=next(iter(markets)) if len(markets) == 1 else "ALL",
+                tickers=tickers, source_watchlist_id=wl.id if wl else None,
+                source_snapshot_id=source.id if source else None,
+            )
+            weights = self._build_weights(config.weights)
+            definitions = []
+            for cls in ALL_DETECTORS:
+                if weights.enabled_detectors is not None and cls.name not in weights.enabled_detectors:
+                    continue
+                # Pass these same constructor parameters to the worker. This also
+                # captures defaults from older configurations with no weights JSON.
+                parameters = {name: param.default for name, param in inspect.signature(cls).parameters.items()}
+                definitions.append({
+                    "name": cls.name, "version": cls.version, "parameters": parameters,
+                    "description": DETECTOR_METADATA[cls.name]["description"],
+                })
+            execution = {
+                "as_of": end_date, "config_name": config.name, "top_n": config.top_n,
+                "universe_kind": config.universe_kind,
+                "source_watchlist_id": wl.id if wl else None,
+                "source_watchlist_name": wl.name if wl else None,
+                "weights": weights.model_dump(), "detectors": definitions,
+                "benchmark_ticker": "QQQ" if config.universe_kind == "nasdaq100" else "SPY",
+            }
             payload = {
                 "config_id": str(config_id),
-                "sql_run_id": run.id,
+                "resolved_tickers": tickers,
+                "detector_config": execution,
                 "universe_kind": config.universe_kind,
                 "universe_tickers": config.universe_tickers,
                 "watchlist_tickers": watchlist_tickers,
@@ -420,6 +448,12 @@ class ScannerService:
                 "email_watchlist": bool(getattr(config, "email_watchlist", False)),
                 "email_reports": bool(getattr(config, "email_reports", False)),
             }
+            session.add(snapshot)
+            session.flush()
+            run = ScanRunRepository(session).create_pending(
+                config_id, universe_snapshot_id=snapshot.id, detector_config=execution,
+            )
+            payload["sql_run_id"] = run.id
             return payload, run.id
 
     def _mark_running(self, run_id: int, universe_size: int) -> None:
@@ -494,6 +528,14 @@ class ScannerService:
 
         if not tickers:
             return {}
+
+        if end_date != date.today().isoformat():
+            # Yahoo exposes current consensus only. A historical scan can use
+            # observations already collected during its requested window.
+            with self._session_factory() as session:
+                return AnalystTargetSnapshotRepository(session).list_for_tickers(
+                    tickers, lookback_days=lookback_days, end_date=end_date,
+                )
 
         client = YFinanceClient()
 

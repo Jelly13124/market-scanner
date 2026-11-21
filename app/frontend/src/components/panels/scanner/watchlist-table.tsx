@@ -32,7 +32,7 @@ interface WatchlistTableProps {
   runId?: number | null;
   /** Invoked when a row is clicked. The scanner panel uses this to open a
    *  Stage-2 flow tab pre-seeded with the clicked ticker. */
-  onTickerClick?: (ticker: string) => void;
+  onTickerClick?: (entry: WatchlistEntryResponse) => void;
 }
 
 type SortKey = 'rank' | 'ticker' | 'score' | 'direction' | 'price' | 'today';
@@ -84,23 +84,31 @@ function DirectionPill({ direction }: { direction: Direction }) {
 }
 
 function TriggerBadge({ trigger }: { trigger: TriggerPayload }) {
+  const { t } = useTranslation();
   const label = DETECTOR_LABELS[trigger.detector] || trigger.detector.slice(0, 4).toUpperCase();
-  const isPositive = trigger.severity_z > 0;
-  // Tailwind doesn't ship bg-green-100 via shadcn default themes here, so we
-  // inline the colors. Numbers are clipped to 1 decimal for compactness.
   return (
-    <span
-      title={trigger.reason}
-      className={cn(
-        'inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-mono font-medium border',
-        isPositive
-          ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800'
-          : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800',
-      )}
-    >
-      {label}({trigger.severity_z >= 0 ? '+' : ''}
-      {trigger.severity_z.toFixed(1)})
-    </span>
+    <details onClick={e => e.stopPropagation()} className="max-w-sm text-xs">
+      <summary
+        title={trigger.reason}
+        className={cn(
+          'cursor-pointer rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-medium',
+          trigger.severity_z > 0
+            ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300'
+            : 'bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300',
+        )}
+      >
+        {label}({trigger.severity_z >= 0 ? '+' : ''}{trigger.severity_z.toFixed(1)})
+      </summary>
+      <div className="my-2 space-y-1">
+        <p className="font-semibold">{trigger.detector}</p>
+        <p>{trigger.reason}</p>
+        {trigger.signal_session && <p>{t('scanner.signalSession')} · {trigger.signal_session}</p>}
+        {trigger.asof_date && <p>{t('scanner.evaluatedAsOf')} · {trigger.asof_date}</p>}
+        {Object.entries(trigger.components ?? {}).map(([name, value]) =>
+          <p key={name}>{name} = {value}</p>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -272,7 +280,7 @@ export function WatchlistTable({ entries, runId, onTickerClick }: WatchlistTable
               className={cn(
                 onTickerClick && 'cursor-pointer hover:bg-accent/50',
               )}
-              onClick={() => onTickerClick?.(entry.ticker)}
+              onClick={() => onTickerClick?.(entry)}
             >
               <TableCell className="text-muted-foreground text-xs tabular-nums">
                 {entry.rank}

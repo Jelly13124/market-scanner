@@ -14,7 +14,7 @@ from typing import Optional
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.backend.database.models import UserWatchlist
+from app.backend.database.models import ScannerConfig, UserWatchlist
 
 
 class UserWatchlistRepository:
@@ -35,12 +35,14 @@ class UserWatchlistRepository:
 
     # -- read ----------------------------------------------------------------
 
-    def get(self, watchlist_id: int, *, user_id: int) -> Optional[UserWatchlist]:
-        return (
+    def get(self, watchlist_id: int, *, user_id: int, for_update: bool = False) -> Optional[UserWatchlist]:
+        query = (
             self.db.query(UserWatchlist)
             .filter(UserWatchlist.id == watchlist_id, UserWatchlist.user_id == user_id)
-            .first()
         )
+        if for_update:
+            query = query.with_for_update().populate_existing()
+        return query.first()
 
     def get_by_id_unscoped(self, watchlist_id: int) -> Optional[UserWatchlist]:
         """Unscoped lookup by primary key — for internal system use only (e.g. backtest engine).
@@ -84,7 +86,7 @@ class UserWatchlistRepository:
         name: str | None = None,
         tickers: list[str] | None = None,
     ) -> Optional[UserWatchlist]:
-        row = self.get(watchlist_id, user_id=user_id)
+        row = self.get(watchlist_id, user_id=user_id, for_update=True)
         if not row:
             return None
         if name is not None:
@@ -104,18 +106,29 @@ class UserWatchlistRepository:
         return row
 
     def delete(self, watchlist_id: int, *, user_id: int) -> bool:
-        row = self.get(watchlist_id, user_id=user_id)
+        return self.delete_and_pause_scanners(watchlist_id, user_id=user_id) is not None
+
+    def delete_and_pause_scanners(self, watchlist_id: int, *, user_id: int) -> list[int] | None:
+        # Scanner startup also locks its configuration before its Watchlist.
+        configs = (self.db.query(ScannerConfig)
+                   .filter_by(user_id=user_id, user_watchlist_id=watchlist_id, universe_kind="watchlist")
+                   .order_by(ScannerConfig.id).with_for_update().all())
+        row = self.get(watchlist_id, user_id=user_id, for_update=True)
         if not row:
-            return False
+            return None
+        paused = [config.id for config in configs if config.is_enabled]
+        for config in configs:
+            config.user_watchlist_id = None
+            config.is_enabled = False
         self.db.delete(row)
         self.db.commit()
-        return True
+        return paused
 
     # -- ticker membership ---------------------------------------------------
 
     def add_ticker(self, watchlist_id: int, ticker: str, *, user_id: int) -> Optional[UserWatchlist]:
         """Uppercase + append if not present. Idempotent."""
-        row = self.get(watchlist_id, user_id=user_id)
+        row = self.get(watchlist_id, user_id=user_id, for_update=True)
         if not row:
             return None
         u = ticker.strip().upper()
@@ -131,7 +144,7 @@ class UserWatchlistRepository:
         return row
 
     def remove_ticker(self, watchlist_id: int, ticker: str, *, user_id: int) -> Optional[UserWatchlist]:
-        row = self.get(watchlist_id, user_id=user_id)
+        row = self.get(watchlist_id, user_id=user_id, for_update=True)
         if not row:
             return None
         u = ticker.strip().upper()

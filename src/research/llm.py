@@ -20,6 +20,7 @@ from typing import Callable, TypeVar
 
 from pydantic import BaseModel
 from src.llm.models import get_model
+from src.research.scan_provenance import SIGNAL_PROMPT
 from src.research.usage import CURRENT_USAGE, FAILED_CALLS
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,8 @@ def call_research_llm(
     # message lists) are left alone — advanced callers handle this
     # themselves.
     if isinstance(prompt, str):
+        if signal := SIGNAL_PROMPT.get():
+            prompt += "\n\nUse the recorded Scanner signal to explain the selection. Evaluate subsequent market inputs separately.\n" + signal
         hint = _schema_hint(pydantic_model)
         prompt = prompt + "\n\n" + hint
 

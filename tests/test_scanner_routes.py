@@ -337,3 +337,63 @@ class TestRunQuotes:
         assert response.json()["FAIL"] is None
         fetch.assert_called_once_with(["AAPL", "FAIL"], finnhub_api_key=saved_key or "", user_id=1)
         assert service.call_args.args[1] == 1
+
+
+@pytest.mark.parametrize(("ticker", "market"), [("600519", "cn"), ("SH600519", "cn"), ("BRK.B", "us")])
+def test_result_market_uses_scan_symbol_convention(ticker, market):
+    from app.backend.models.scanner_schemas import WatchlistEntryResponse
+
+    response = WatchlistEntryResponse(
+        id=1, scan_run_id=1, ticker=ticker, composite_score=80, direction="bullish",
+        event_score=80, rank=1,
+    )
+    assert response.model_dump()["market"] == market
+
+
+def test_run_stream_scoped_before_subscription(setup, monkeypatch):
+    client, sessions, _, broadcaster = setup
+    with sessions() as db:
+        cfg = ScannerConfigRepository(db).create(name="Own", universe_kind="sp500", user_id=1)
+        run_id = ScanRunRepository(db).create_pending(cfg.id).id
+
+    async def complete_stream(_run_id, _terminal_event):
+        yield {"event": "complete"}
+
+    monkeypatch.setattr(broadcaster, "subscribe", complete_stream)
+    url = f"/scanner/runs/{run_id}/stream"
+    assert client.get(url).status_code == 200
+    client.app.dependency_overrides[get_current_user] = lambda: User(id=2)
+    assert client.get(url).status_code == 404
+    client.app.dependency_overrides.pop(get_current_user)
+    assert client.get(url).status_code == 401
+
+
+@pytest.mark.parametrize("status", ["COMPLETE", "ERROR"])
+def test_reconnect_after_worker_finished_gets_persisted_terminal_event(setup, monkeypatch, status):
+    import asyncio
+
+    client, sessions, _, broadcaster = setup
+    with sessions() as db:
+        cfg = ScannerConfigRepository(db).create(name="Own", universe_kind="sp500", user_id=1)
+        repo = ScanRunRepository(db)
+        run_id = repo.create_pending(cfg.id).id
+        if status == "COMPLETE":
+            repo.mark_complete(run_id)
+        else:
+            repo.mark_error(run_id, "Source unavailable")
+
+    # A worker that has already finished will never publish another event.
+    subscribe = broadcaster.subscribe
+
+    async def bounded_subscription(*args, **kwargs):
+        async with asyncio.timeout(2):
+            async for event in subscribe(*args, **kwargs):
+                yield event
+
+    monkeypatch.setattr(broadcaster, "subscribe", bounded_subscription)
+    response = client.get(f"/scanner/runs/{run_id}/stream")
+    assert f"event: {status.lower()}" in response.text
+    if status == "ERROR":
+        assert "Source unavailable" in response.text
+    else:
+        assert '"entries": 0' in response.text

@@ -44,6 +44,7 @@ def _row():
         created_at=datetime(2026, 5, 28),
         duration_seconds=1.0,
         analyze_request_json={},
+        source_scan_result_id=None,
     )
 
 

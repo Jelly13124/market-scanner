@@ -1,6 +1,6 @@
 {
   "designVersion": "2.3",
-  "status": "design_only_not_applied",
+  "status": "installable_schema",
   "database": "market_scanner",
   "mongodbTarget": "8.0+ replica set; verify exact server/driver versions at implementation",
   "notes": [

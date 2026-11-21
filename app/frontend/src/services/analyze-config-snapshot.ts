@@ -9,6 +9,8 @@
 // mounts.
 
 export interface AnalyzeConfigSnapshot {
+  use_personas?: boolean;
+  debate_rounds?: number;
   included_sections: string[];
   persona_overrides: Record<string, string>;
 }

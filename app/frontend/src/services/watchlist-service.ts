@@ -9,7 +9,7 @@ import {
   UserWatchlistUpdate,
 } from '@/types/watchlist';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_BASE as API_BASE_URL } from './auth-service';
 
 async function _toError(res: Response, op: string): Promise<Error> {
   let detail = '';

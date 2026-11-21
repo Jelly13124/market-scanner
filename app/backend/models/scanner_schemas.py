@@ -7,9 +7,11 @@ serialization.
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
+
+from v2.data.ashare.symbol import is_ashare
 
 
 class UniverseKind(str, Enum):
@@ -77,8 +79,10 @@ class ScannerConfigBase(BaseModel):
         description="If true, also email the auto-SOP reports after each scan",
     )
 
+
+class ScannerConfigCreateRequest(ScannerConfigBase):
     @model_validator(mode="after")
-    def _custom_requires_tickers(self):
+    def _check_universe(self):
         # field_validator on universe_tickers doesn't fire when the field falls
         # back to its default (None) — model_validator runs unconditionally.
         if self.universe_kind == UniverseKind.CUSTOM and not self.universe_tickers:
@@ -91,10 +95,6 @@ class ScannerConfigBase(BaseModel):
                 "user_watchlist_id is required when universe_kind='watchlist'"
             )
         return self
-
-
-class ScannerConfigCreateRequest(ScannerConfigBase):
-    pass
 
 
 class ScannerConfigUpdateRequest(BaseModel):
@@ -135,6 +135,7 @@ class ScanRunSummary(BaseModel):
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
     universe_size: Optional[int] = None
+    universe_snapshot_id: Optional[int] = None
     error_message: Optional[str] = None
     created_at: Optional[datetime] = None
 
@@ -157,6 +158,7 @@ class TriggerPayload(BaseModel):
     reason: str
     components: dict[str, float] = Field(default_factory=dict)
     asof_date: Optional[str] = None
+    signal_session: Optional[str] = None
 
 
 class WatchlistEntryResponse(BaseModel):
@@ -172,6 +174,11 @@ class WatchlistEntryResponse(BaseModel):
     event_severity: float = 0.0
     triggers: List[TriggerPayload] = Field(default_factory=list)
     rank: int
+
+    @computed_field
+    @property
+    def market(self) -> Literal["us", "cn"]:
+        return "cn" if is_ashare(self.ticker) else "us"
 
     class Config:
         from_attributes = True

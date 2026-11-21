@@ -164,6 +164,7 @@ class BollingerSqueezeDetector(EventDetector):
                 reason=reason,
                 components=components,
                 asof_date=end_date,
+                signal_session=prices_sorted[-1].time[:10],
             )
 
         reason = (
@@ -178,4 +179,5 @@ class BollingerSqueezeDetector(EventDetector):
             reason=reason,
             components=components,
             asof_date=end_date,
+            signal_session=prices_sorted[-1].time[:10],
         )

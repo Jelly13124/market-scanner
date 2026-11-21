@@ -8,7 +8,7 @@ routes. Unscoped accessors (``get_by_id_unscoped``, ``list_all``) remain
 for background callers (SchedulerService, ScannerService).
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from sqlalchemy import desc
@@ -18,8 +18,10 @@ from app.backend.database.models import (
     AnalystTargetSnapshot,
     ScannerConfig,
     ScanRun,
+    UniverseSnapshot,
     WatchlistEntry,
 )
+from app.backend.repositories.scan_evidence import owned_scan_runs
 
 
 class ScannerConfigRepository:
@@ -65,18 +67,22 @@ class ScannerConfigRepository:
         self.db.refresh(config)
         return config
 
+    def _active_configs(self):
+        return self.db.query(ScannerConfig).filter(ScannerConfig.archived_at.is_(None))
+
     # -- unscoped (background / scheduler use only) --------------------------
 
-    def get_by_id_unscoped(self, config_id: int) -> Optional[ScannerConfig]:
+    def get_by_id_unscoped(self, config_id: int, *, for_update: bool = False) -> Optional[ScannerConfig]:
         """Unscoped lookup by PK — for SchedulerService / ScannerService only.
 
         Do NOT call this from HTTP routes; use ``get_by_id(id, user_id=...)`` there.
         """
-        return self.db.query(ScannerConfig).filter(ScannerConfig.id == config_id).first()
+        q = self._active_configs().filter(ScannerConfig.id == config_id)
+        return (q.with_for_update() if for_update else q).first()
 
     def list_all(self, enabled_only: bool = False) -> List[ScannerConfig]:
         """Unscoped list — for SchedulerService startup (registers ALL users' configs)."""
-        q = self.db.query(ScannerConfig)
+        q = self._active_configs()
         if enabled_only:
             q = q.filter(ScannerConfig.is_enabled == True)  # noqa: E712
         return q.order_by(desc(ScannerConfig.updated_at), desc(ScannerConfig.created_at)).all()
@@ -89,14 +95,14 @@ class ScannerConfigRepository:
         Pass ``user_id`` from HTTP routes. Omit (or pass None) only from
         internal callers — prefer ``get_by_id_unscoped`` there for clarity.
         """
-        q = self.db.query(ScannerConfig).filter(ScannerConfig.id == config_id)
+        q = self._active_configs().filter(ScannerConfig.id == config_id)
         if user_id is not None:
             q = q.filter(ScannerConfig.user_id == user_id)
         return q.first()
 
     def list_for_user(self, user_id: int, enabled_only: bool = False) -> List[ScannerConfig]:
         """List configs owned by ``user_id``, newest-first."""
-        q = self.db.query(ScannerConfig).filter(ScannerConfig.user_id == user_id)
+        q = self._active_configs().filter(ScannerConfig.user_id == user_id)
         if enabled_only:
             q = q.filter(ScannerConfig.is_enabled == True)  # noqa: E712
         return q.order_by(desc(ScannerConfig.updated_at), desc(ScannerConfig.created_at)).all()
@@ -161,10 +167,17 @@ class ScannerConfigRepository:
     def delete(self, config_id: int, *, user_id: Optional[int] = None) -> bool:
         """Delete a config. When ``user_id`` is provided, scoped — returns
         ``False`` (→ 404) if the config belongs to another user."""
-        config = self.get_by_id(config_id, user_id=user_id)
-        if not config:
+        q = self._active_configs().filter(ScannerConfig.id == config_id)
+        if user_id is not None:
+            q = q.filter(ScannerConfig.user_id == user_id)
+        config = q.with_for_update().first()
+        if config is None:
             return False
-        self.db.delete(config)
+        if self.db.query(ScanRun.id).filter_by(config_id=config_id).first():
+            config.archived_at = datetime.now(timezone.utc)
+            config.is_enabled = False
+        else:
+            self.db.delete(config)
         self.db.commit()
         return True
 
@@ -175,8 +188,19 @@ class ScanRunRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    def create_pending(self, config_id: int) -> ScanRun:
-        run = ScanRun(config_id=config_id, status="PENDING")
+    def create_pending(
+        self, config_id: int, *, universe_snapshot_id: int | None = None,
+        detector_config: dict | None = None,
+    ) -> ScanRun:
+        if universe_snapshot_id is not None:
+            owned = (self.db.query(UniverseSnapshot.id)
+                     .join(ScannerConfig, ScannerConfig.user_id == UniverseSnapshot.user_id)
+                     .filter(ScannerConfig.id == config_id, UniverseSnapshot.id == universe_snapshot_id,
+                             UniverseSnapshot.origin == "scanner").first())
+            if owned is None:
+                raise ValueError("Scanner universe snapshot is unavailable")
+        run = ScanRun(config_id=config_id, status="PENDING", universe_snapshot_id=universe_snapshot_id,
+                      detector_config=detector_config)
         self.db.add(run)
         self.db.commit()
         self.db.refresh(run)
@@ -211,6 +235,12 @@ class ScanRunRepository:
         run.status = "ERROR"
         run.completed_at = datetime.utcnow()
         run.error_message = message
+        if run.universe_snapshot_id is not None and run.outcomes is None:
+            snapshot = self.db.get(UniverseSnapshot, run.universe_snapshot_id)
+            run.outcomes = {
+                ticker: {"outcome": "unrecorded", "selected": None, "detector_results": []}
+                for ticker in snapshot.tickers
+            }
         self.db.commit()
         self.db.refresh(run)
         return run
@@ -223,7 +253,7 @@ class ScanRunRepository:
 
         Used by HTTP routes — cross-tenant access returns None (→ 404).
         """
-        return self.db.query(ScanRun).join(ScannerConfig, ScanRun.config_id == ScannerConfig.id).filter(ScanRun.id == run_id, ScannerConfig.user_id == user_id).first()
+        return owned_scan_runs(self.db, user_id).filter(ScanRun.id == run_id).first()
 
     def get_latest_for_config(self, config_id: int) -> Optional[ScanRun]:
         return self.db.query(ScanRun).filter(ScanRun.config_id == config_id).order_by(desc(ScanRun.created_at)).first()
@@ -231,8 +261,13 @@ class ScanRunRepository:
     def list_for_config(self, config_id: int, limit: int = 50) -> List[ScanRun]:
         return self.db.query(ScanRun).filter(ScanRun.config_id == config_id).order_by(desc(ScanRun.created_at)).limit(limit).all()
 
+    def list_in_flight(self, config_id: int | None = None) -> List[ScanRun]:
+        q = self.db.query(ScanRun).filter(ScanRun.status.in_(("PENDING", "RUNNING")))
+        if config_id is not None:
+            q = q.filter(ScanRun.config_id == config_id)
+        return q.order_by(ScanRun.id.desc()).all()
+
     def list_running(self) -> List[ScanRun]:
-        """Used at startup to mark interrupted runs as ERROR."""
         return self.db.query(ScanRun).filter(ScanRun.status == "RUNNING").all()
 
 

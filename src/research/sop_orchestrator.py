@@ -14,6 +14,7 @@ from langgraph.graph import StateGraph, START, END
 from datetime import date
 
 from src.research.backtest_signal import run_signal_backtest
+from src.research.scan_provenance import SIGNAL_PROMPT, evidence_markdown, market_evidence
 from src.research.charts.intraday_fetch import fetch_intraday_prices
 from src.research.charts.render import (
     png_to_b64_uri,
@@ -130,10 +131,17 @@ def _run_sop(request: AnalyzeRequest, api_keys: dict | None = None, *, owner_id=
         shared = fetch_shared_data(request.ticker, scan_date, market=request.market, **data_keys)
         ticket = history.start(owner_id=owner_id, request=request, shared=shared,
                                force=force_rerun, source_scan_result_id=source_scan_result_id, model_route=model_route)
+    market = None
+    if request.source_scan_evidence:
+        # For checkpoints the inputs were read by the original run.
+        market = market_evidence(shared, observed_at=ticket['run']['created_at'] if ticket else None)
+        SIGNAL_PROMPT.set(evidence_markdown(request.source_scan_evidence, market))
     if ticket and ticket['cached']:
         cached = ticket['cached']
-        return AnalyzeReport(request=request,
-            sections={name: SectionPayload(**payload) for name, payload in cached['sections'].items()},
+        prior_market = cached['sections'].get('_scan_evidence', {}).get('structured', {}).get('analysis_market_evidence')
+        return AnalyzeReport(request=request, analysis_market_evidence=prior_market or market,
+            analysis_run_id=str(ticket['run']['_id']), analysis_status=cached.get('versions', {}).get('result_status'),
+            sections={name: SectionPayload(**payload) for name, payload in cached['sections'].items() if name != '_scan_evidence'},
             persona_assignments=cached['sections'].get('_persona_assignments', {}).get('structured'),
             backtest=BacktestVerdict(**cached['backtest']) if cached.get('backtest') else None,
             rendered_html=None, reused=True, storage_status=history.store.status,
@@ -156,7 +164,10 @@ def _run_sop(request: AnalyzeRequest, api_keys: dict | None = None, *, owner_id=
                 risk_tolerance=request.risk_tolerance,
                 report_goal="general_research",
                 use_personas=True,
-                scanner_context=None,
+                scanner_context=(
+                    {"triggered_detectors": [event["detector"] for event in request.source_scan_evidence["triggers"]]}
+                    if request.source_scan_evidence else None
+                ),
             )
             persona_assignments = route_personas(adapter, shared, api_keys=api_keys)
         except Exception as e:
@@ -422,6 +433,7 @@ def _run_sop(request: AnalyzeRequest, api_keys: dict | None = None, *, owner_id=
 
     report = AnalyzeReport(
         request=request,
+        analysis_market_evidence=market,
         sections=sections,
         persona_assignments=persona_assignments,
         backtest=backtest,
@@ -439,8 +451,10 @@ def run_sop(request: AnalyzeRequest, api_keys: dict | None = None, *, owner_id=N
             force_rerun=False, source_scan_result_id=None, resume_run_id=None) -> AnalyzeReport:
     from src.research.usage import CURRENT_USAGE, Usage
     token = CURRENT_USAGE.set(Usage())
+    signal_token = SIGNAL_PROMPT.set("")
     try:
         return _run_sop(request, api_keys, owner_id=owner_id, force_rerun=force_rerun,
                         source_scan_result_id=source_scan_result_id, resume_run_id=resume_run_id)
     finally:
+        SIGNAL_PROMPT.reset(signal_token)
         CURRENT_USAGE.reset(token)

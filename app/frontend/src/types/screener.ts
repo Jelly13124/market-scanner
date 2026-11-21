@@ -129,6 +129,21 @@ export interface ColumnMetadataResponse {
 /** Local filter state per chip slug. Sent to the API as flat query params. */
 export type ChipValues = Record<string, string | number | string[] | null>;
 
+export interface UniverseSnapshot {
+  id: number;
+  origin: 'screener' | 'scanner';
+  market: string;
+  tickers: string[];
+  filters: ChipValues | null;
+  filter_version: string | null;
+  screener_snapshot_date: string | null;
+  selected_at: string;
+  source_watchlist_id: number | null;
+  source_snapshot_id: number | null;
+}
+
+export type SelectionDestination = { watchlist_id: number } | { new_watchlist_name: string };
+
 export interface ScreenerPreset {
   id: number;
   name: string;

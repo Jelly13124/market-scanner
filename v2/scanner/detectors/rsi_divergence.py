@@ -219,6 +219,7 @@ class RsiDivergenceDetector(EventDetector):
                 reason=reason,
                 components=components,
                 asof_date=end_date,
+                signal_session=prices_sorted[-1].time[:10],
             )
 
         if bullish:
@@ -244,6 +245,7 @@ class RsiDivergenceDetector(EventDetector):
                 reason=reason,
                 components=components,
                 asof_date=end_date,
+                signal_session=prices_sorted[-1].time[:10],
             )
 
         # Ran cleanly, no divergence found.
@@ -269,4 +271,5 @@ class RsiDivergenceDetector(EventDetector):
             reason=reason,
             components=components,
             asof_date=end_date,
+            signal_session=prices_sorted[-1].time[:10],
         )

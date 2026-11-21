@@ -12,6 +12,8 @@ import { analyzeBus } from '@/services/analyze-bus';
 import { getAnalyzeConfigSnapshot, getOneClickUseCanvas } from '@/services/analyze-config-snapshot';
 import { analyzeService } from '@/services/analyze-service';
 import { pipelineService } from '@/services/pipeline-service';
+import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { SECTION_ORDER } from '@/types/analyze';
 import type { AnalyzeReportDetail, AnalyzeRunRequest } from '@/types/analyze';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
@@ -59,6 +61,7 @@ export function useAnalyzeRuns() {
 let _seq = 0;
 
 export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation();
   const [runs, setRuns] = useState<AnalyzeRun[]>([]);
 
   // Core runner: push a tracked run, fire it, resolve with the report detail
@@ -144,19 +147,25 @@ export function AnalyzeRunsProvider({ children }: { children: ReactNode }) {
       // Opt-in: reuse the Analyze canvas's sections + persona overrides for the
       // one-click run; otherwise a standard full report.
       const snap = getOneClickUseCanvas() ? getAnalyzeConfigSnapshot() : null;
+      if (snap && !snap.included_sections.length) {
+        toast.error(t('analyze.errors.noSections'));
+        return;
+      }
       startRun({
         ticker: busReq.ticker,
         objective: 'general_research',
         risk_tolerance: 'balanced',
-        use_personas: false,
-        included_sections: snap?.included_sections?.length ? snap.included_sections : SECTION_ORDER,
+        use_personas: snap?.use_personas ?? false,
+        debate_rounds: snap?.debate_rounds ?? 1,
+        included_sections: snap?.included_sections ?? SECTION_ORDER,
         persona_overrides:
           snap && Object.keys(snap.persona_overrides ?? {}).length ? snap.persona_overrides : null,
         report_language: uiReportLanguage(),
         market: busReq.market,
+        source_scan_result_id: busReq.source_scan_result_id,
       });
     });
-  }, [startRun]);
+  }, [startRun, t]);
 
   const clearFinished = useCallback(() => {
     setRuns((prev) => prev.filter((r) => r.status === 'running'));

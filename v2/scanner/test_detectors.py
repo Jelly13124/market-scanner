@@ -1781,3 +1781,15 @@ class TestScannerWeightsValidation:
             "earnings_surprise": 1.5, "earnings_upcoming": 0.8,
         })
         assert w.detector_severity_mult == {"earnings_event": 1.5}
+
+
+def test_historical_analyst_upgrade_keeps_flow_and_excludes_later_consensus():
+    from v2.scanner.detectors import AnalystRatingDetector
+
+    actions = [_action("up", 1), _action("up", 2)]
+    late = AnalystTarget(ticker="AAPL", asof_date="2026-05-14", current_price=100, target_mean=250)
+    trigger = AnalystRatingDetector().detect("AAPL", END_DATE, _StubAnalystClient(actions, late))
+    assert trigger.triggered and trigger.direction == "bullish"
+    assert trigger.severity_z == 4
+    assert trigger.components["recent_score"] == 2
+    assert {"target_mean", "current_price", "gap", "gap_z"}.isdisjoint(trigger.components)

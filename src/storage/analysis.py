@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timezone
 from src.storage.mongo import get_store, digest, json_value, utcnow
-from src.storage.history import freeze_dataset
+from src.storage.history import SELECTED_SIGNAL_FILTER, freeze_dataset
 
 
 def versions():
@@ -30,7 +30,7 @@ class AnalysisHistory:
             instrument = self.store.instrument(request.ticker, db)
             if source_scan_result_id:
                 source = db.scan_results.find_one({'_id': ObjectId(source_scan_result_id), 'owner_id': owner,
-                                                   'instrument_id': instrument})
+                                                   'instrument_id': instrument, **SELECTED_SIGNAL_FILTER})
                 if source is None:
                     raise ValueError('Unknown or unauthorized source scan result')
             as_of = datetime.fromisoformat(shared.scan_date).replace(tzinfo=timezone.utc)
@@ -54,6 +54,17 @@ class AnalysisHistory:
                 'thread_id': f'{owner}:{run_id}', 'versions': v, 'status': 'running', 'usage': {}, 'created_at': utcnow()}
             if source_scan_result_id:
                 doc['source_scan_result_id'] = ObjectId(source_scan_result_id)
+            # SQL owns the source link. Also link its Mongo archive when available.
+            origin = request.source_scan_evidence
+            if origin and origin.get('mongo_scan_result_id'):
+                doc['source_scan_result_id'] = ObjectId(origin['mongo_scan_result_id'])
+            elif origin:
+                scan_run = db.scan_runs.find_one({'owner_id': owner, 'config_snapshot.sql_run_id': origin['scan_run_id']})
+                if scan_run:
+                    archived = db.scan_results.find_one({'owner_id': owner, 'scan_run_id': scan_run['_id'],
+                                                         'instrument_id': instrument, **SELECTED_SIGNAL_FILTER})
+                    if archived:
+                        doc['source_scan_result_id'] = archived['_id']
             if existing:
                 doc.update(status='succeeded', cached_from_report_id=existing['_id'], finished_at=utcnow())
             db.analysis_runs.insert_one(doc)
@@ -74,6 +85,10 @@ class AnalysisHistory:
                     'status': 'failed', 'error': {'code': type(error).__name__}, 'finished_at': utcnow()}})
                 return None
             sections = {k: json_value(v) for k, v in report['sections'].items()}
+            if origin := report['request'].source_scan_evidence:
+                # Stored alongside the structured sections and their GridFS overflow artifact.
+                sections['_scan_evidence'] = {'structured': {'source_scan_evidence': origin,
+                    'analysis_market_evidence': report['analysis_market_evidence']}}
             partial = any(p.skipped and p.skip_reason != 'user excluded this section'
                           for name, p in report['sections'].items() if not name.startswith('_'))
             doc = {'_id': ObjectId(), 'schema_version': 1, 'owner_id': run['owner_id'],

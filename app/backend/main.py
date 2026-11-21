@@ -135,17 +135,17 @@ _scheduler_service = init_scheduler_service(SessionLocal, _scanner_service)
 @app.on_event("startup")
 async def startup_event():
     """Startup: clean up interrupted scans, start scheduler, check Ollama."""
-    # 1. Recover from an unclean previous shutdown: mark any lingering RUNNING
+    # 1. Recover from an unclean previous shutdown: mark any lingering PENDING or RUNNING
     #    scan rows as ERROR so the user knows they were interrupted.
     try:
         with SessionLocal() as session:
             runs = ScanRunRepository(session)
-            stale = runs.list_running()
+            stale = runs.list_in_flight()
             for run in stale:
                 runs.mark_error(run.id, "interrupted at startup")
             if stale:
                 logger.info(
-                    "Marked %d stale RUNNING scan(s) as ERROR (interrupted at startup)",
+                    "Marked %d interrupted scan(s) as ERROR (interrupted at startup)",
                     len(stale),
                 )
     except Exception as e:

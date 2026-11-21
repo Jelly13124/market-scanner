@@ -46,6 +46,7 @@ class UserWatchlistResponse(BaseModel):
     id: int
     name: str
     tickers: list[str] = Field(default_factory=list)
+    latest_selection_id: int | None = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

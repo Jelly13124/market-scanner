@@ -6,6 +6,18 @@ from datetime import datetime, timezone
 from src.storage.mongo import get_store, digest, json_value, utcnow
 
 
+# Full-universe archives include every no-event, missing-data and unselected row.
+# Only selected signals with recorded triggers can originate an Analyze report.
+SELECTED_SIGNAL_FILTER = {
+    "selected": True,
+    "outcome": "evaluated",
+    "$or": [
+        {"detector_results.status": "triggered"},
+        {"quality.legacy_topn_only": True, "quality.legacy_triggers.0": {"$exists": True}},
+    ],
+}
+
+
 def freeze_dataset(db, store, *, owner_id, ticker, as_of, evidence, features=None, quality=None):
     from bson import ObjectId
     manifest = sorted(({'collection': ref['collection'], 'document_id': ref['id'], 'content_hash': ref['content_hash']}
@@ -56,13 +68,26 @@ class ScanHistory:
                     if len(set(names)) != len(names):
                         raise ValueError('Duplicate detector outcome')
                     entry = outcome.entry
+                    # Existing Mongo validators close the detector_results schema.
+                    # Store observed sessions in the extensible evidence metadata.
+                    detector_results = []
+                    signal_sessions = {}
+                    for result in outcome.detector_results:
+                        saved = dict(result)
+                        session = saved.pop('signal_session', None)
+                        if session:
+                            signal_sessions[saved['detector']] = session
+                        detector_results.append(saved)
+                    quality = dict(outcome.quality)
+                    if signal_sessions:
+                        quality['signal_sessions'] = signal_sessions
                     document = {'_id': ObjectId(), 'schema_version': 1, 'scan_run_id': run_id,
                         'instrument_id': self.store.instrument(ticker, db), 'owner_id': str(owner_id),
                         'outcome': outcome.outcome, 'selected': outcome.selected,
-                        'detector_results': outcome.detector_results, 'quality': json_value(outcome.quality), 'created_at': now}
+                        'detector_results': detector_results, 'quality': json_value(quality), 'created_at': now}
                     if outcome.outcome == 'evaluated':
                         document['dataset_id'] = freeze_dataset(db, self.store, owner_id=owner_id, ticker=ticker,
-                            as_of=as_of, evidence=outcome.evidence, quality=outcome.quality)
+                            as_of=as_of, evidence=outcome.evidence, quality=quality)
                     if entry is not None:
                         for key in ('rank', 'composite_score', 'event_score', 'quant_score', 'event_severity', 'direction'):
                             value = getattr(entry, key)

@@ -26,8 +26,8 @@ NEW_REVISION = "c3e7f9d2b8a4"
 
 
 def _build_cfg(db_url: str) -> Config:
-    cfg = Config(str(INI_PATH))
-    # alembic.ini uses a relative script_location ("alembic"); resolve absolute
+    cfg = Config()
+    # Use only the migration scripts; application logging settings are process-wide.
     cfg.set_main_option("script_location", str(ALEMBIC_DIR))
     cfg.set_main_option("sqlalchemy.url", db_url)
     return cfg
@@ -41,11 +41,13 @@ def _table_names(db_url: str) -> set[str]:
         engine.dispose()
 
 
-def test_lab_migration_upgrade_then_downgrade_then_upgrade():
+def test_lab_migration_upgrade_then_downgrade_then_upgrade(monkeypatch):
     """Stamp at down_revision, exercise our migration up/down/up."""
     with tempfile.TemporaryDirectory() as tmp:
         db_path = Path(tmp) / "test_lab_migration.db"
         db_url = f"sqlite:///{db_path}"
+        # env.py gives DATABASE_URL precedence over the URL on the Config.
+        monkeypatch.setenv("DATABASE_URL", db_url)
         cfg = _build_cfg(db_url)
 
         # Stamp DB at our migration's down_revision without actually running

@@ -7,18 +7,25 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import type { StrategyResponse } from '@/types/strategy';
+import { ReviewBacktest } from './review-backtest';
+
 interface Props {
-  strategyId: number;
+  strategy: StrategyResponse;
+  onReload: () => Promise<void>;
   disabled?: boolean;
   onComplete: (backtestId: number) => void;
 }
 
-export function BacktestRunner({ strategyId, onComplete, disabled = false }: Props) {
+export function BacktestRunner({ strategy, onReload, onComplete, disabled = false }: Props) {
   const [running, setRunning] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const needsConfirmation = strategy.source_report_id != null;
   const [elapsed, setElapsed] = useState(0);
   const { t } = useTranslation();
 
   async function handleRun() {
+    setReviewing(false);
     setRunning(true);
     setElapsed(0);
     const t0 = Date.now();
@@ -27,12 +34,13 @@ export function BacktestRunner({ strategyId, onComplete, disabled = false }: Pro
       1000,
     );
     try {
-      const result = await backtestService.run(strategyId);
+      const result = await backtestService.run(strategy.id, needsConfirmation ? strategy.version : undefined);
       onComplete(result.id);
       if (result.error_message) toast.error(result.error_message);
       else toast.success(t('lab.backtest.done', { label: result.verdict_label }));
     } catch (e) {
       toast.error((e as Error).message);
+      if (needsConfirmation) await onReload();
     } finally {
       clearInterval(interval);
       setRunning(false);
@@ -44,7 +52,8 @@ export function BacktestRunner({ strategyId, onComplete, disabled = false }: Pro
 
   return (
     <div className="p-3 flex items-center gap-3 border-b">
-      <Button onClick={handleRun} disabled={running || disabled}>
+      {reviewing && <ReviewBacktest strategy={strategy} onCancel={() => setReviewing(false)} onConfirm={handleRun} />}
+      <Button onClick={needsConfirmation ? () => setReviewing(true) : handleRun} disabled={running || disabled}>
         {running ? (
           <>
             <Loader2 className="size-3 mr-1 animate-spin" />
@@ -52,7 +61,7 @@ export function BacktestRunner({ strategyId, onComplete, disabled = false }: Pro
           </>
         ) : (
           <>
-            <Play className="size-3 mr-1" /> {t('lab.backtest.run')}
+            <Play className="size-3 mr-1" /> {t(needsConfirmation ? 'draft.review' : 'lab.backtest.run')}
           </>
         )}
       </Button>

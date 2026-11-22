@@ -14,6 +14,10 @@ export interface BacktestMetrics {
 export interface BacktestResponse {
   id: number;
   strategy_id: number;
+  confirmed_revision_id?: number | null;
+  confirmed_version?: number | null;
+  source_report_id?: number | null;
+  source_scan_result_id?: number | null;
   created_at: string;
   spec_snapshot_json: Record<string, unknown>;
   start_date: string;

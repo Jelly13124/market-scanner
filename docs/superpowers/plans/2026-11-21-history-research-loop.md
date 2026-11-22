@@ -65,10 +65,11 @@ An HTTP acceptance run persisted a Scanner group in isolated PostgreSQL, copied 
 
 ## 4. Confirm strategy revisions and execute them
 
-- [ ] Test an Analyze-originated draft through `app/backend/routes/lab.py`. Require explicit confirmation with entry, exit, cash, allocation, costs and dates. Reject an unsupported block or another owner's report.
-- [ ] Add immutable `strategy_revisions` in SQL, linked to strategy, source report, universe and originating scan where applicable. A later edit creates a new revision. Link each new backtest to its executed revision.
+- [x] Test an Analyze-originated draft through `app/backend/routes/lab.py`. Require explicit confirmation with entry, exit, cash, allocation, costs and dates. Reject an unsupported block or another owner's report.
+- [x] Add immutable confirmed revisions in SQL for report-linked strategies, linked to strategy, source report, universe and originating scan where applicable. A later edit creates a new revision. Link each confirmed draft backtest to its executed revision.
 - [ ] Implement the approved execution profile in `src/lab/engine/simulation.py`. Use small hand-calculated portfolios to check next-open fills, ranking, exit-before-entry, insufficient cash, fees, split/dividend handling and end-of-window positions. Verify IS and OOS start in cash.
-- [ ] Expose draft confirmation, costs, included/excluded tickers and provenance in the Analyze and Lab panels. A report's historical performance study remains distinct from the confirmed portfolio run.
+- [x] Expose draft confirmation, costs, frozen universe members and report/Scanner provenance in Analyze and Backtest.
+- [ ] Report per-ticker price exclusions in the execution results. A report's historical performance study remains distinct from the confirmed portfolio run.
 
 ## 5. Freeze and replay portfolio inputs
 

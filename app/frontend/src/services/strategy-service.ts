@@ -37,6 +37,11 @@ async function _toError(res: Response, op: string): Promise<Error> {
 }
 
 export const strategyService = {
+  async fromReport(reportId: number): Promise<StrategyResponse> {
+    const r = await fetch(`${API_BASE_URL}/lab/reports/${reportId}/strategy-draft`, {method: 'POST'});
+    if (!r.ok) throw await _toError(r, 'createStrategyDraft');
+    return r.json();
+  },
   async list(): Promise<StrategyResponse[]> {
     const r = await fetch(`${API_BASE_URL}/lab/strategies`);
     if (!r.ok) throw await _toError(r, 'listStrategies');

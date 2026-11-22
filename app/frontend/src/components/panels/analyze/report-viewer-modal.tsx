@@ -14,13 +14,16 @@ import { useReportHtml } from '@/hooks/use-report-html';
 import { ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
+import { CreateStrategyDraft } from './create-strategy-draft';
+
 interface ReportViewerModalProps {
   reportId: number | null;
+  canDraft?: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
-export function ReportViewerModal({ reportId, open, onOpenChange }: ReportViewerModalProps) {
+export function ReportViewerModal({ reportId, open, onOpenChange, canDraft }: ReportViewerModalProps) {
   const { t } = useTranslation();
   // Fetch the report HTML with auth (via the global fetch interceptor) and
   // render it from a blob URL — an iframe navigation wouldn't carry the token.
@@ -33,6 +36,7 @@ export function ReportViewerModal({ reportId, open, onOpenChange }: ReportViewer
           <DialogTitle className="text-sm">
             {t('analyze.reports.reportN', { id: reportId })}
           </DialogTitle>
+          {canDraft && reportId != null && <CreateStrategyDraft reportId={reportId} onOpen={() => onOpenChange(false)} />}
           {src && (
             <Button
               size="sm"

@@ -7,6 +7,7 @@
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
+    "test:drafts": "node --test tests/analyze-strategy-draft.mjs",
     "test:rules": "node --test tests/shared-rules.mjs",
     "test:handoff": "node --test tests/scanner-handoff.mjs"
   },

@@ -783,6 +783,19 @@
       "none": "No short-volume data."
     }
   },
+  "draft": {
+    "create": "Create strategy draft",
+    "review": "Review backtest",
+    "confirm": "Confirm and run backtest",
+    "source": "Analyze report #{{report}} · Scanner signal #{{signal}}",
+    "snapshot": "Frozen universe #{{id}}",
+    "revision": "Confirmed revision #{{id}} · v{{version}}",
+    "endExclusive": "End date (exclusive)",
+    "reverseExit": "Exit on signal reversal",
+    "on": "On",
+    "off": "Off",
+    "engine": "This historical simulation uses whole shares and next-open fills. The stock universe is fixed as of the scan."
+  },
   "backtest": {
     "title": "Backtest",
     "subtitle": "Test rule-based strategies on historical prices. No AI model key is required.",
@@ -798,6 +811,8 @@
     "rsiLevel": "RSI threshold",
     "start": "Start date",
     "end": "End date",
+    "allocation": "Equity per position (%)",
+    "maxPositions": "Maximum positions",
     "cash": "Initial capital (USD)",
     "commission": "Commission (bps)",
     "slippage": "Slippage (bps)",
@@ -810,6 +825,6 @@
     "chartError": "Could not load the authenticated backtest chart.",
     "newStrategy": "New strategy",
     "status": "Basic",
-    "limitations": "Analyze strategy integration, run progress, cancellation and parameter comparison are not available yet."
+    "limitations": "Run cancellation and parameter comparison are planned."
   }
 }

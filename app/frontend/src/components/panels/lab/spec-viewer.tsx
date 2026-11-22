@@ -33,7 +33,7 @@ export function SpecViewer({ strategy, onSpecUpdated }: Props) {
   async function handleManualSave(newSpec: StrategySpec) {
     if (!strategy) return;
     try {
-      await strategyService.update(strategy.id, { spec_json: newSpec });
+      await strategyService.update(strategy.id, { spec_json: newSpec, expected_version: strategy.version });
       setEditing(false);
       onSpecUpdated();
       toast.success(t('lab.backtest.specUpdated'));
@@ -50,10 +50,26 @@ export function SpecViewer({ strategy, onSpecUpdated }: Props) {
           <Pencil className="size-3 mr-1" /> {t('lab.spec.editJson')}
         </Button>
       </div>
+      <StrategyDetails spec={spec} />
+
+      <SpecJsonEditor
+        open={editing} initialSpec={spec}
+        onCancel={() => setEditing(false)}
+        onSave={handleManualSave}
+      />
+    </div>
+  );
+}
+
+export function StrategyDetails({spec}: {spec: StrategySpec}) {
+  const { t } = useTranslation();
+  const cfg = spec.backtest_config;
+  return (
       <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 text-xs">
         <Section title={t('lab.spec.universe')}>
           <div className="border rounded p-2 bg-muted/30">
-            <span className="font-bold">{spec.universe.kind}</span>
+            <span className="font-bold">{spec.universe.kind === 'snapshot'
+              ? t('draft.snapshot', {id: spec.universe.snapshot_id}) : spec.universe.kind}</span>
             {spec.universe.watchlist_id != null && (
               <span className="ml-2 text-muted-foreground">id={spec.universe.watchlist_id}</span>
             )}
@@ -81,21 +97,18 @@ export function SpecViewer({ strategy, onSpecUpdated }: Props) {
         </Section>
         <Section title={t('lab.spec.backtestConfig')}>
           <div className="border rounded p-2 bg-muted/30 space-y-1">
-            <KV k={t('lab.spec.starting')} v={`$${(spec.backtest_config.starting_capital_usd || 100000).toLocaleString()}`} />
-            <KV k={t('lab.spec.costs')} v={`${spec.backtest_config.commission_bps || 5}bps + ${spec.backtest_config.slippage_bps || 5}bps`} />
-            <KV k={t('lab.spec.maxPositions')} v={String(spec.backtest_config.max_concurrent_positions || 10)} />
-            <KV k={t('lab.spec.isOosSplit')} v={`${((spec.backtest_config.is_oos_split || 0.7) * 100).toFixed(0)}/${((1 - (spec.backtest_config.is_oos_split || 0.7)) * 100).toFixed(0)}`} />
-            <KV k={t('lab.spec.benchmark')} v={spec.backtest_config.benchmark || 'spy'} />
+            {cfg.start_date && <KV k={t('backtest.start')} v={cfg.start_date} />}
+            {cfg.end_date && <KV k={t('draft.endExclusive')} v={cfg.end_date} />}
+            <KV k={t('lab.spec.starting')} v={`$${(cfg.starting_capital_usd ?? 100000).toLocaleString()}`} />
+            <KV k={t('backtest.commission')} v={`${cfg.commission_bps ?? 5} bps`} />
+            <KV k={t('backtest.slippage')} v={`${cfg.slippage_bps ?? 5} bps`} />
+            <KV k={t('draft.reverseExit')} v={t((cfg.reverse_signal_as_exit ?? true) ? 'draft.on' : 'draft.off')} />
+            <KV k={t('lab.spec.maxPositions')} v={String(cfg.max_concurrent_positions ?? 10)} />
+            <KV k={t('lab.spec.isOosSplit')} v={`${((cfg.is_oos_split ?? 0.7) * 100).toFixed(0)}/${((1 - (cfg.is_oos_split ?? 0.7)) * 100).toFixed(0)}`} />
+            <KV k={t('lab.spec.benchmark')} v={cfg.benchmark ?? 'spy'} />
           </div>
         </Section>
       </div>
-
-      <SpecJsonEditor
-        open={editing} initialSpec={spec}
-        onCancel={() => setEditing(false)}
-        onSave={handleManualSave}
-      />
-    </div>
   );
 }
 

@@ -2,7 +2,7 @@
 
 ## PostgreSQL · 业务与来源
 
-实线标记已落地的核心外键，虚线标记后续策略版本和回测关联。图中省略通知、调度和 Paper 等外围模块。
+实线标记数据库外键。确认时还会复制报告和信号的历史编号，以便来源记录删除后仍能识别来源。图中省略通知、调度和 Paper 等外围模块。
 
 ```mermaid
 erDiagram
@@ -22,10 +22,11 @@ erDiagram
     user_watchlists |o--o{ universe_snapshots : "可选来源"
     universe_snapshots |o--o{ scan_runs : "记录实际股票池"
     watchlist_entries |o--o{ research_reports : "提供扫描证据"
-    strategies ||..o{ STRATEGY_REVISIONS : "保存确认版本"
-    research_reports |o..o{ STRATEGY_REVISIONS : "提供策略草稿"
-    universe_snapshots ||..o{ STRATEGY_REVISIONS : "固定回测股票池"
-    STRATEGY_REVISIONS |o..o{ backtests : "记录执行版本"
+    research_reports |o--o| strategies : "每份报告可生成一份草稿"
+    universe_snapshots |o--o{ strategies : "固定草稿股票池"
+    strategies ||--o{ confirmed_strategy_revisions : "保存已确认的版本"
+    universe_snapshots ||--o{ confirmed_strategy_revisions : "固定执行股票池"
+    confirmed_strategy_revisions |o--o| backtests : "标识本次执行版本"
 
     ticker_snapshots {
         string ticker
@@ -38,10 +39,14 @@ erDiagram
         date screener_snapshot_date
         timestamp selected_at
     }
-    STRATEGY_REVISIONS {
+    confirmed_strategy_revisions {
         int id PK
-        json rules_and_parameters
-        string engine_version
+        int strategy_id FK
+        int version
+        json spec_json
+        int source_report_id
+        int source_scan_result_id
+        int universe_snapshot_id FK
         timestamp confirmed_at
     }
 ```

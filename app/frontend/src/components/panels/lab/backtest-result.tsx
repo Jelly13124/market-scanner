@@ -42,6 +42,10 @@ export function BacktestResult({ backtestId }: Props) {
 
   return (
     <div className="border-t p-3 space-y-3">
+      {bt.confirmed_revision_id != null && <p className="text-xs">
+        {t('draft.revision', {id: bt.confirmed_revision_id, version: bt.confirmed_version})}
+        {' · '}{t('draft.source', {report: bt.source_report_id, signal: bt.source_scan_result_id})}
+      </p>}
       <div className={`border rounded p-2 text-sm ${verdictColor}`}>
         <div className="font-bold uppercase">{t('lab.backtest.verdict', { label: bt.verdict_label })}</div>
         <div className="text-xs mt-1">{bt.verdict_text}</div>

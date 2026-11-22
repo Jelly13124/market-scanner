@@ -783,6 +783,19 @@
       "none": "无做空量数据。"
     }
   },
+  "draft": {
+    "create": "创建策略草稿",
+    "review": "核对回测参数",
+    "confirm": "确认并运行回测",
+    "source": "Analyze 报告 #{{report}} · Scanner 信号 #{{signal}}",
+    "snapshot": "冻结股票池 #{{id}}",
+    "revision": "已确认修订 #{{id}} · v{{version}}",
+    "endExclusive": "结束日期（不含当天）",
+    "reverseExit": "信号反转时退出",
+    "on": "开启",
+    "off": "关闭",
+    "engine": "本次历史模拟按整股和下一次开盘价撮合，股票池以扫描当时的快照为准。"
+  },
   "backtest": {
     "title": "历史回测",
     "subtitle": "使用历史价格验证规则策略，无需配置 AI 模型 key。",
@@ -798,6 +811,8 @@
     "rsiLevel": "RSI 阈值",
     "start": "开始日期",
     "end": "结束日期",
+    "allocation": "每个仓位占净值（%）",
+    "maxPositions": "最多同时持仓数",
     "cash": "初始资金（USD）",
     "commission": "手续费（基点）",
     "slippage": "滑点（基点）",
@@ -810,6 +825,6 @@
     "chartError": "无法加载回测图表，请检查登录状态或重新运行。",
     "newStrategy": "新建策略",
     "status": "基础版",
-    "limitations": "尚未接入 Analyze 策略；暂不支持运行进度、取消任务和参数对比。"
+    "limitations": "回测取消和参数对比功能尚在规划中。"
   }
 }

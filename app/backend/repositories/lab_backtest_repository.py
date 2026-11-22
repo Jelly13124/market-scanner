@@ -37,11 +37,13 @@ class BacktestRepository:
         equity_curve_is: list,
         equity_curve_oos: list,
         user_id: int,
+        confirmed_revision_id: int | None = None,
         benchmark_curve: list | None = None,
         duration_seconds: float | None = None,
         error_message: str | None = None,
     ) -> Backtest:
         bt = Backtest(
+            confirmed_revision_id=confirmed_revision_id,
             strategy_id=strategy_id,
             spec_snapshot_json=spec_snapshot_json,
             start_date=start_date,

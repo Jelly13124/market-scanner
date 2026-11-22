@@ -33,11 +33,11 @@ async function _toError(res: Response, op: string): Promise<Error> {
 }
 
 export const backtestService = {
-  async run(strategyId: number): Promise<BacktestResponse> {
+  async run(strategyId: number, confirmVersion?: number): Promise<BacktestResponse> {
     const r = await fetch(`${API_BASE_URL}/lab/strategies/${strategyId}/backtest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify({confirm_version: confirmVersion}),
     });
     if (!r.ok) throw await _toError(r, 'runBacktest');
     return r.json();

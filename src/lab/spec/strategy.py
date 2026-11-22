@@ -54,12 +54,15 @@ FilterSpec = Annotated[
 
 
 class UniverseSpec(BaseModel):
-    kind: Literal["watchlist", "sp500", "nasdaq100"]
+    kind: Literal["watchlist", "sp500", "nasdaq100", "snapshot"]
     # required when kind == "watchlist"; None otherwise
     watchlist_id: int | None = None
+    snapshot_id: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
-    def _watchlist_kind_requires_id(self):
+    def _require_universe_id(self):
+        if self.kind == "snapshot" and self.snapshot_id is None:
+            raise ValueError("snapshot universe requires snapshot_id")
         if self.kind == "watchlist" and self.watchlist_id is None:
             raise ValueError("universe.watchlist_id required when kind='watchlist'")
         return self

@@ -72,3 +72,18 @@ def test_run_status_query_does_not_read_full_universe_evidence():
         row = ScanRunRepository(db).get_latest_for_config(1)
         assert 'outcomes' in sa.inspect(row).unloaded
         assert row.outcomes['AAPL']['selected']
+
+
+def test_confirmed_revision_migration_keeps_legacy_backtests():
+    engine = sa.create_engine("sqlite://")
+    migration = ScriptDirectory("app/backend/alembic").get_revision("b8c4a761de39").module
+    with engine.begin() as conn, Operations.context(MigrationContext.configure(conn)):
+        for table in ("strategies", "backtests", "research_reports", "universe_snapshots"):
+            conn.exec_driver_sql(f"CREATE TABLE {table} (id INTEGER PRIMARY KEY)")
+            conn.exec_driver_sql(f"INSERT INTO {table} VALUES (1)")
+        migration.upgrade()
+        assert conn.exec_driver_sql("SELECT confirmed_revision_id FROM backtests WHERE id=1").scalar_one() is None
+        assert conn.exec_driver_sql("SELECT source_report_id FROM strategies WHERE id=1").scalar_one() is None
+        migration.downgrade()
+        for table in ("strategies", "backtests"):
+            assert conn.exec_driver_sql(f"SELECT * FROM {table}").all() == [(1,)]

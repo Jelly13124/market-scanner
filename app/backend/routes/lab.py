@@ -26,6 +26,8 @@ returns 404.
 from __future__ import annotations
 
 import logging
+from calendar import monthrange
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.exc import IntegrityError
@@ -33,7 +35,9 @@ from sqlalchemy.orm import Session
 
 from app.backend.auth.dependencies import get_current_user
 from app.backend.database import get_db
-from app.backend.database.models import User
+from app.backend.database.models import Backtest, ConfirmedStrategyRevision, Strategy, UniverseSnapshot, User
+from app.backend.repositories.research_repository import ResearchReportRepository
+from app.backend.services.report_strategy_draft import draft_inputs, matches_report_universe, validate_draft_spec
 from app.backend.repositories.watchlist_repository import UserWatchlistRepository
 from app.backend.routes.research import _configured_provider_key_name
 from app.backend.services.api_key_service import ApiKeyError, ApiKeyService
@@ -50,7 +54,7 @@ from app.backend.models.lab_schemas import (
 )
 from app.backend.repositories.lab_backtest_repository import BacktestRepository
 from app.backend.repositories.lab_chat_repository import LabChatRepository
-from app.backend.repositories.lab_strategy_repository import StrategyRepository
+from app.backend.repositories.lab_strategy_repository import StaleStrategyVersion, StrategyRepository
 from src.lab.backtest_runner import run_backtest
 from src.lab.catalog import CATALOG
 from src.lab.charts import (
@@ -59,7 +63,7 @@ from src.lab.charts import (
     render_monthly_heatmap_png,
 )
 from src.lab.chat import ProposeSpecPatch, run_chat_turn
-from src.lab.spec.strategy import StrategySpec
+from src.lab.spec.strategy import BacktestConfig, StrategySpec
 
 logger = logging.getLogger(__name__)
 
@@ -83,14 +87,70 @@ def _scaffold_spec(strategy_name: str) -> dict:
     }
 
 
-def _validate_universe_owner(spec: dict, db: Session, user_id: int):
+def _validate_strategy_context(spec: dict, db: Session, user_id: int, strategy=None):
     universe = spec.get("universe") or {}
+    if strategy is not None and strategy.source_report_id is not None:
+        try:
+            spec = validate_draft_spec(spec)
+        except (KeyError, ValueError, TypeError) as e:
+            raise HTTPException(422, f"Invalid Analyze strategy: {e}")
+        if universe.get("kind") != "snapshot" or universe.get("snapshot_id") != strategy.universe_snapshot_id:
+            raise HTTPException(422, "Analyze drafts must keep the report’s frozen universe")
+    if universe.get("kind") == "snapshot":
+        snapshot = db.query(UniverseSnapshot).filter_by(id=universe.get("snapshot_id"), user_id=user_id).first()
+        if snapshot is None:
+            raise HTTPException(404, "Universe snapshot not found")
+        if strategy is None or strategy.source_report_id is None:
+            raise HTTPException(422, "Create a frozen-universe strategy from its Analyze report")
     if universe.get("kind") == "watchlist":
         if UserWatchlistRepository(db).get(universe.get("watchlist_id"), user_id=user_id) is None:
             raise HTTPException(404, "Watchlist not found")
+    return spec
 
 
 # ---- Strategy CRUD ----
+
+@router.post("/reports/{report_id}/strategy-draft", response_model=StrategyResponse)
+def create_report_draft(report_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    report = ResearchReportRepository(db).get_by_id(report_id, user_id=current_user.id)
+    if report is None:
+        raise HTTPException(404, "Report not found")
+    drafts = db.query(Strategy).filter_by(user_id=current_user.id, draft_report_id=report_id)
+    existing = drafts.first()
+    if existing:
+        return existing
+    inputs = draft_inputs(report)
+    if inputs is None:
+        raise HTTPException(422, "A completed analysis with saved Scanner rules and universe is required")
+    source, rules = inputs
+    snapshot = db.query(UniverseSnapshot).filter_by(id=source["universe_snapshot_id"], user_id=current_user.id).first()
+    if snapshot is None:
+        raise HTTPException(404, "Universe snapshot not found")
+    if not matches_report_universe(snapshot, report.ticker):
+        raise HTTPException(422, "Saved Scanner universe does not match the report")
+    name = f"{report.ticker} Analyze #{report.id}"
+    spec = _scaffold_spec(name)
+    spec.update(description=f"Scanner entry rules from Analyze report #{report.id}.",
+                entry=rules.model_dump(), universe={"kind": "snapshot", "snapshot_id": snapshot.id})
+    as_of = date.fromisoformat(report.scan_date)
+    start_year = as_of.year - 3
+    start = as_of.replace(year=start_year, day=min(as_of.day, monthrange(start_year, as_of.month)[1]))
+    spec["backtest_config"] = BacktestConfig(start_date=start.isoformat(),
+                                            end_date=(as_of + timedelta(days=1)).isoformat()).model_dump()
+    strategy = Strategy(user_id=current_user.id, name=name, spec_json=spec, description=spec["description"],
+                        draft_report_id=report.id, source_report_id=report.id,
+                        source_scan_result_id=source["scan_result_id"], universe_snapshot_id=snapshot.id)
+    db.add(strategy)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = drafts.first()
+        if existing:
+            return existing
+        raise HTTPException(409, f"Strategy named {name!r} already exists")
+    return strategy
+
 
 @router.get("/strategies", response_model=list[StrategyResponse])
 def list_strategies(
@@ -112,7 +172,7 @@ def create_strategy(
         StrategySpec.model_validate(spec)
     except Exception as e:
         raise HTTPException(422, f"Invalid initial_spec_json: {e}")
-    _validate_universe_owner(spec, db, current_user.id)
+    _validate_strategy_context(spec, db, current_user.id)
     repo = StrategyRepository(db)
     if repo.get_by_name(req.name, user_id=current_user.id) is not None:
         raise HTTPException(409, f"Strategy named {req.name!r} already exists")
@@ -148,18 +208,23 @@ def update_strategy(
     if s is None:
         raise HTTPException(404, f"Strategy {strategy_id} not found")
     if req.spec_json is not None:
+        if s.source_report_id is not None and req.expected_version is None:
+            raise HTTPException(409, "Save this draft with the expected_version you reviewed.")
         try:
             StrategySpec.model_validate(req.spec_json)
         except Exception as e:
             raise HTTPException(422, f"Invalid spec_json: {e}")
-        _validate_universe_owner(req.spec_json, db, current_user.id)
-        s = repo.update_spec(strategy_id, user_id=current_user.id, spec_json=req.spec_json,
-                              description=req.description)
+        spec = _validate_strategy_context(req.spec_json, db, current_user.id, s)
+        try:
+            s = repo.update_spec(strategy_id, user_id=current_user.id, spec_json=spec,
+                                 description=req.description, expected_version=req.expected_version)
+        except StaleStrategyVersion:
+            raise HTTPException(409, "Draft changed. Reload before saving.")
         # Also log a manual_edit chat message
         LabChatRepository(db).add(
             strategy_id=strategy_id, role="user_manual_edit",
             content=(req.description or "manual edit"),
-            spec_snapshot_json=req.spec_json,
+            spec_snapshot_json=spec,
             user_id=current_user.id,
         )
     elif req.name is not None:
@@ -314,9 +379,11 @@ def apply_chat_patch(
         raise HTTPException(404, f"Message {req.message_id} not found for this strategy")
     if msg.spec_patch_json is None:
         raise HTTPException(400, "Message has no spec patch to apply")
-    _validate_universe_owner(msg.spec_patch_json, db, current_user.id)
+    if strategy.source_report_id is not None:
+        raise HTTPException(409, "Apply changes to an Analyze draft in the parameter editor and save its reviewed version.")
+    spec = _validate_strategy_context(msg.spec_patch_json, db, current_user.id, strategy)
     # Update strategy spec, bump version, mark patch accepted
-    s = strategy_repo.update_spec(strategy_id, user_id=current_user.id, spec_json=msg.spec_patch_json)
+    s = strategy_repo.update_spec(strategy_id, user_id=current_user.id, spec_json=spec)
     chat_repo.mark_patch_accepted(req.message_id, accepted=True)
     return StrategyResponse.model_validate(s)
 
@@ -326,7 +393,7 @@ def apply_chat_patch(
 @router.post("/strategies/{strategy_id}/backtest", response_model=BacktestResponse)
 def trigger_backtest(
     strategy_id: int,
-    _: BacktestRunRequest,
+    req: BacktestRunRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -338,12 +405,40 @@ def trigger_backtest(
     except Exception as e:
         raise HTTPException(422, f"Stored spec is invalid: {e}")
 
-    _validate_universe_owner(strategy.spec_json, db, current_user.id)
+    _validate_strategy_context(strategy.spec_json, db, current_user.id, strategy)
+    revision = None
+    if strategy.source_report_id is not None:
+        # Serialize confirmation and edits using a conditional write. This also
+        # works on SQLite where SELECT FOR UPDATE is silently ignored.
+        if req.confirm_version is None or req.confirm_version != strategy.version:
+            raise HTTPException(409, "Confirm the current draft version before running")
+        locked = db.query(Strategy).filter_by(id=strategy_id, user_id=current_user.id,
+                                              version=req.confirm_version).update(
+            {Strategy.version: Strategy.version, Strategy.updated_at: Strategy.updated_at},
+            synchronize_session=False,
+        )
+        if not locked:
+            raise HTTPException(409, "Draft changed. Review the current version before running")
+        existing = (db.query(Backtest).join(ConfirmedStrategyRevision)
+                    .filter(Backtest.user_id == current_user.id, Backtest.strategy_id == strategy_id,
+                            ConfirmedStrategyRevision.version == req.confirm_version).first())
+        if existing:
+            return BacktestResponse.model_validate(existing)
+        revision = ConfirmedStrategyRevision(strategy_id=strategy.id, version=strategy.version,
+                                             spec_json=strategy.spec_json, source_report_id=strategy.source_report_id,
+                                             source_scan_result_id=strategy.source_scan_result_id,
+                                             universe_snapshot_id=strategy.universe_snapshot_id)
+        db.add(revision)
+        db.flush()
     try:
         result = run_backtest(spec, db, user_id=current_user.id)
     except Exception as e:
         logger.exception("backtest failed for strategy %s", strategy_id)
         raise HTTPException(500, f"Backtest failed: {type(e).__name__}: {e}")
+
+    if revision is not None and result.error_message:
+        db.rollback()
+        raise HTTPException(503, f"Backtest could not complete: {result.error_message}. You can retry this version.")
 
     # Persist
     is_metrics_dict = _metrics_dict(result.is_metrics)
@@ -351,6 +446,7 @@ def trigger_backtest(
 
     bt = BacktestRepository(db).create(
         strategy_id=strategy_id,
+        confirmed_revision_id=revision.id if revision else None,
         spec_snapshot_json=result.spec_snapshot,
         start_date=result.start_date,
         end_date=result.end_date,

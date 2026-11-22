@@ -69,6 +69,7 @@ export interface VerdictPayload {
 }
 
 export interface AnalyzeReportDetail {
+  can_draft_strategy?: boolean;
   id: number;
   ticker: string;
   scan_date: string;

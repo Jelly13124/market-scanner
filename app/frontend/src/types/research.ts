@@ -48,6 +48,7 @@ export interface BacktestSummaryPayload {
 
 // GET /research/reports — list row
 export interface ResearchReportSummary {
+  can_draft_strategy?: boolean;
   id: number;
   ticker: string;
   scan_date: string;

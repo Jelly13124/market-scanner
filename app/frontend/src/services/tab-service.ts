@@ -29,7 +29,7 @@ export class TabService {
         return createElement(AnalyzePanel, {});
 
       case 'backtest':
-        return createElement(BacktestPanel, {});
+        return createElement(BacktestPanel, {key: tabData.metadata?.strategyId, strategyId: tabData.metadata?.strategyId});
 
       case 'screener':
         return createElement(ScreenerTab, {});
@@ -79,8 +79,8 @@ export class TabService {
   }
 
   /** Open / focus the single Backtest tab. */
-  static createBacktestTab(): TabData & { content: ReactNode } {
-    const metadata = {};
+  static createBacktestTab(strategyId?: number): TabData & { content: ReactNode } {
+    const metadata = {strategyId};
     return {
       type: 'backtest',
       title: 'Backtest',
@@ -143,7 +143,7 @@ export class TabService {
         return TabService.createAnalyzeTab();
 
       case 'backtest':
-        return TabService.createBacktestTab();
+        return TabService.createBacktestTab(savedTab.metadata?.strategyId);
 
       case 'screener':
         return TabService.createScreenerTab();

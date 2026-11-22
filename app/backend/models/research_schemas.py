@@ -68,6 +68,7 @@ class ResearchReportSummary(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    can_draft_strategy: bool = False
     id: int
     ticker: str
     scan_date: str
@@ -231,6 +232,7 @@ class AnalyzeReportDetail(BaseModel):
     """Response from POST /research/analyze and GET /research/reports/{id}/analyze."""
     model_config = ConfigDict(from_attributes=True)
 
+    can_draft_strategy: bool = False
     id: int
     ticker: str
     scan_date: str

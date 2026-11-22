@@ -185,7 +185,7 @@ export function ReportsPanel() {
         </Table>
       </div>
 
-      <ReportViewerModal reportId={viewingId} open={modalOpen} onOpenChange={setModalOpen} />
+      <ReportViewerModal reportId={viewingId} canDraft={rows.find(r => r.id === viewingId)?.can_draft_strategy} open={modalOpen} onOpenChange={setModalOpen} />
     </div>
   );
 }

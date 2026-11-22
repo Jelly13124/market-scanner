@@ -3,6 +3,7 @@
 
 export interface UniverseSpec {
   kind:
+    | 'snapshot'
     | 'watchlist'
     | 'sp500'
     | 'nasdaq100'
@@ -12,6 +13,7 @@ export interface UniverseSpec {
     | 'csi500'
     | 'csi1000'
     | 'hs300_ext';
+  snapshot_id?: number | null;
   watchlist_id?: number | null;
 }
 
@@ -45,6 +47,9 @@ export interface StrategySpec {
 }
 
 export interface StrategyResponse {
+  source_report_id?: number | null;
+  source_scan_result_id?: number | null;
+  universe_snapshot_id?: number | null;
   id: number;
   name: string;
   description: string | null;
@@ -61,6 +66,7 @@ export interface StrategyCreateRequest {
 }
 
 export interface StrategyUpdateRequest {
+  expected_version?: number;
   name?: string;
   description?: string;
   spec_json?: StrategySpec;

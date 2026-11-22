@@ -1,6 +1,6 @@
 import sqlalchemy as sa
 from sqlalchemy import Column, Integer, Float, String, DateTime, Text, Boolean, JSON, ForeignKey, Index, UniqueConstraint, BigInteger, Date, Numeric
-from sqlalchemy.orm import deferred
+from sqlalchemy.orm import deferred, relationship
 from sqlalchemy.sql import func, text
 from .connection import Base
 
@@ -517,7 +517,28 @@ class Strategy(Base):
 
     user_id = Column(BigInteger().with_variant(Integer(), "sqlite"), ForeignKey("users.id"), nullable=False, index=True)
 
+    # Historical identifiers survive deletion of the mutable report and scan result.
+    source_report_id = Column(Integer, nullable=True)
+    source_scan_result_id = Column(Integer, nullable=True)
+    universe_snapshot_id = Column(Integer, ForeignKey("universe_snapshots.id"), nullable=True)
+    draft_report_id = Column(Integer, ForeignKey("research_reports.id", ondelete="SET NULL"), unique=True)
+
     __table_args__ = (UniqueConstraint("user_id", "name", name="uq_strategy_user_name"),)
+
+
+class ConfirmedStrategyRevision(Base):
+    """Append-only record of the exact settings approved for an Analyze backtest."""
+
+    __tablename__ = "confirmed_strategy_revisions"
+    id = Column(Integer, primary_key=True)
+    strategy_id = Column(Integer, ForeignKey("strategies.id", ondelete="CASCADE"), nullable=False)
+    version = Column(Integer, nullable=False)
+    spec_json = Column(JSON, nullable=False)
+    source_report_id = Column(Integer, nullable=False)
+    source_scan_result_id = Column(Integer, nullable=False)
+    universe_snapshot_id = Column(Integer, ForeignKey("universe_snapshots.id"), nullable=False)
+    confirmed_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    __table_args__ = (UniqueConstraint("strategy_id", "version", name="uq_confirmed_strategy_version"),)
 
 
 class LabChatMessage(Base):
@@ -562,6 +583,25 @@ class Backtest(Base):
     end_date = Column(String(10), nullable=False)
     midpoint_date = Column(String(10), nullable=False)
     universe_size = Column(Integer, nullable=False)
+
+    confirmed_revision_id = Column(Integer, ForeignKey("confirmed_strategy_revisions.id", ondelete="CASCADE"), unique=True)
+    confirmed_revision = relationship("ConfirmedStrategyRevision")
+
+    @property
+    def confirmed_version(self):
+        return self.confirmed_revision.version if self.confirmed_revision else None
+
+    @property
+    def source_report_id(self):
+        return self.confirmed_revision.source_report_id if self.confirmed_revision else None
+
+    @property
+    def source_scan_result_id(self):
+        return self.confirmed_revision.source_scan_result_id if self.confirmed_revision else None
+
+    @property
+    def universe_snapshot_id(self):
+        return self.confirmed_revision.universe_snapshot_id if self.confirmed_revision else None
 
     # IS metrics
     is_total_return = Column(Float, nullable=True)

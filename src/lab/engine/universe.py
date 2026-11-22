@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.backend.repositories.screener_repository import ScreenerRepository
 from app.backend.repositories.watchlist_repository import UserWatchlistRepository
 from src.lab.spec.strategy import UniverseSpec
 
@@ -23,6 +24,14 @@ def load_universe_tickers(spec: UniverseSpec, db: Any, *, user_id: int | None = 
     For ``kind='watchlist'``, ``db`` must be a SQLAlchemy Session.
     For static kinds (sp500, nasdaq100), ``db`` is ignored.
     """
+    if spec.kind == "snapshot":
+        if user_id is None:
+            raise UniverseError("A user is required for a frozen universe")
+        snapshot = ScreenerRepository(db).get_universe_snapshot(spec.snapshot_id, user_id=user_id)
+        if snapshot is None or not snapshot.tickers:
+            raise UniverseError("Frozen universe is empty or unavailable")
+        return list(snapshot.tickers)
+
     if spec.kind == "watchlist":
         repo = UserWatchlistRepository(db)
         if user_id is None:

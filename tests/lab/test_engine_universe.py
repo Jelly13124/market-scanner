@@ -53,3 +53,25 @@ def test_watchlist_empty_raises():
 def test_private_watchlist_requires_owner():
     with pytest.raises(UniverseError, match="user is required"):
         load_universe_tickers(UniverseSpec(kind="watchlist", watchlist_id=42), db=object())
+
+
+def test_snapshot_resolves_only_frozen_members_for_the_owner():
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.backend.database.models import UniverseSnapshot
+
+    engine = create_engine("sqlite://")
+    UniverseSnapshot.__table__.create(engine)
+    with Session(engine) as db:
+        snapshot = UniverseSnapshot(user_id=7, origin="scanner", market="US", tickers=["IBM", "AAPL"])
+        db.add(snapshot)
+        db.commit()
+        spec = UniverseSpec(kind="snapshot", snapshot_id=snapshot.id)
+        assert load_universe_tickers(spec, db, user_id=7) == ["IBM", "AAPL"]
+        with pytest.raises(UniverseError):
+            load_universe_tickers(spec, db, user_id=8)
+        with pytest.raises(UniverseError):
+            load_universe_tickers(spec, db)
+        with pytest.raises(ValueError):
+            UniverseSpec(kind="snapshot")

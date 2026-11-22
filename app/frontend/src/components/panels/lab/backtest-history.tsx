@@ -30,7 +30,7 @@ export function BacktestHistory({
 
   useEffect(() => {
     reload();
-  }, [reload]);
+  }, [reload, selectedBacktestId]);
 
   if (items.length === 0) return null;
 

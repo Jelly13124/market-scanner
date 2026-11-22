@@ -16,6 +16,10 @@ from sqlalchemy.orm import Session
 from app.backend.database.models import Strategy
 
 
+class StaleStrategyVersion(Exception):
+    """Another editor saved a newer version first."""
+
+
 class StrategyRepository:
     def __init__(self, db: Session) -> None:
         self.db = db
@@ -64,14 +68,20 @@ class StrategyRepository:
         user_id: int,
         spec_json: dict,
         description: str | None = None,
+        expected_version: int | None = None,
     ) -> Optional[Strategy]:
         s = self.get(strategy_id, user_id=user_id)
         if s is None:
             return None
-        s.spec_json = spec_json
-        s.version = (s.version or 1) + 1
+        changes = {Strategy.spec_json: spec_json, Strategy.version: Strategy.version + 1}
         if description is not None:
-            s.description = description
+            changes[Strategy.description] = description
+        query = self.db.query(Strategy).filter_by(id=strategy_id, user_id=user_id)
+        if expected_version is not None:
+            query = query.filter_by(version=expected_version)
+        if query.update(changes, synchronize_session=False) != 1:
+            self.db.rollback()
+            raise StaleStrategyVersion()
         self.db.commit()
         self.db.refresh(s)
         return s

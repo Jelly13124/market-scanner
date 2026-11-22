@@ -18,6 +18,7 @@ class StrategyCreateRequest(BaseModel):
 
 
 class StrategyUpdateRequest(BaseModel):
+    expected_version: int | None = Field(default=None, ge=1)
     name: str | None = None
     description: str | None = None
     spec_json: dict | None = None  # manual edit path (bypasses AI)
@@ -30,6 +31,9 @@ class StrategyResponse(BaseModel):
     description: str | None
     spec_json: dict
     version: int
+    source_report_id: int | None = None
+    source_scan_result_id: int | None = None
+    universe_snapshot_id: int | None = None
     created_at: datetime
     updated_at: datetime | None
 
@@ -67,9 +71,8 @@ class ChatApplyRequest(BaseModel):
 # ---- Backtest ----
 
 class BacktestRunRequest(BaseModel):
-    """No body required — server uses the strategy's current spec.
-    Future: allow ad-hoc overrides without committing to spec."""
-    pass  # explicit empty body model
+    """A report-linked strategy requires approval of its current saved version."""
+    confirm_version: int | None = Field(default=None, ge=1)
 
 
 class BacktestResponse(BaseModel):
@@ -77,6 +80,11 @@ class BacktestResponse(BaseModel):
     id: int
     strategy_id: int
     created_at: datetime
+    confirmed_revision_id: int | None = None
+    confirmed_version: int | None = None
+    source_report_id: int | None = None
+    source_scan_result_id: int | None = None
+    universe_snapshot_id: int | None = None
     spec_snapshot_json: dict
     start_date: str
     end_date: str

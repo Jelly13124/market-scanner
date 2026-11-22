@@ -344,10 +344,10 @@ An older SQLite database is not automatically imported into PostgreSQL. An exist
 | --- | --- | --- |
 | Watchlist / Screener / Scanner | Watchlists, screening, event scans | Online data and provider permissions required; snapshot refresh requires login |
 | Analyze / Reports | Predefined analysis sections, personas, debate, saved templates, scheduled configuration snapshots | Canvas edges do not define arbitrary execution graphs; at least one valid section is required |
-| Backtest | Historical rule strategies, costs, IS/OOS metrics and charts | Basic version; no Analyze strategy integration, progress display, cancellation, or parameter comparison |
+| Backtest | Historical rule strategies, costs, IS/OOS metrics and charts | Analyze drafts support the shared daily rules on frozen US stock universes. Cancellation and parameter comparison are planned. |
 | Paper | Prototype code and stored records retained | **In development; unavailable to users.** No automatic market-price valuation |
 
-Backtests evaluate signals at the close and execute at the next available trading day's open. Trade P&L includes entry and exit costs; the OOS benchmark uses the OOS evaluation window. Analyze and Backtest currently operate independently.
+Backtests evaluate signals at the close and execute at the next available trading day's open. Trade P&L includes entry and exit costs; the OOS benchmark uses the OOS evaluation window. Analyze can prepare an editable strategy from a saved Scanner signal.
 
 When enabled, MongoDB provides additional cache/history storage, datasets, node caches, and checkpoints. Without it, online analysis continues, but SQL report copies do not replace full MongoDB history or checkpoint-based recovery.
 
@@ -393,9 +393,20 @@ Backtest loads warm-up bars before the evaluation window. Relative strength uses
 
 To run the Chrome regression for saving, importing and reopening a group, run `npm run test:rules` from `app/frontend`.
 
+### Create a strategy draft from Analyze
+
+1. Open a ticker from a completed Scanner run that used **Shared daily rules** and complete the analysis. Open the report in **Analyze** or **Reports**, then click **Create strategy draft**. Reopening the same report takes you back to its saved draft.
+2. Review the entry group copied from that run, including its rule versions, thresholds, directions and AND/OR setting. The universe is the original scan’s frozen US ticker list. Changes to a Watchlist or a Scanner configuration do not affect this draft.
+3. Review the proposed trading assumptions in **Backtest**. You can change the dates, entry conditions, exit, allocation, position limit, starting capital and costs. Use the parameter editor and click **Save parameters** after editing. If someone saved another version, reload the draft and review their changes before saving.
+4. Click **Review backtest** to see the saved version, frozen tickers and execution settings together. **Cancel** returns to editing. **Confirm and run backtest** executes the displayed version and records its revision and source report and signal IDs with the result. If the version changed elsewhere, review the updated draft first. If price data is unavailable, you can confirm the same version again after data access recovers. A repeat confirmation after success opens the recorded result.
+
+The initial date range covers three years through the report date. The draft proposes $100,000 starting capital, 5% of equity per entry, up to 10 positions, a 5% stop loss and 5 basis points each for commission and slippage. These are editable Backtest assumptions. Only the entry rule group comes from Scanner. Draft creation does not require another model call. Standalone reports and older scans without saved rules or a stock universe cannot generate these drafts. The current Backtest engine uses whole shares and fills at the next available open. Using a universe selected on the scan date to evaluate earlier years introduces selection bias. Exact historical-data replay and the planned fractional-share execution profile are separate roadmap items.
+
+For an existing installation, run the PostgreSQL initialization command in step 4 before restarting the backend. Run `npm run test:drafts` in `app/frontend` to exercise the review and confirmation flow in Chrome with test data.
+
 ## Roadmap: connect screening, scanning, research, and backtesting
 
-The Screener → Scanner → Analyze path works locally with PostgreSQL. Backtest can import the three shared daily rules from a saved Scanner configuration.
+The Screener → Scanner → Analyze path works locally with PostgreSQL. Analyze reports can seed a draft for user-confirmed Backtest execution. Backtest can also import conditions directly from a saved Scanner configuration.
 
 1. In **Screener**, apply filters, check the tickers to keep, and choose **Add to watchlist**. Saving records the exact checked symbols, filter values, market, and Screener data date. Saving into an existing Watchlist adds those symbols alongside its current members.
 2. In **Scanner**, choose that Watchlist as the universe and run a scan. Open **View scanned universe** to inspect the tickers actually scanned and the last Screener selection saved to the list. Later edits to the Watchlist leave both snapshots readable. Deleting the Watchlist pauses Scanner schedules that depended on it.
@@ -408,7 +419,7 @@ Target workflow:
 ```text
 Screener → saved stock universe → Scanner signal configuration
                                       ├→ Backtest with explicit trading rules
-                                      └→ Scan hits → user-selected Analyze → linked report
+                                      └→ Scan hits → Analyze report → strategy draft → confirmation → Backtest
 ```
 
 | Stage | Work | Completion criteria |
@@ -416,7 +427,7 @@ Screener → saved stock universe → Scanner signal configuration
 | 1. Share stock universes · available | Save selected Screener results to a Watchlist and use that list to create a Scanner configuration. Freeze the selected tickers first; dynamic re-screening comes later. | The user can trace a scan's exact ticker universe back to its saved selection. |
 | 2. Carry scan evidence into Analyze · available | Pass the triggering scan ID, timestamp, detector values, and evidence alongside the ticker. Keep scan-time observations separate from data fetched for analysis. | The report explains why analysis was started and links back to the triggering scan. |
 | 3. Link reports back to results | Show the latest report, its timestamp, and triggering signal on Scanner results and Watchlist rows. | Users can open the relevant report and see whether newer signals have arrived since it was generated. |
-| 4. Validate Scanner rules with Backtest · shared triggers available | Import a versioned daily rule group into a strategy. Confirmed strategy revisions, exact-universe replay and run-to-source navigation are planned. | A supported rule has matching signal semantics in historical and current-data execution; the saved result contains its rule version, universe, parameters, and data window. |
+| 4. Validate Scanner rules with Backtest · shared triggers available | Import a versioned daily rule group into a strategy. Linked reports create editable drafts. Confirmation saves the executed revision and frozen universe. Exact price-data replay is planned. | A supported rule has matching signal semantics in historical and current-data execution; the saved result contains its rule version, universe, parameters, and data window. |
 | 5. Use historical results in research | Link the appropriate backtest results to Analyze as evidence; offer rule-based section templates for different scan triggers. | Reports identify the tested rule, sample size, IS/OOS periods, costs, and limitations instead of treating backtest performance as a promise. |
 | 6. Add advanced workflows | Consider dynamic Screener universes, historical event studies, parameter comparison, and translating Analyze suggestions into user-reviewed strategy rules. | Each workflow preserves its configuration and evidence, makes model costs visible, and can be reproduced before automation is expanded. |
 

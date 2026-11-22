@@ -128,6 +128,7 @@ export function AnalyzeRunsSidebar() {
 
       <ReportViewerModal
         reportId={viewId}
+        canDraft={runs.find(r => r.reportId === viewId)?.detail?.can_draft_strategy}
         open={viewId != null}
         onOpenChange={(o) => {
           if (!o) setViewId(null);

@@ -26,6 +26,7 @@ from app.backend.database import get_db
 from app.backend.database.models import User
 from app.backend.rate_limit import heavy_limit, rate_limited
 from app.backend.services.api_key_service import ApiKeyError, ApiKeyService
+from app.backend.services.report_strategy_draft import eligible_report_ids
 from app.backend.models.research_schemas import (
     AnalyzeReportDetail,
     AnalyzeRunRequest,
@@ -155,7 +156,9 @@ def list_reports(
         scan_date=scan_date,
         limit=limit,
     )
-    return [ResearchReportSummary.model_validate(r) for r in rows]
+    eligible = eligible_report_ids(db, rows, current_user.id)
+    return [ResearchReportSummary.model_validate(row).model_copy(update={"can_draft_strategy": row.id in eligible})
+            for row in rows]
 
 
 @router.get("/reports/{report_id}", response_model=ResearchReportDetail)
@@ -280,7 +283,7 @@ def _to_analyze_request(req: AnalyzeRunRequest) -> AnalyzeRequest:
     )
 
 
-def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
+def _report_to_detail(row, *, report_dict, can_draft_strategy=False) -> AnalyzeReportDetail:
     """Compose AnalyzeReportDetail from a DB row + the in-memory
     AnalyzeReport dict. report_dict is the live result from run_sop
     (with SectionPayload objects), not the DB JSON."""
@@ -326,6 +329,7 @@ def _report_to_detail(row, *, report_dict) -> AnalyzeReportDetail:
             )
 
     return AnalyzeReportDetail(
+        can_draft_strategy=can_draft_strategy,
         id=row.id,
         ticker=row.ticker,
         scan_date=row.scan_date,
@@ -435,7 +439,8 @@ def trigger_analyze(
     except Exception as e:
         logger.exception("re-render with report_id failed (keeping initial HTML): %s", e)
 
-    return _report_to_detail(row, report_dict=report)
+    eligible = eligible_report_ids(db, [row], current_user.id)
+    return _report_to_detail(row, report_dict=report, can_draft_strategy=row.id in eligible)
 
 
 # ---------------------------------------------------------------------------

@@ -30,6 +30,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { CreateStrategyDraft } from './create-strategy-draft';
 import { AnalyzeToolbar } from './analyze-toolbar';
 import { FlowCanvas, type FlowCanvasHandle } from './flow-canvas';
 import { AnalyzeRunsSidebar } from './analyze-runs-sidebar';
@@ -280,6 +281,9 @@ export function AnalyzePanel() {
               </AccordionTrigger>
               <AccordionContent className="pb-3">
                 <div className="flex items-center gap-2">
+                  {showLiveDetail && currentDetail?.can_draft_strategy && (
+                    <CreateStrategyDraft reportId={currentDetail.id} />
+                  )}
                   <Button
                     size="sm"
                     variant="outline"

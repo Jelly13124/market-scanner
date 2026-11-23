@@ -53,9 +53,10 @@ class ScanHistory:
                 return {'status': existing['status'], 'scan_run_id': str(existing['_id']), 'reused': True}
             run_id = ObjectId()
             versions = {'scanner': 'full-universe-v1', 'schema': '2.3'}
+            instruments = {ticker: self.store.instrument(ticker, db) for ticker in universe}
             run = dict(identity, _id=run_id, schema_version=1, owner_id=str(owner_id), config_id=str(config_id),
                 config_snapshot=json_value(config), scan_date=scan_date, market='US', timezone='America/New_York',
-                trigger_type=trigger_type, as_of=as_of, status='running', universe_manifest=universe,
+                trigger_type=trigger_type, as_of=as_of, status='running', universe_manifest=list(instruments.values()),
                 universe_hash=digest(universe), coverage_mode='full_universe', expected_count=len(universe),
                 counts={}, versions=versions, attempt=1, created_at=now)
             db.scan_runs.insert_one(run)
@@ -82,7 +83,7 @@ class ScanHistory:
                     if signal_sessions:
                         quality['signal_sessions'] = signal_sessions
                     document = {'_id': ObjectId(), 'schema_version': 1, 'scan_run_id': run_id,
-                        'instrument_id': self.store.instrument(ticker, db), 'owner_id': str(owner_id),
+                        'instrument_id': instruments[ticker], 'owner_id': str(owner_id),
                         'outcome': outcome.outcome, 'selected': outcome.selected,
                         'detector_results': detector_results, 'quality': json_value(quality), 'created_at': now}
                     if outcome.outcome == 'evaluated':

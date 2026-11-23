@@ -71,17 +71,18 @@ def migrate(session, *, store=None, apply=False):
                 return
             run_id = existing['_id'] if existing else ObjectId()
             created = aware(row.created_at)
+            instruments = {entry.ticker: store.instrument(entry.ticker, db) for entry in entries}
             # The current mutable ScannerConfig cannot reconstruct old weights.
             document = dict(identity, _id=run_id, schema_version=1, owner_id=str(config.user_id),
                 execution_key=identity['legacy_sql_id'], config_id=str(row.config_id),
                 config_snapshot={'legacy_config_id': row.config_id, 'original_config_unavailable': True},
                 scan_date=created.date().isoformat(), market='US', timezone='America/New_York', trigger_type='migration',
-                as_of=created, status='running', universe_manifest=[e.ticker for e in entries],
+                as_of=created, status='running', universe_manifest=list(instruments.values()),
                 universe_hash=digest([e.ticker for e in entries]), coverage_mode='legacy_topn_only',
                 expected_count=len(entries), counts={}, versions={'legacy': True}, attempt=1, created_at=created)
             db.scan_runs.update_one(identity, {'$setOnInsert': document}, upsert=True)
             for entry in entries:
-                instrument = store.instrument(entry.ticker, db)
+                instrument = instruments[entry.ticker]
                 doc = {'_id': ObjectId(), 'schema_version': 1, 'scan_run_id': run_id, 'instrument_id': instrument,
                     'owner_id': str(config.user_id), 'outcome': 'evaluated', 'selected': True,
                     'detector_results': [], 'quality': {'legacy_topn_only': True, 'legacy_triggers': entry.triggers},

@@ -124,6 +124,16 @@ def test_full_universe_and_independent_rescans(store):
     assert ScanHistory(store).list_runs('someone_else') == []
 
 
+def test_scan_manifest_references_every_archived_instrument_in_universe_order(store):
+    assert save_scan(store)['status'] == 'partial'
+    run = store._db.scan_runs.find_one()
+    instruments = {row['symbol']: row['_id'] for row in store._db.instruments.find()}
+    manifest = [instruments[symbol] for symbol in ('A', 'B', 'C', 'D')]
+    assert run['universe_manifest'] == manifest
+    results = store._db.scan_results.find({'scan_run_id': run['_id']})
+    assert {row['instrument_id'] for row in results} == set(manifest)
+
+
 def test_history_failure_never_publishes_success(store):
     with patch.object(store._db.scan_results, 'insert_one', side_effect=RuntimeError('write failure')):
         assert save_scan(store).get('persisted') is False
@@ -268,7 +278,9 @@ def test_legacy_migration_is_idempotent_and_never_invents_full_universe(store):
         assert store._db.reports.count_documents({}) == 1
         assert store._db.scan_runs.count_documents({}) == 1
         assert store._db.scan_results.count_documents({}) == 1
-        assert store._db.scan_runs.find_one()['coverage_mode'] == 'legacy_topn_only'
+        archived = store._db.scan_runs.find_one()
+        assert archived['coverage_mode'] == 'legacy_topn_only'
+        assert archived['universe_manifest'] == [store._db.scan_results.find_one()['instrument_id']]
         assert store._db.datasets.count_documents({}) == 0
         assert store._db.reports.find_one()['provenance'] == 'legacy_unverified'
         assert session.query(ResearchReport).count() == 1
